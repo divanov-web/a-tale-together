@@ -9,7 +9,7 @@ argument-hint: "[rule <тема> | scenario <имя> | questions]"
 ## Источники
 
 - Концепт §4, §5, §7, §14 и риски §1–3, §6, §9 (`docs/concept/`): требования, гипотезы, открытые вопросы.
-- `docs/game/`: `rules.md` (механики), `actions.md` (каталог), `round.md` (цикл раунда), `scenarios.md` (эталоны), `open-questions.md` (вопросы руководителю).
+- `docs/game/`: `rules.md` (индекс правил), `character.md` (персонаж), `checks.md` (испытания), `game-modes.md`, `game-formats.md`, `actions.md` (каталог), `round.md` (цикл раунда), `scenarios.md` (эталоны), `open-questions.md` (вопросы руководителю).
 
 ## Границы решений
 
@@ -22,7 +22,7 @@ argument-hint: "[rule <тема> | scenario <имя> | questions]"
 1. Проблема → найти в рисках концепта; нет — записать в `open-questions.md` или решить здесь.
 2. Правило: условие, проверка, исходы, события, видимость, цена для игрока.
 3. Сценарий в `scenarios.md`: снимок состояния, заявки, ожидаемые статусы и события, что видит каждый адресат.
-4. Обновить `rules.md`, `actions.md`; поднять `rules_version`.
+4. Обновить документ правил (`character.md`, `checks.md`, `actions.md`, …); поднять `rules_version` в `rules.md`.
 5. В движок: тест по сценарию, затем код (`rules/engine.md`, `rules/go-tests.md`).
 
 ## Ориентир минимальной системы MVP
