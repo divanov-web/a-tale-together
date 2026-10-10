@@ -27,6 +27,11 @@ type Clock interface {
 	Now() time.Time
 }
 
+// Journal — журнал чатов (ADR-0012): каждая попытка отправки с `outbox_id` и `telegram_message_id`; реализует `adapter/chatlog`.
+type Journal interface {
+	Write(ctx context.Context, rec model.ChatLogRecord)
+}
+
 // Settings — параметры воркера.
 type Settings struct {
 	Interval    time.Duration // период опроса очереди
@@ -42,6 +47,8 @@ type Service struct {
 	clock    Clock
 	settings Settings
 	logger   *slog.Logger
+	// Journal — журнал чатов; nil — выключен.
+	Journal Journal
 }
 
 // New собирает воркер; нулевые настройки заменяются значениями по умолчанию.
@@ -110,8 +117,26 @@ func (s *Service) Deliver(ctx context.Context) (int, error) {
 		if err := s.store.FinishOutbox(ctx, m); err != nil {
 			return sent, fmt.Errorf("delivery.Deliver: %w", err)
 		}
+		s.journal(ctx, m, now, err)
 	}
 	return sent, nil
+}
+
+// journal пишет попытку отправки в журнал чата получателя.
+func (s *Service) journal(ctx context.Context, m model.OutboxMessage, now time.Time, sendErr error) {
+	if s.Journal == nil {
+		return
+	}
+	rec := model.ChatLogRecord{TS: now, Kind: model.ChatLogOut, Chat: m.TelegramChatID, GameID: m.GameID, OutboxID: m.ID, OutboxKind: m.Kind, Part: m.Part, Attempt: m.Attempts, Text: m.Text}
+	if m.RoundID != nil {
+		rec.RoundID = *m.RoundID
+	}
+	if sendErr != nil {
+		rec.Error = sendErr.Error()
+	} else if m.TelegramMessageID != nil {
+		rec.MessageID = *m.TelegramMessageID
+	}
+	s.Journal.Write(ctx, rec)
 }
 
 // backoff — пауза перед повтором: 5с, 10с, 20с… не больше 5 минут.

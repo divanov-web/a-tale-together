@@ -14,15 +14,17 @@ import (
 
 // Config — настройки приложения. Секреты дефолтов не имеют и проверяются в Validate.
 type Config struct {
-	TelegramBotToken string        `env:"TELEGRAM_BOT_TOKEN"` // Токен бота Telegram
-	DatabaseURL      string        `env:"DATABASE_URL"`       // DSN PostgreSQL
-	DatabaseURLTest  string        `env:"DATABASE_URL_TEST"`  // DSN тестовой БД для интеграционных тестов
-	AppEnv           string        `env:"APP_ENV"`            // dev|prod: в prod отключены dev-команды
-	LogLevel         string        `env:"LOG_LEVEL"`          // debug|info|warn|error
-	MigrateOnStart   bool          `env:"MIGRATE_ON_START"`   // Применять миграции при старте
-	SchedulerTick    time.Duration `env:"SCHEDULER_TICK"`     // Период планировщика раундов
-	OutboxTick       time.Duration `env:"OUTBOX_TICK"`        // Период воркера доставки outbox
-	BotOwnerID       int64         `env:"BOT_OWNER_ID"`       // Telegram ID владельца бота: команды /llm
+	TelegramBotToken string        `env:"TELEGRAM_BOT_TOKEN"`      // Токен бота Telegram
+	DatabaseURL      string        `env:"DATABASE_URL"`            // DSN PostgreSQL
+	DatabaseURLTest  string        `env:"DATABASE_URL_TEST"`       // DSN тестовой БД для интеграционных тестов
+	AppEnv           string        `env:"APP_ENV"`                 // dev|prod: в prod отключены dev-команды
+	LogLevel         string        `env:"LOG_LEVEL"`               // debug|info|warn|error
+	MigrateOnStart   bool          `env:"MIGRATE_ON_START"`        // Применять миграции при старте
+	SchedulerTick    time.Duration `env:"SCHEDULER_TICK"`          // Период планировщика раундов
+	OutboxTick       time.Duration `env:"OUTBOX_TICK"`             // Период воркера доставки outbox
+	BotOwnerID       int64         `env:"BOT_OWNER_ID"`            // Telegram ID владельца бота: команды /llm
+	ChatLogDir       string        `env:"CHAT_LOG_DIR"`            // Корень журнала чатов (ADR-0012); пусто — выключен
+	ChatLogRetention int           `env:"CHAT_LOG_RETENTION_DAYS"` // Дней хранения файлов журнала; 0 — не удалять
 	LLM              LLM
 }
 
@@ -37,13 +39,15 @@ type LLM struct {
 // Defaults возвращает конфигурацию по умолчанию; приложение стартует без .env.
 func Defaults() Config {
 	return Config{
-		DatabaseURL:     "postgres://tale:tale@localhost:5432/tale?sslmode=disable",
-		DatabaseURLTest: "postgres://tale:tale@localhost:5432/tale_test?sslmode=disable",
-		AppEnv:          "dev",
-		LogLevel:        "info",
-		SchedulerTick:   10 * time.Second,
-		OutboxTick:      3 * time.Second,
-		LLM:             LLM{ClaudeCLIPath: "claude"},
+		DatabaseURL:      "postgres://tale:tale@localhost:5432/tale?sslmode=disable",
+		DatabaseURLTest:  "postgres://tale:tale@localhost:5432/tale_test?sslmode=disable",
+		AppEnv:           "dev",
+		LogLevel:         "info",
+		SchedulerTick:    10 * time.Second,
+		OutboxTick:       3 * time.Second,
+		ChatLogDir:       "logs/chats",
+		ChatLogRetention: 30,
+		LLM:              LLM{ClaudeCLIPath: "claude"},
 	}
 }
 
@@ -68,6 +72,9 @@ func (c Config) Validate() error {
 	}
 	if _, err := c.SlogLevel(); err != nil {
 		errs = append(errs, err)
+	}
+	if c.ChatLogRetention < 0 {
+		errs = append(errs, errors.New("CHAT_LOG_RETENTION_DAYS не может быть отрицательным"))
 	}
 	return errors.Join(errs...)
 }

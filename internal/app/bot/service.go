@@ -45,6 +45,11 @@ type Clock interface {
 	Now() time.Time
 }
 
+// Journal — журнал чатов для разбора ошибок (ADR-0012); реализует `adapter/chatlog`.
+type Journal interface {
+	Write(ctx context.Context, rec model.ChatLogRecord)
+}
+
 // Settings — настройки сценария.
 type Settings struct {
 	Version     string               // Версия сборки для ответа на /ping
@@ -67,6 +72,22 @@ type Service struct {
 	logger   *slog.Logger
 	limiter  *limiter
 	commands []command
+	// Journal — журнал чатов: входящие, ответы и сбои; nil — выключен.
+	Journal Journal
+}
+
+// journal пишет запись журнала чата с текущим временем; без журнала ничего не делает.
+func (s *Service) journal(ctx context.Context, rec model.ChatLogRecord) {
+	if s.Journal == nil {
+		return
+	}
+	rec.TS = s.clock.Now()
+	s.Journal.Write(ctx, rec)
+}
+
+// journalUser — автор записи журнала из данных Telegram.
+func journalUser(u model.TelegramUser) *model.ChatLogUser {
+	return &model.ChatLogUser{ID: u.ID, Username: u.Username, Name: u.FirstName}
 }
 
 // New собирает сервис команд и реестр.
@@ -91,6 +112,7 @@ func (s *Service) HandleChatMember(ctx context.Context, ch model.ChatMemberChang
 	if err != nil {
 		return fmt.Errorf("bot.HandleChatMember: %w", err)
 	}
+	s.journal(ctx, model.ChatLogRecord{Kind: model.ChatLogIn, Chat: ch.ChatID, UpdateID: ch.UpdateID, User: journalUser(ch.From), Event: "my_chat_member", Text: string(ch.NewStatus), Duplicate: !fresh})
 	if !fresh {
 		return nil
 	}
@@ -106,8 +128,10 @@ func (s *Service) Handle(ctx context.Context, in model.Incoming) error {
 	if err != nil {
 		return fmt.Errorf("bot.Handle: %w", err)
 	}
+	rec := model.ChatLogRecord{Kind: model.ChatLogIn, Chat: in.ChatID, UpdateID: in.UpdateID, User: journalUser(in.From), Command: in.Command, Text: in.Text, Duplicate: !fresh}
 	if !fresh {
 		s.logger.Debug("duplicate update skipped", slog.Int64("update_id", in.UpdateID))
+		s.journal(ctx, rec)
 		return nil
 	}
 	if in.From.ID == 0 {
@@ -115,12 +139,18 @@ func (s *Service) Handle(ctx context.Context, in model.Incoming) error {
 	}
 	if !s.limiter.allow(in.From.ID) {
 		s.logger.Warn("rate limit", slog.Int64("telegram_user_id", int64(in.From.ID)), slog.Int64("update_id", in.UpdateID))
+		rec.Event = "rate_limited"
+		s.journal(ctx, rec)
 		return nil
 	}
 	user, err := s.store.UpsertUser(ctx, in.From)
 	if err != nil {
 		return fmt.Errorf("bot.Handle: %w", err)
 	}
+	if in.IsPrivate() && user.CurrentGameID != nil {
+		rec.GameID = *user.CurrentGameID
+	}
+	s.journal(ctx, rec)
 	if len([]rune(in.Text)) > maxTextLen {
 		if in.IsPrivate() {
 			return s.reply(ctx, in, fmt.Sprintf("Слишком длинное сообщение: до %d символов.", maxTextLen))
@@ -169,17 +199,25 @@ type request struct {
 
 // reply отправляет ответ в тот же чат.
 func (s *Service) reply(ctx context.Context, in model.Incoming, text string) error {
+	rec := model.ChatLogRecord{Kind: model.ChatLogOut, Chat: in.ChatID, UpdateID: in.UpdateID, Text: text}
 	if err := s.tg.SendText(ctx, in.ChatID, text); err != nil {
+		rec.Error = err.Error()
+		s.journal(ctx, rec)
 		return fmt.Errorf("bot.reply: %w", err)
 	}
+	s.journal(ctx, rec)
 	return nil
 }
 
 // replyPrivate отправляет сообщение пользователю в личку.
 func (s *Service) replyPrivate(ctx context.Context, user model.User, text string) error {
+	rec := model.ChatLogRecord{Kind: model.ChatLogOut, Chat: user.PrivateChat(), Text: text}
 	if err := s.tg.SendText(ctx, user.PrivateChat(), text); err != nil {
+		rec.Error = err.Error()
+		s.journal(ctx, rec)
 		return fmt.Errorf("bot.replyPrivate: %w", err)
 	}
+	s.journal(ctx, rec)
 	return nil
 }
 
@@ -188,6 +226,7 @@ func (s *Service) fail(ctx context.Context, req *request, err error) error {
 	if text, ok := userError(err); ok {
 		return s.reply(ctx, req.in, text)
 	}
+	s.journal(ctx, model.ChatLogRecord{Kind: model.ChatLogError, Chat: req.in.ChatID, UpdateID: req.in.UpdateID, Command: req.in.Command, Error: err.Error()})
 	if sendErr := s.reply(ctx, req.in, "Что-то пошло не так. Попробуйте позже."); sendErr != nil {
 		return fmt.Errorf("bot.Handle: %w (reply: %v)", err, sendErr)
 	}

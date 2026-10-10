@@ -28,6 +28,7 @@ type Store interface {
 	GetAppSetting(ctx context.Context, key string) (string, error)
 	SetAppSetting(ctx context.Context, key, value string) error
 	GetGame(ctx context.Context, id model.GameID) (model.Game, error)
+	GetChat(ctx context.Context, id model.ChatID) (model.Chat, error)
 	SetGameLLMProfile(ctx context.Context, game model.GameID, profile *model.LLMProfileID) error
 	CreateLLMRun(ctx context.Context, r model.LLMRun) (model.LLMRun, error)
 }
@@ -35,6 +36,11 @@ type Store interface {
 // Clock — источник времени.
 type Clock interface {
 	Now() time.Time
+}
+
+// Journal — журнал чатов (ADR-0012): вход и выход каждого вызова в папку группы игры; реализует `adapter/chatlog`.
+type Journal interface {
+	Write(ctx context.Context, rec model.ChatLogRecord)
 }
 
 // Ошибки сценариев; текст пригоден для ответа владельцу.
@@ -58,6 +64,8 @@ type Service struct {
 	profiles    map[string]model.LLMProfile // кэш по имени; nil — не загружен
 	byID        map[model.LLMProfileID]model.LLMProfile
 	defaultName string
+	// Journal — журнал чатов; nil — выключен. Вызовы вне игры (проверка профиля) в журнал не попадают.
+	Journal Journal
 }
 
 // New собирает сервис с реестром провайдеров по ключу.
@@ -287,6 +295,7 @@ func (s *Service) completeWith(ctx context.Context, p model.LLMProfile, call Cal
 	if _, err := s.store.CreateLLMRun(ctx, run); err != nil {
 		s.logger.Error("llm run not recorded", slog.Any("err", err))
 	}
+	s.journal(ctx, p, call, req, resp, run, callErr)
 	attrs := []any{slog.String("profile", p.Name), slog.String("provider", p.Provider), slog.String("model", run.Model),
 		slog.String("role", string(call.Role)), slog.Int("tokens_in", run.TokensIn), slog.Int("tokens_out", run.TokensOut),
 		slog.Int64("duration_ms", run.DurationMS)}
@@ -299,6 +308,33 @@ func (s *Service) completeWith(ctx context.Context, p model.LLMProfile, call Cal
 	}
 	s.logger.Info("llm call", attrs...)
 	return resp, nil
+}
+
+// journal пишет вход и выход вызова в журнал группы игры; без игры или журнала ничего не делает.
+func (s *Service) journal(ctx context.Context, p model.LLMProfile, call Call, req model.LLMRequest, resp model.LLMResponse, run model.LLMRun, callErr error) {
+	if s.Journal == nil || call.Game == nil {
+		return
+	}
+	chat, err := s.store.GetChat(ctx, call.Game.ChatID)
+	if err != nil {
+		s.logger.Warn("chat log: chat unavailable", slog.Int64("game_id", int64(call.Game.ID)), slog.Any("err", err))
+		return
+	}
+	output := resp.Text
+	if output == "" {
+		output = string(resp.JSON)
+	}
+	rec := model.ChatLogRecord{TS: s.clock.Now(), Kind: model.ChatLogLLM, Chat: chat.TelegramChatID, GameID: call.Game.ID, LLM: &model.ChatLogCall{
+		Role: call.Role, PromptVersion: call.PromptVersion, Profile: p.Name, Provider: p.Provider, Model: run.Model,
+		System: req.System, Input: req.Input, Output: output, TokensIn: run.TokensIn, TokensOut: run.TokensOut, DurationMS: run.DurationMS,
+	}}
+	if call.Round != nil {
+		rec.RoundID = *call.Round
+	}
+	if callErr != nil {
+		rec.Error = callErr.Error()
+	}
+	s.Journal.Write(ctx, rec)
 }
 
 // testSchema и testInput — проверка профиля: структурированный ответ по схеме интерпретатора в миниатюре.

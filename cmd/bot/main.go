@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"taletogether/internal/adapter/chatlog"
 	"taletogether/internal/adapter/llm/anthropic"
 	"taletogether/internal/adapter/llm/claudecli"
 	"taletogether/internal/adapter/llm/openai"
@@ -70,6 +71,15 @@ func run() error {
 		return err
 	}
 	clock := systemClock{}
+	var journal *chatlog.Writer // nil — журнал чатов выключен (ADR-0012)
+	if cfg.ChatLogDir != "" {
+		journal = chatlog.New(chatlog.Settings{Dir: cfg.ChatLogDir, Retention: time.Duration(cfg.ChatLogRetention) * 24 * time.Hour}, logger)
+		if n, err := journal.Cleanup(clock.Now()); err != nil {
+			logger.Warn("chat log cleanup failed", slog.Any("err", err))
+		} else {
+			logger.Info("chat log enabled", slog.String("dir", cfg.ChatLogDir), slog.Int("removed_files", n))
+		}
+	}
 	chats := chat.New(store, logger)
 	games := game.New(store, chats, clock, logger)
 	if cfg.AppEnv == "dev" {
@@ -77,6 +87,9 @@ func run() error {
 	}
 	rounds := round.New(store, games, clock, logger)
 	rounds.AnnounceSkipped = cfg.AppEnv == "dev" // на время разработки пропуск раунда анонсируется в группу
+	if journal != nil {
+		rounds.Journal = journal
+	}
 	if cfg.LLM.ClaudeCLIWorkdir != "" {
 		if err := os.MkdirAll(cfg.LLM.ClaudeCLIWorkdir, 0o755); err != nil {
 			return fmt.Errorf("рабочая папка claude-cli: %w", err)
@@ -88,9 +101,13 @@ func run() error {
 		model.ProviderOpenAI:    openai.New(),
 	}
 	llm := applm.New(store, providers, clock, logger)
-	rounds.LLM = llm // интерпретатор заявок: один вызов на раунд (пункт 08)
+	rounds.LLM = llm // интерпретатор и рассказчик: два вызова на раунд (пункты 08, 09)
 	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username(), OwnerID: model.TelegramUserID(cfg.BotOwnerID)},
 		store, store, tg, chats, games, rounds, llm, clock, logger)
+	outbox := delivery.New(store, tg, clock, delivery.Settings{Interval: cfg.OutboxTick}, logger)
+	if journal != nil {
+		llm.Journal, commands.Journal, outbox.Journal = journal, journal, journal
+	}
 	if err := commands.RegisterMenu(ctx); err != nil {
 		logger.Warn("command menu not registered", slog.Any("err", err))
 	}
@@ -98,9 +115,7 @@ func run() error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return tg.Run(gctx, commands) })
 	g.Go(func() error { return scheduler.New(rounds, clock, cfg.SchedulerTick, logger).Run(gctx) })
-	g.Go(func() error {
-		return delivery.New(store, tg, clock, delivery.Settings{Interval: cfg.OutboxTick}, logger).Run(gctx)
-	})
+	g.Go(func() error { return outbox.Run(gctx) })
 
 	err = g.Wait()
 	logger.Info("bot stopped")

@@ -16,6 +16,11 @@ import (
 
 type clock struct{ t time.Time }
 
+// fakeJournal собирает записи журнала чатов.
+type fakeJournal struct{ recs []model.ChatLogRecord }
+
+func (j *fakeJournal) Write(_ context.Context, rec model.ChatLogRecord) { j.recs = append(j.recs, rec) }
+
 func (c *clock) Now() time.Time { return c.t }
 
 func newService(t *testing.T) (*Service, *fake.Store, *llmfake.Client) {
@@ -60,7 +65,8 @@ func TestResolve_GameThenDefaultThenError(t *testing.T) {
 		t.Fatalf("default = %+v, %v", p, err)
 	}
 	// Профиль игры перекрывает глобальный; reset возвращает.
-	g, _ := store.CreateGame(ctx, model.Game{ChatID: 1, GenreID: 1, Title: "Мир", Status: model.GameDraft, Timezone: "UTC", RoundMinutes: 10, JoinCode: "X", CreatedByUserID: 1})
+	chat, _ := store.CreateChat(ctx, model.Chat{TelegramChatID: -100, Title: "Песочница", OwnerUserID: 1, BotStatus: model.BotMember})
+	g, _ := store.CreateGame(ctx, model.Game{ChatID: chat.ID, GenreID: 1, Title: "Мир", Status: model.GameDraft, Timezone: "UTC", RoundMinutes: 10, JoinCode: "X", CreatedByUserID: 1})
 	other, _ := svc.Add(ctx, model.LLMProfile{Name: "cli", Provider: model.ProviderClaudeCLI, ModelInterpreter: "haiku", ModelNarrator: "opus"})
 	if err := svc.Use(ctx, "cli", &g.ID); err != nil {
 		t.Fatal(err)
@@ -83,7 +89,9 @@ func TestResolve_GameThenDefaultThenError(t *testing.T) {
 	if err != nil || len(ov.Profiles) != 2 || ov.DefaultName != "local" || ov.Profiles[0].Name != "cli" || len(ov.Providers) != 2 {
 		t.Fatalf("list = %+v, %v", ov, err)
 	}
-	// Вызов: параметры профиля подставляются, run записан.
+	// Вызов: параметры профиля подставляются, run записан, вход и выход — в журнал группы игры.
+	journal := &fakeJournal{}
+	svc.Journal = journal
 	client.JSON = json.RawMessage(`{"action":"идти"}`)
 	resp, err := svc.Complete(ctx, Call{Game: &g, Role: model.RoleNarrator, PromptVersion: "v1"}, model.LLMRequest{System: "s", Input: "i"})
 	if err != nil || string(resp.JSON) != `{"action":"идти"}` {
@@ -97,10 +105,20 @@ func TestResolve_GameThenDefaultThenError(t *testing.T) {
 	if len(runs) != 1 || runs[0].GameID == nil || *runs[0].GameID != g.ID || runs[0].Role != model.RoleNarrator || runs[0].PromptVersion != "v1" || runs[0].TokensIn != 10 || runs[0].Error != "" {
 		t.Fatalf("runs = %+v", runs)
 	}
-	// Ошибка провайдера тоже записана.
+	if len(journal.recs) != 1 {
+		t.Fatalf("journal = %+v", journal.recs)
+	}
+	if rec := journal.recs[0]; rec.Kind != model.ChatLogLLM || rec.Chat != -100 || rec.GameID != g.ID || rec.LLM == nil || rec.LLM.Role != model.RoleNarrator ||
+		rec.LLM.PromptVersion != "v1" || rec.LLM.Profile != "local" || rec.LLM.System != "s" || rec.LLM.Input != "i" || rec.LLM.Output != `{"action":"идти"}` || rec.LLM.TokensIn != 10 || rec.Error != "" {
+		t.Fatalf("journal record = %+v (llm %+v)", rec, rec.LLM)
+	}
+	// Ошибка провайдера тоже записана; вызов без игры в журнал не попадает.
 	client.Err = errors.New("cli down")
 	if _, err := svc.Complete(ctx, Call{Role: model.RoleInterpreter}, model.LLMRequest{Input: "i"}); err == nil {
 		t.Fatal("provider error swallowed")
+	}
+	if len(journal.recs) != 1 {
+		t.Fatalf("journal after call without game = %+v", journal.recs)
 	}
 	runs, _ = store.ListLLMRuns(ctx, 10)
 	if len(runs) != 2 || runs[0].Error != "cli down" || runs[0].GameID != nil || runs[0].Model != "haiku" {

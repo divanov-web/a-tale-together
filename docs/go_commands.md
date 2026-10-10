@@ -18,5 +18,6 @@
 |---|---|
 | `make run LOG_LEVEL=debug` | разовый запуск с уровнем `debug` без правки `.env` (переменная make перекрывает значение из `.env`) |
 | `tail -f logs/bot.log` | лог фонового бота в реальном времени; `Ctrl+C` выходит из просмотра, бот продолжает работать |
+| `logs/chats/<chat_id>/<день>.jsonl` | журнал чата: входящие, ответы, вызовы LLM, события раунда ([dev/chat-logs.md](dev/chat-logs.md)) |
 
 Остальные команды (`check`, `build`, `test`, `lint`, `migrate`, `logs`) — в [dev/environment.md](dev/environment.md).

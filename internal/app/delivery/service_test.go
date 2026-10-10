@@ -92,3 +92,35 @@ func TestBackoff(t *testing.T) {
 		}
 	}
 }
+
+// fakeJournal собирает записи журнала чатов.
+type fakeJournal struct{ recs []model.ChatLogRecord }
+
+func (j *fakeJournal) Write(_ context.Context, rec model.ChatLogRecord) { j.recs = append(j.recs, rec) }
+
+func TestDeliver_Journal(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	c := &clock{t: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)}
+	store := fake.New(c.Now)
+	snd := &sender{fail: 1}
+	svc := New(store, snd, c, Settings{MaxAttempts: 2}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	j := &fakeJournal{}
+	svc.Journal = j
+	round := model.RoundID(7)
+	if err := store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: 1, RoundID: &round, TelegramChatID: -100, Kind: model.OutboxChronicle, Part: 2, Text: "хроника", SendAfter: c.t}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = svc.Deliver(ctx)
+	c.t = c.t.Add(5 * time.Second)
+	_, _ = svc.Deliver(ctx)
+	if len(j.recs) != 2 {
+		t.Fatalf("records = %+v", j.recs)
+	}
+	if r := j.recs[0]; r.Kind != model.ChatLogOut || r.Chat != -100 || r.GameID != 1 || r.RoundID != 7 || r.OutboxKind != model.OutboxChronicle || r.Part != 2 || r.Attempt != 1 || r.Error != "network" || r.MessageID != 0 || r.Text != "хроника" {
+		t.Fatalf("failed attempt = %+v", r)
+	}
+	if r := j.recs[1]; r.Attempt != 2 || r.Error != "" || r.MessageID != 101 || r.OutboxID == 0 || !r.TS.Equal(c.t) {
+		t.Fatalf("sent = %+v", r)
+	}
+}

@@ -18,7 +18,7 @@ sudo -u postgres psql -c "create user tale with password 'tale';" -c "create dat
 ```bash
 cp .env.example .env
 ```
-Заполнить `TELEGRAM_BOT_TOKEN` (тестовый бот от BotFather), ключи провайдеров LLM по [providers.md](../llm/providers.md). `BOT_OWNER_ID` — Telegram ID владельца (из `/me`), открывает команды `/llm`; `CLAUDE_CLI_PATH` и `CLAUDE_CLI_WORKDIR` — бинарь `claude` и пустая рабочая папка провайдера `claude-cli` (папка создаётся ботом). Необязательные: `SCHEDULER_TICK` (период планировщика раундов, 10s), `OUTBOX_TICK` (период воркера доставки, 3s). `.env` в git не попадает.
+Заполнить `TELEGRAM_BOT_TOKEN` (тестовый бот от BotFather), ключи провайдеров LLM по [providers.md](../llm/providers.md). `BOT_OWNER_ID` — Telegram ID владельца (из `/me`), открывает команды `/llm`; `CLAUDE_CLI_PATH` и `CLAUDE_CLI_WORKDIR` — бинарь `claude` и пустая рабочая папка провайдера `claude-cli` (папка создаётся ботом). Необязательные: `SCHEDULER_TICK` (период планировщика раундов, 10s), `OUTBOX_TICK` (период воркера доставки, 3s), `CHAT_LOG_DIR` (журнал чатов, `logs/chats`; пусто — выключен) и `CHAT_LOG_RETENTION_DAYS` (30; [chat-logs.md](chat-logs.md)). `.env` в git не попадает.
 
 ## Команды
 | Команда | Действие |
@@ -27,7 +27,7 @@ cp .env.example .env
 | `make build` | сборка в `bin/bot` |
 | `make run` | запуск бота в терминале |
 | `make start` / `make stop` / `make restart` | бот в фоне: pid `bin/bot.pid`, лог `logs/bot.log`; после правок кода Claude делает `make restart` сам, см. [go_commands.md](../go_commands.md) |
-| `make logs` | последние строки лога фонового бота |
+| `make logs` | последние строки лога фонового бота; журнал чатов для разбора ошибок — `logs/chats/<chat_id>/<день>.jsonl` ([chat-logs.md](chat-logs.md)) |
 | `make test` | юнит-тесты |
 | `make test-integration` | тесты с БД (`DATABASE_URL_TEST`) |
 | `make lint` | `gofmt`, `go vet`, `golangci-lint` при наличии |

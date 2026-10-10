@@ -18,7 +18,7 @@ cmd/bot ──────────────► internal/app ──► int
 | Сценарии | `internal/app/*` | порядок шагов прикладного действия, границы транзакций, вызов сервисов, запись в outbox | `service`, `model` | SQL, Telegram API, SDK LLM |
 | Логика | `internal/service/*` | правила, разрешение раунда, видимость, сборка контекста и валидация ответов LLM | `model` | `app`, `adapter`, БД, Telegram |
 | Модель | `internal/model` | типы сущностей, событий, намерений, статусов; без поведения с I/O | ничего внутреннего | |
-| Адаптеры | `internal/adapter/*` | SQL, Telegram API, API LLM | `model`, внешние SDK | `app`, `service` |
+| Адаптеры | `internal/adapter/*` | SQL, Telegram API, API LLM, файловый журнал чатов | `model`, внешние SDK | `app`, `service` |
 | Конфиг | `internal/config` | дефолты, env, валидация | | |
 
 Интерфейсы Go неявные: адаптер реализует интерфейс потребителя, не импортируя его пакет; связывает их `cmd/bot`.
@@ -41,6 +41,7 @@ cmd/bot ──────────────► internal/app ──► int
 | `adapter/postgres` | `Store`, `InTx` | репозитории по сущностям, миграции goose; `fake` — хранилище в памяти для тестов |
 | `adapter/telegram` | `Client` | источник update, отправка текста с `message_id`; длинные тексты делит сценарий при постановке в outbox (`app/round.splitParts`, ADR-0011) |
 | `app/llm` | `List`, `Profile`, `Resolve`, `Use`, `Reset`, `Add`, `Complete`, `Test` | профили LLM из БД с кэшем, карта провайдеров по ключу, подстановка модели и параметров профиля, запись `llm_runs` |
+| `adapter/chatlog` | `Writer.Write`, `Writer.Cleanup` | журнал чатов для разбора ошибок ИИ: JSONL по чатам и дням; реализует `Journal` сценариев `bot`, `delivery`, `llm`, `round` (ADR-0012) |
 | `adapter/llm/*` | `Client.Complete` | провайдеры по ADR-0003: `claudecli`, `anthropic` и `openai` (заглушки до пункта 08), `fake` |
 
 ## Интерфейсы

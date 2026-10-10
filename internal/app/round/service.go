@@ -67,6 +67,11 @@ type Clock interface {
 	Now() time.Time
 }
 
+// Journal — журнал чатов (ADR-0012): события раунда в папку группы игры; реализует `adapter/chatlog`.
+type Journal interface {
+	Write(ctx context.Context, rec model.ChatLogRecord)
+}
+
 // Ошибки сценариев; текст пригоден для ответа игроку.
 var (
 	ErrForbidden      = errors.New("нет прав: действие доступно администратору игры, владельцу или модератору чата")
@@ -97,6 +102,16 @@ type Service struct {
 	// команд кодом и шаблонная хроника.
 	LLM  LLM
 	seed func() int64
+	// Journal — журнал чатов; nil — выключен.
+	Journal Journal
+}
+
+// journal пишет событие раунда в журнал группы игры; без журнала ничего не делает.
+func (s *Service) journal(ctx context.Context, g model.Game, chat model.TelegramChatID, r model.Round, event string, data any) {
+	if s.Journal == nil {
+		return
+	}
+	s.Journal.Write(ctx, model.ChatLogRecord{TS: s.clock.Now(), Kind: model.ChatLogRound, Chat: chat, GameID: g.ID, RoundID: r.ID, RoundNo: r.RoundNo, Event: event, Data: data})
 }
 
 // New собирает сервис раунда.
@@ -317,6 +332,11 @@ func (s *Service) Submit(ctx context.Context, game model.Game, c model.Character
 		return model.Round{}, model.Submission{}, fmt.Errorf("round.Submit: %w", err)
 	}
 	s.logger.Info("submission saved", slog.Int64("game_id", int64(game.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int64("character_id", int64(c.ID)))
+	if s.Journal != nil {
+		if chat, err := s.store.GetChat(ctx, game.ChatID); err == nil {
+			s.journal(ctx, game, chat.TelegramChatID, r, "submission", map[string]any{"character_id": c.ID, "character": c.Nickname, "text": text})
+		}
+	}
 	return r, sub, nil
 }
 
@@ -432,6 +452,7 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 			return err
 		}
 		s.logger.Info("round skipped", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.String("reason", r.SkipReason))
+		s.journal(ctx, g, chat.TelegramChatID, r, "skipped", map[string]any{"reason": r.SkipReason})
 		if !s.AnnounceSkipped {
 			return nil
 		}
@@ -492,7 +513,23 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 		return err
 	}
 	s.logger.Info("round frozen", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("submissions", len(subs)))
+	s.journal(ctx, g, chat.TelegramChatID, r, "frozen", frozenData(r, chars, subs))
 	return s.resolve(ctx, g, chat, r, genre, cm.Definition, chars, now)
+}
+
+// frozenData — содержимое записи журнала о заморозке: seed, заявки с никнеймами и статусы персонажей.
+func frozenData(r model.Round, chars []model.Character, subs []model.Submission) map[string]any {
+	names := map[model.CharacterID]string{}
+	statuses := make([]map[string]any, 0, len(chars))
+	for _, c := range chars {
+		names[c.ID] = c.Nickname
+		statuses = append(statuses, map[string]any{"character_id": c.ID, "character": c.Nickname, "status": c.Status, "missed": c.MissedRounds, "location_id": c.LocationID})
+	}
+	list := make([]map[string]any, 0, len(subs))
+	for _, sub := range subs {
+		list = append(list, map[string]any{"submission_id": sub.ID, "character_id": sub.CharacterID, "character": names[sub.CharacterID], "text": sub.RawText})
+	}
+	return map[string]any{"seed": r.Seed, "submissions": list, "characters": statuses}
 }
 
 // activity — статус персонажа после раунда: заявка возвращает в `active`, пропуски ведут в `waiting`, затем `inactive`
@@ -547,6 +584,7 @@ func (s *Service) openNext(ctx context.Context, g *model.Game, chat model.Chat, 
 		return false, err
 	}
 	s.logger.Info("round opened", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("round_no", r.RoundNo))
+	s.journal(ctx, *g, chat.TelegramChatID, r, "opened", map[string]any{"deadline_at": r.DeadlineAt, "carried": carried})
 	return true, s.enqueue(ctx, *g, chat, &r.ID, model.OutboxRoundOpen, roundOpenText(*g, r, carried, now))
 }
 
