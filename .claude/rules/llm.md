@@ -7,7 +7,7 @@ paths:
 ---
 # LLM в коде
 
-- Источник: `docs/llm/providers.md` (интерфейс `llm.Client`, провайдеры, профили), ADR-0003. Дизайн промптов: `/tale-prompts`.
+- Источник: `docs/llm/round-calls.md` (приоритет при расхождениях: два вызова на раунд, входы и выходы), `docs/llm/providers.md` (интерфейс `llm.Client`, провайдеры, профили), ADR-0003. Дизайн промптов: `/tale-prompts`.
 - Один интерфейс `Complete(ctx, model.LLMRequest) (model.LLMResponse, error)` у потребителя (`app/llm.Client`); реализации в `internal/adapter/llm/<provider>`; карта провайдеров по ключу собирается в `cmd/bot`; выбор профиля `app/llm.Resolve`: игра → `app_settings.default_llm_profile`; интерпретатор и рассказчик вызывают модель только через `app/llm.Complete(ctx, Call, req)` — он подставляет модель и параметры профиля и пишет `llm_runs`.
 - Провайдеры: `claude-cli`, `anthropic-api`, `openai-api`, `fake`. Новый провайдер = пакет + регистрация + строка в `providers.md`; новая зависимость = ADR.
 - `claude-cli`: `claude -p --output-format json --json-schema … --system-prompt … --tools "" --no-session-persistence --setting-sources "" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --exclude-dynamic-system-prompt-sections` (флаги изоляции проверены: без них в контекст попадают глобальный CLAUDE.md и MCP); без `--bare` (с подпиской не работает); запуск из `CLAUDE_CLI_WORKDIR` (пустая папка); таймаут и параллелизм из профиля; `structured_output`, `usage`, `modelUsage`, `total_cost_usd` из ответа; `subscription=true` в `llm_runs`. Тесты с подменой бинаря `testdata/claude`; живой тест `CLAUDE_CLI_LIVE=1`.

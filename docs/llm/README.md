@@ -1,6 +1,6 @@
 # LLM: конвейер и бюджет
 
-Две роли, два промпта, две схемы, не больше двух вызовов на раунд при любом числе игроков: интерпретатор после дедлайна и рассказчик после движка; пошаговая схема с входами и выходами — [round-calls.md](round-calls.md). Код: `internal/service/{interpreter,narrator}`, `internal/adapter/llm`; промпты `assets/prompts/<роль>/vN.md`. Провайдеры и профили: [providers.md](providers.md), [ADR-0003](../decisions/0003-llm-provider.md).
+Две роли, два промпта, две схемы, не больше двух вызовов на раунд при любом числе игроков: интерпретатор после дедлайна и рассказчик после движка; пошаговая схема с входами и выходами — [round-calls.md](round-calls.md), при расхождениях с другими документами он приоритетен (решение руководителя 2026-10-10). Код: `internal/service/{interpreter,narrator}`, `internal/adapter/llm`; промпты `assets/prompts/<роль>/vN.md`. Провайдеры и профили: [providers.md](providers.md), [ADR-0003](../decisions/0003-llm-provider.md).
 
 | Роль | Вход | Выход | Схема вызовов MVP |
 |---|---|---|---|
