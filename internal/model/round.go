@@ -73,7 +73,7 @@ const (
 // Лимиты заявки (docs/game/round.md, «Лимиты»).
 const (
 	SubmissionMaxLen        = 500
-	SubmissionReplaceWindow = time.Minute // замена не чаще раза в минуту
+	SubmissionReplaceWindow = time.Minute // замена не чаще раза в минуту, если разрешена settings.allow_resubmit
 )
 
 // Submission — заявка персонажа на раунд: сырой текст игрока, данные, не инструкции.

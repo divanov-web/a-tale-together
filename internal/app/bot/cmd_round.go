@@ -54,7 +54,7 @@ func (s *Service) roundNext(ctx context.Context, req *request) error {
 func (s *Service) act(ctx context.Context, req *request) error {
 	text := strings.TrimSpace(req.in.Args)
 	if text == "" {
-		return s.reply(ctx, req.in, fmt.Sprintf("Формат: /act <что делает персонаж> (до %d символов). Последняя заявка до дедлайна действует.", model.SubmissionMaxLen))
+		return s.reply(ctx, req.in, fmt.Sprintf("Формат: /act <что делает персонаж> (до %d символов). Заявка одна на раунд, изменить её нельзя.", model.SubmissionMaxLen))
 	}
 	g, err := s.games.Current(ctx, req.user)
 	if err != nil {
@@ -68,7 +68,7 @@ func (s *Service) act(ctx context.Context, req *request) error {
 	if err != nil {
 		return err
 	}
-	return s.reply(ctx, req.in, fmt.Sprintf("Заявка принята: раунд %d, до %s. Заменить: /act <новый текст>.", r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
+	return s.reply(ctx, req.in, fmt.Sprintf("Заявка принята: раунд %d, до %s.", r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
 }
 
 // roundLines — строки /status о раундах: текущий, предыдущий, следующий или причина простоя.

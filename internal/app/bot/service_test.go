@@ -412,9 +412,9 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/act"), "Формат: /act")
 	mustContain(t, h.send(alice, private(alice), "/act "+strings.Repeat("я", 501)), "до 500 символов")
 	mustContain(t, h.send(alice, private(alice), "/act иду в башню"), "Заявка принята: раунд 1, до 12:15")
-	mustContain(t, h.send(alice, private(alice), "/act передумал"), "не чаще раза в минуту")
+	mustContain(t, h.send(alice, private(alice), "/act передумал"), "уже принята, изменить её нельзя")
 	h.clock.advance(time.Minute)
-	mustContain(t, h.send(alice, private(alice), "/act иду на рынок"), "Заявка принята: раунд 1")
+	mustContain(t, h.send(alice, private(alice), "/act иду на рынок"), "уже принята")
 	mustContain(t, h.send(nobody, private(nobody), "/act что-то"), "Игры нет")
 	mustContain(t, h.send(owner, private(owner), "/act что-то"), "Персонажа ещё нет")
 
@@ -425,7 +425,7 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 	}
 	texts = h.outboxTexts()
 	mustContain(t, texts[2], "«Песочница» — раунд 1. Недостаточное количество участников. Раунд пропущен.")
-	mustContain(t, texts[3], "раунд 2 открыт", "Перенесено заявок из пропущенного раунда: 1")
+	mustContain(t, texts[3], "раунд 2 открыт", "одна на раунд", "Перенесено заявок из пропущенного раунда: 1")
 	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 2, заявки до 12:31; заявок 1 из 2", "Предыдущий раунд: 1 пропущен: заявок 1 из 2")
 
 	// Кворум собран: раунд 2 заморожен со снимком; Боб без заявки — нет, оба подали.

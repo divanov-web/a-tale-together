@@ -41,7 +41,7 @@ func openingScene(g model.Game, template string, factions []model.Faction) strin
 }
 
 func roundOpenText(g model.Game, r model.Round, carried int, now time.Time) string {
-	text := fmt.Sprintf("%s открыт. Заявки до %s: /act <текст> в личке с ботом.", header(g, r.RoundNo), FormatTime(g, r.DeadlineAt, now))
+	text := fmt.Sprintf("%s открыт. Заявки до %s: /act <текст> в личке с ботом, одна на раунд.", header(g, r.RoundNo), FormatTime(g, r.DeadlineAt, now))
 	if carried > 0 {
 		text += fmt.Sprintf(" Перенесено заявок из пропущенного раунда: %d.", carried)
 	}

@@ -45,6 +45,7 @@ type GameSettings struct {
 	GoalCooldownRounds  int        `json:"goal_cooldown_rounds"`  // раундов до новой цели после отказа
 	InactiveAfterRounds int        `json:"inactive_after_rounds"` // пропусков подряд до статуса inactive
 	MinRoundAnswers     int        `json:"min_round_answers"`     // кворум: меньше заявок — раунд пропускается
+	AllowResubmit       bool       `json:"allow_resubmit"`        // разрешить менять заявку до дедлайна (не чаще раза в минуту); по умолчанию запрещено (решение руководителя 2026-10-10); настройка разработчика
 }
 
 // Кворум раунда по умолчанию и в режиме разработки.

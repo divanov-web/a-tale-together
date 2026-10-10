@@ -197,7 +197,7 @@ var userErrors = []error{
 	game.ErrForbidden, game.ErrGameExists, game.ErrNoGame, game.ErrGameFinished, game.ErrNotMember,
 	game.ErrHasCharacter, game.ErrNoCharacter, game.ErrNicknameTaken, game.ErrChooseGame, game.ErrBadValue,
 	round.ErrForbidden, round.ErrAlreadyStarted, round.ErrNotActive, round.ErrPaused, round.ErrFinished, round.ErrNoCharacters,
-	round.ErrNoOpenRound, round.ErrEmpty, round.ErrTooLong, round.ErrTooFrequent,
+	round.ErrNoOpenRound, round.ErrEmpty, round.ErrTooLong, round.ErrTooFrequent, round.ErrAlreadyActed,
 	rules.ErrInvalid, errUnknownUser,
 }
 

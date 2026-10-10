@@ -61,6 +61,7 @@ var (
 	ErrEmpty          = errors.New("текст заявки пуст")
 	ErrTooLong        = fmt.Errorf("заявка до %d символов", model.SubmissionMaxLen)
 	ErrTooFrequent    = errors.New("заменить заявку можно не чаще раза в минуту")
+	ErrAlreadyActed   = errors.New("заявка на этот раунд уже принята, изменить её нельзя")
 )
 
 // Service — сценарии раунда.
@@ -253,7 +254,8 @@ func (s *Service) Next(ctx context.Context, game model.Game, actor model.UserID)
 	return out, nil
 }
 
-// Submit создаёт или заменяет заявку персонажа на открытый раунд; замена не чаще раза в минуту.
+// Submit создаёт заявку персонажа на открытый раунд. Повторная заявка отклоняется; при `settings.allow_resubmit`
+// заменяет текст не чаще раза в минуту.
 func (s *Service) Submit(ctx context.Context, game model.Game, c model.Character, text string) (model.Round, model.Submission, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -274,6 +276,9 @@ func (s *Service) Submit(ctx context.Context, game model.Game, c model.Character
 		return model.Round{}, model.Submission{}, fmt.Errorf("round.Submit: %w", err)
 	}
 	if ex, err := s.store.GetSubmission(ctx, game.ID, r.ID, c.ID); err == nil {
+		if !game.Settings.AllowResubmit {
+			return model.Round{}, model.Submission{}, ErrAlreadyActed
+		}
 		if now.Sub(ex.UpdatedAt) < model.SubmissionReplaceWindow {
 			return model.Round{}, model.Submission{}, ErrTooFrequent
 		}
@@ -530,7 +535,7 @@ func statusError(st model.GameStatus) error {
 
 // wrap добавляет префикс только к неожиданным ошибкам; ошибки сценария возвращаются как есть.
 func wrap(op string, err error) error {
-	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound} {
+	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound, ErrAlreadyActed} {
 		if errors.Is(err, ue) {
 			return err
 		}

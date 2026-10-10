@@ -160,7 +160,7 @@ func TestTick_SkipWithoutQuorumAndCarrySubmissions(t *testing.T) {
 	if len(msgs) != 4 || msgs[2].Kind != model.OutboxRoundClosed || msgs[2].Text != "«Мир» — раунд 1. Недостаточное количество участников. Раунд пропущен." {
 		t.Fatalf("outbox = %+v", msgs)
 	}
-	if msgs[3].Text != "«Мир» — раунд 2 открыт. Заявки до 12:20: /act <текст> в личке с ботом. Перенесено заявок из пропущенного раунда: 1." {
+	if msgs[3].Text != "«Мир» — раунд 2 открыт. Заявки до 12:20: /act <текст> в личке с ботом, одна на раунд. Перенесено заявок из пропущенного раунда: 1." {
 		t.Fatalf("open text = %q", msgs[3].Text)
 	}
 	// Персонажи при пропуске не наказываются.
@@ -276,7 +276,22 @@ func TestSubmit_Validation(t *testing.T) {
 	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "первая"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "замена"); !errors.Is(err, ErrTooFrequent) {
+	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "замена"); !errors.Is(err, ErrAlreadyActed) {
+		t.Fatalf("replace forbidden by default: %v", err)
+	}
+	w.clock.t = w.clock.t.Add(time.Minute)
+	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "замена"); !errors.Is(err, ErrAlreadyActed) {
+		t.Fatalf("replace forbidden after a minute too: %v", err)
+	}
+	// Настройка разработчика allow_resubmit: замена не чаще раза в минуту.
+	w.game.Settings.AllowResubmit = true
+	if err := w.store.UpdateGame(ctx, w.game); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "замена"); err != nil {
+		t.Fatalf("replace after a minute with allow_resubmit: %v", err)
+	}
+	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "ещё"); !errors.Is(err, ErrTooFrequent) {
 		t.Fatalf("replace within a minute: %v", err)
 	}
 	w.clock.t = w.clock.t.Add(time.Minute)
