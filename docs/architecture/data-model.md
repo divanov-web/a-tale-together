@@ -10,10 +10,10 @@
 |---|---|---|---|
 | Пользователь | `users` | уникальный пользователь Telegram, писавший боту или добавивший его в чат | владеет чатами, участвует в играх, имеет персонажей |
 | Чат | `chats` | Telegram-группа, куда добавили бота: владелец, модераторы, статус бота в чате | 1 владелец; N модераторов (`chat_moderators`); N игр, из них не более одной незавершённой |
-| Игра | `games` | запущенный мир с настройками, привязан к чату | 1 чат; N участников (`game_members`); N персонажей, раундов, локаций |
+| Игра | `games` | запущенный мир с настройками и типом (глобальная, рассказ, сериал), привязан к чату | 1 чат; N участников (`game_members`); N персонажей, сезонов, раундов, локаций |
 | Персонаж | `characters` | персонаж пользователя в конкретной игре | ровно один на пару (игра, пользователь); требует участия в игре |
 
-Вспомогательные: `chat_moderators` (права в чате), `game_members` (участие и роль в игре), `telegram_updates` (дедупликация), остальные таблицы раунда и LLM ниже.
+Вспомогательные: `chat_moderators` (права в чате), `game_members` (участие и роль в игре), `seasons` (сезоны сериала), `telegram_updates` (дедупликация), остальные таблицы раунда и LLM ниже.
 
 ```text
 users ──< chats (owner_user_id)
@@ -21,7 +21,8 @@ users ──< chats (owner_user_id)
   │          └──< games
   │                 ├──< game_members >── users
   │                 ├──< characters  (game_id, user_id) ── game_members
-  │                 ├──< locations, rounds, action_submissions, resolved_actions,
+  │                 ├──< seasons ──< rounds
+  │                 ├──< locations, action_submissions, resolved_actions,
   │                 │    world_events, messages_outbox, llm_runs
   └──────────────────┘
 ```
@@ -43,11 +44,12 @@ users ──< chats (owner_user_id)
 
 | Таблица | Назначение | Ключевые поля | Уникальность |
 |---|---|---|---|
-| `games` | настройки и статус мира | `chat_id` → `chats`, `title`, `genre`, `status` (draft/active/paused/finished), `settings jsonb` (round_duration_minutes, timezone, active_windows, pause_overnight, max_players, max_active_locations, story_mode mechanics/balanced/story), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
+| `games` | настройки и статус мира | `chat_id` → `chats`, `kind` (global/story/serial, [типы игр](../game/game-types.md)), `title`, `genre`, `status` (draft/active/paused/finished), `settings jsonb` (ends_at, max_rounds, round_duration_minutes, timezone, active_windows, pause_overnight, max_players, max_active_locations, story_mode mechanics/balanced/story), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
 | `game_members` | участие пользователей | `game_id`, `user_id` → `users`, `role` (admin/player), `status` (active/left/kicked), `joined_at` | `(game_id, user_id)` |
 | `characters` | персонажи | `game_id`, `user_id`, `name`, `archetype`, `stats jsonb`, `hp`, `conditions jsonb`, `inventory jsonb`, `location_id`, `schema_version` | `(game_id, user_id)`; FK `(game_id, user_id)` → `game_members` |
+| `seasons` | сезоны сериала; у остальных типов единственный сезон 1 | `game_id`, `season_no`, `title`, `status` (active/finished), `started_at`, `finished_at` | `(game_id, season_no)` |
 | `locations` | места и связи | `game_id`, `name`, `description`, `links jsonb`, `active` | `(game_id, name)` |
-| `rounds` | раунды | `game_id`, `round_no`, `opens_at`, `deadline_at`, `status` (open/frozen/resolving/resolved/published/failed), `seed`, `snapshot jsonb` | `(game_id, round_no)` |
+| `rounds` | раунды | `game_id`, `season_id`, `round_no`, `opens_at`, `deadline_at`, `status` (open/frozen/resolving/resolved/published/failed), `seed`, `snapshot jsonb` | `(game_id, round_no)` |
 | `action_submissions` | заявки | `game_id`, `round_id`, `character_id`, `raw_text`, `status`, `submitted_at`, `telegram_message_id` | `(round_id, character_id)` |
 | `resolved_actions` | намерения и итоги | `game_id`, `round_id`, `submission_id`, `intent jsonb`, `status`, `checks jsonb`, `conflict_group` | `submission_id` |
 | `world_events` | журнал событий | `game_id`, `round_id`, `seq`, `type`, `payload jsonb`, `visibility`, `visible_to bigint[]` | `(game_id, seq)` |
@@ -57,7 +59,7 @@ users ──< chats (owner_user_id)
 ## Инварианты
 
 - Внутри БД связи по `id`; идентификаторы Telegram (`telegram_id`, `telegram_chat_id`) только в `users`, `chats`, `messages_outbox`.
-- В чате не более одной незавершённой игры; завершённые остаются историей.
+- В чате не более одной незавершённой игры; завершённые остаются историей. У игры всегда есть активный сезон; у `global` и `story` он единственный.
 - Персонаж создаётся только у активного участника игры; у пары (игра, пользователь) не более одного персонажа.
 - Состояние персонажей и локаций производно от `world_events`; прямые правки без события запрещены.
 - У каждой заявки раунда ровно одна строка в `resolved_actions` после разрешения.
