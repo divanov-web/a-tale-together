@@ -1,0 +1,162 @@
+// Команда eval-narrator: прогон оценочного набора рассказчика на живом провайдере `claude-cli`
+// (`make eval-narrator`, пункт 09). Проверяет, что каждое событие упомянуто самой моделью (без дописывания кодом),
+// запрещённые слова и секреты в хронике отсутствуют, нужные никнеймы присутствуют; печатает долю прошедших, токены и время.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log/slog"
+	"os"
+	"regexp"
+	"strings"
+	"time"
+
+	"taletogether/assets/prompts"
+	"taletogether/internal/adapter/llm/claudecli"
+	"taletogether/internal/config"
+	"taletogether/internal/model"
+	"taletogether/internal/service/narrator"
+)
+
+// evalSet — файл `narrator/eval/cases.json`: общие мир, фракции и модель персонажа, случаи с параметрами и ожиданиями.
+type evalSet struct {
+	Title          string                  `json:"title"`
+	Tone           string                  `json:"tone"`
+	Factions       []narrator.Faction      `json:"factions"`
+	CharacterModel model.CharacterModelDef `json:"character_model"`
+	Cases          []evalCase              `json:"cases"`
+}
+
+type evalCase struct {
+	Name      string     `json:"name"`
+	Comment   string     `json:"comment"`
+	Params    caseParams `json:"params"`
+	Required  []string   `json:"required"`  // подстроки, которые должны быть в тексте
+	Forbidden []string   `json:"forbidden"` // подстроки, которых быть не должно (без учёта регистра)
+	NoDigits  bool       `json:"no_digits"` // в тексте нет цифр
+}
+
+type caseParams struct {
+	Mode     model.GameMode                     `json:"mode"`
+	RoundNo  int                                `json:"round_no"`
+	Events   []model.Event                      `json:"events"`
+	Bios     map[model.CharacterID]narrator.Bio `json:"bios"`
+	Previous []model.Narration                  `json:"previous"`
+	State    *model.RoundSnapshot               `json:"state"`
+}
+
+var digits = regexp.MustCompile(`\d`)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "ошибка:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	only := flag.String("case", "", "запустить только случай с этим именем")
+	modelName := flag.String("model", "opus", "модель claude-cli (как в профиле local-claude)")
+	effort := flag.String("effort", "low", "усилие claude-cli")
+	verbose := flag.Bool("v", false, "печатать хронику")
+	flag.Parse()
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	raw, err := prompts.FS.ReadFile("narrator/eval/cases.json")
+	if err != nil {
+		return err
+	}
+	var set evalSet
+	if err := json.Unmarshal(raw, &set); err != nil {
+		return fmt.Errorf("cases.json: %w", err)
+	}
+	if cfg.LLM.ClaudeCLIWorkdir != "" {
+		if err := os.MkdirAll(cfg.LLM.ClaudeCLIWorkdir, 0o755); err != nil {
+			return err
+		}
+	}
+	client := claudecli.New(claudecli.Settings{Path: cfg.LLM.ClaudeCLIPath, Workdir: cfg.LLM.ClaudeCLIWorkdir})
+	svc := narrator.New(narrator.Func(func(ctx context.Context, req model.LLMRequest) (model.LLMResponse, error) {
+		req.Model, req.Effort = *modelName, *effort
+		return client.Complete(ctx, req)
+	}), slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
+
+	var passed, total, calls, tokensIn, tokensOut, patched int
+	var elapsed time.Duration
+	for _, c := range set.Cases {
+		if *only != "" && c.Name != *only {
+			continue
+		}
+		total++
+		p := narrator.Params{Title: set.Title, Tone: set.Tone, Factions: set.Factions, Def: set.CharacterModel,
+			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State}
+		started := time.Now()
+		res, err := svc.Narrate(context.Background(), p)
+		elapsed += time.Since(started)
+		calls, tokensIn, tokensOut, patched = calls+res.Calls, tokensIn+res.TokensIn, tokensOut+res.TokensOut, patched+res.Patched
+		if err != nil {
+			fmt.Printf("FAIL %-22s ошибка вызова: %v\n", c.Name, err)
+			continue
+		}
+		problems := check(c, res)
+		if len(problems) == 0 {
+			passed++
+			fmt.Printf("ok   %-22s calls=%d issues=%d\n", c.Name, res.Calls, len(res.Issues))
+		} else {
+			fmt.Printf("FAIL %-22s %s\n", c.Name, strings.Join(problems, "; "))
+		}
+		if *verbose || len(problems) > 0 {
+			fmt.Printf("     %s\n", res.Narration.Chronicle)
+			for _, sc := range res.Narration.Scenes {
+				fmt.Printf("     [%d %s] %s %v\n", sc.LocationID, sc.Party, sc.Text, sc.EventSeqs)
+			}
+			for _, is := range res.Issues {
+				fmt.Printf("     замечание: %s\n", is)
+			}
+		}
+	}
+	if total == 0 {
+		return fmt.Errorf("случаев нет")
+	}
+	fmt.Printf("\nитого: %d/%d (%.0f %%), вызовов %d, дописано кодом %d, токены вход/выход %d/%d, время %s, модель %s/%s\n",
+		passed, total, float64(passed)*100/float64(total), calls, patched, tokensIn, tokensOut, elapsed.Round(time.Second), *modelName, *effort)
+	if passed*10 < total*9 {
+		return fmt.Errorf("порог 90 %% не достигнут")
+	}
+	return nil
+}
+
+// check сверяет хронику с ожиданиями случая; возвращает расхождения.
+func check(c evalCase, res narrator.Result) []string {
+	var out []string
+	if res.Patched > 0 {
+		out = append(out, fmt.Sprintf("модель не упомянула события, дописано кодом: %v", res.Narration.Patched))
+	}
+	var b strings.Builder
+	b.WriteString(res.Narration.Chronicle)
+	for _, sc := range res.Narration.Scenes {
+		b.WriteString("\n" + sc.Party + "\n" + sc.Text)
+	}
+	text := b.String()
+	lower := strings.ToLower(text)
+	for _, s := range c.Required {
+		if !strings.Contains(text, s) {
+			out = append(out, fmt.Sprintf("нет «%s»", s))
+		}
+	}
+	for _, s := range c.Forbidden {
+		if strings.Contains(lower, strings.ToLower(s)) {
+			out = append(out, fmt.Sprintf("есть «%s»", s))
+		}
+	}
+	if c.NoDigits && digits.MatchString(text) {
+		out = append(out, "есть цифры")
+	}
+	return out
+}

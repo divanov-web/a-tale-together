@@ -14,7 +14,7 @@ Telegram groups + private chats
    Round scheduler / worker (internal/app/round)
             +--> Интерпретатор LLM (service/interpreter)  --> намерения
             +--> Движок правил   (service/engine, rules)  --> броски + события
-            +--> Рассказчик LLM  (service/narrator)       --> тексты по видимости
+            +--> Рассказчик LLM  (service/narrator)       --> хроника по сценам, проверка кодом
             |
        Outbox / sender (internal/app/delivery)
             |

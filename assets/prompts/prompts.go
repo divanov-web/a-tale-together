@@ -3,7 +3,7 @@ package prompts
 
 import "embed"
 
-// FS — файлы промптов: `interpreter/v1.md`, `interpreter/eval/*.json`.
+// FS — файлы промптов и оценочных наборов: `interpreter/v1.md`, `interpreter/eval/*.json`, `narrator/v1.md`, `narrator/eval/*.json`.
 //
-//go:embed interpreter
+//go:embed interpreter narrator
 var FS embed.FS

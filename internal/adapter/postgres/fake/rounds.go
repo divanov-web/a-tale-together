@@ -57,9 +57,30 @@ func (s *Store) UpdateRound(_ context.Context, r model.Round) error {
 	if !ok || ex.GameID != r.GameID {
 		return model.ErrNotFound
 	}
-	ex.Status, ex.DeadlineAt, ex.ClosedAt, ex.Seed, ex.Snapshot, ex.SkipReason, ex.UpdatedAt = r.Status, r.DeadlineAt, r.ClosedAt, r.Seed, r.Snapshot, r.SkipReason, s.now()
+	ex.Status, ex.DeadlineAt, ex.ClosedAt, ex.Seed, ex.Snapshot, ex.Narration, ex.SkipReason, ex.UpdatedAt = r.Status, r.DeadlineAt, r.ClosedAt, r.Seed, r.Snapshot, r.Narration, r.SkipReason, s.now()
 	s.rounds[r.ID] = ex
 	return nil
+}
+
+// RecentNarrations — см. postgres.Store.
+func (s *Store) RecentNarrations(_ context.Context, game model.GameID, limit int) ([]model.Narration, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var list []model.Round
+	for _, r := range s.rounds {
+		if r.GameID == game && r.Narration != nil {
+			list = append(list, r)
+		}
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].RoundNo > list[j].RoundNo })
+	var out []model.Narration
+	for _, r := range list {
+		if len(out) >= limit {
+			break
+		}
+		out = append(out, *r.Narration)
+	}
+	return out, nil
 }
 
 // OpenRound — см. postgres.Store.

@@ -12,6 +12,7 @@ import (
 	"taletogether/internal/model"
 	"taletogether/internal/service/engine"
 	"taletogether/internal/service/interpreter"
+	"taletogether/internal/service/narrator"
 	"taletogether/internal/service/rules"
 	"taletogether/internal/service/visibility"
 )
@@ -46,10 +47,11 @@ func snapshot(g model.Game, chars []model.Character, locations []model.Location,
 	return snap
 }
 
-// resolve разрешает замороженный раунд (пункты 07–08): интерпретатор одним вызовом (или разбор кодом) → движок →
-// события, итоги, состояние персонажей и локаций, статус `published`, хроника и уведомления в outbox.
-// Внутри транзакции заморозки (ADR-0010): вызов модели держит блокировку игры, `/act` и `/status` её не ждут.
-func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r model.Round, def model.CharacterModelDef, now time.Time) error {
+// resolve разрешает замороженный раунд (пункты 07–09): интерпретатор одним вызовом (или разбор кодом) → движок →
+// события, итоги, состояние персонажей и локаций → рассказчик одним вызовом (или шаблон) → статус `published`,
+// хроника частями и уведомления о заявках в outbox. Внутри транзакции заморозки (ADR-0010, ADR-0011): вызовы модели
+// держат блокировку игры, `/act` и `/status` её не ждут.
+func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, chars []model.Character, now time.Time) error {
 	if r.Snapshot == nil {
 		return fmt.Errorf("round.resolve: round %d without snapshot", r.ID)
 	}
@@ -82,10 +84,11 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 		return err
 	}
 	r.Status = model.RoundPublished
+	r.Narration = s.narrate(ctx, g, r, genre, def, &state, chars, result.Events)
 	if err := s.store.UpdateRound(ctx, r); err != nil {
 		return err
 	}
-	if err := s.publish(ctx, g, chat, r, &state, result); err != nil {
+	if err := s.publish(ctx, g, chat, r, &state, result, def); err != nil {
 		return err
 	}
 	s.logger.Info("round resolved", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("events", len(result.Events)), slog.Int("results", len(result.Results)))
@@ -116,6 +119,46 @@ func (s *Service) interpret(ctx context.Context, g model.Game, r model.Round, de
 		slog.Int("submissions", len(snap.Submissions)), slog.Int("calls", res.Calls), slog.Int("safe", res.Invalid),
 		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
 	return res.Intents
+}
+
+// narrate — вызов 2 из 2 (docs/llm/round-calls.md): публичные и локационные события, состояние после свёртки,
+// описания персонажей как данные и выжимка прошлых хроник → хроника по сценам через `app/llm.Complete` с ролью
+// `narrator`. Без провайдера, при сбое, утечке или превышении бюджета — nil: публикуется шаблонная хроника, раунд не откатывается.
+func (s *Service) narrate(ctx context.Context, g model.Game, r model.Round, genre model.Genre, def model.CharacterModelDef, state *model.RoundSnapshot, chars []model.Character, events []model.Event) *model.Narration {
+	if s.LLM == nil {
+		return nil
+	}
+	p := narrator.Params{Title: g.Title, Tone: genre.Template.Tone, Mode: g.Mode, RoundNo: r.RoundNo, State: state, Bios: map[model.CharacterID]narrator.Bio{}, Events: visibility.Public(events), Def: def}
+	for _, c := range chars {
+		p.Bios[c.ID] = narrator.Bio{Public: c.PublicBio, Secret: c.SecretBio}
+	}
+	factions, err := s.store.ListFactions(ctx, g.ID)
+	if err != nil {
+		s.logger.Warn("narrator: factions unavailable", slog.Int64("game_id", int64(g.ID)), slog.Any("err", err))
+	}
+	for _, f := range factions {
+		rel := map[string]string{}
+		for k, v := range f.Relations {
+			rel[string(k)] = v
+		}
+		p.Factions = append(p.Factions, narrator.Faction{Code: string(f.Code), Title: f.Title, Description: f.Description, Tone: f.Tone, Relations: rel})
+	}
+	if p.Previous, err = s.store.RecentNarrations(ctx, g.ID, 3); err != nil {
+		s.logger.Warn("narrator: previous chronicles unavailable", slog.Int64("game_id", int64(g.ID)), slog.Any("err", err))
+	}
+	call := applm.Call{Game: &g, Round: &r.ID, Role: model.RoleNarrator, PromptVersion: narrator.PromptVersion}
+	svc := narrator.New(narrator.Func(func(ctx context.Context, req model.LLMRequest) (model.LLMResponse, error) {
+		return s.LLM.Complete(ctx, call, req)
+	}), s.logger)
+	res, err := svc.Narrate(ctx, p)
+	if err != nil {
+		s.logger.Warn("narrator unavailable, template chronicle", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Any("err", err))
+		return nil
+	}
+	s.logger.Info("round narrated", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)),
+		slog.Int("scenes", len(res.Narration.Scenes)), slog.Int("calls", res.Calls), slog.Int("patched", res.Patched), slog.Int("issues", len(res.Issues)),
+		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
+	return &res.Narration
 }
 
 // saveState записывает изменившихся персонажей и локации; значения берутся только из свёртки событий.
@@ -155,12 +198,15 @@ func (s *Service) saveState(ctx context.Context, g model.Game, before *model.Rou
 	return nil
 }
 
-// publish ставит в outbox хронику (публичные и локационные события словами) и приватные итоги каждому подавшему заявку.
-func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r model.Round, state *model.RoundSnapshot, result engine.Result) error {
+// publish ставит в outbox хронику (рассказчика или шаблонную) с подходами следующего раунда, частями по лимиту
+// Telegram, и уведомление о заявке каждому подавшему её.
+func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r model.Round, state *model.RoundSnapshot, result engine.Result, def model.CharacterModelDef) error {
 	preset := rules.Preset(g.Mode)
-	chronicle := chronicleText(g, r, visibility.Public(result.Events), state)
-	if err := s.enqueue(ctx, g, chat, &r.ID, model.OutboxChronicle, chronicle); err != nil {
-		return err
+	chronicle := chronicleMessage(g, r, visibility.Public(result.Events), state, narrator.Options(state, def, g.Mode))
+	for i, part := range splitParts(chronicle, header(g, r.RoundNo)+" (продолжение)\n", partLimit) {
+		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: chat.TelegramChatID, Kind: model.OutboxChronicle, Part: i + 1, Text: part, SendAfter: s.clock.Now()}); err != nil {
+			return err
+		}
 	}
 	for _, res := range result.Results {
 		c, ok := state.Character(res.CharacterID)
@@ -178,7 +224,7 @@ func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r 
 			continue
 		}
 		own := visibility.Filter(result.Events, visibility.Viewer{CharacterID: c.ID, LocationID: c.LocationID})
-		text := privateText(g, r, res, own, preset)
+		text := noticeText(g, r, res, own, preset)
 		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: user.PrivateChat(), Kind: model.OutboxPrivate, Part: 1, Text: text, SendAfter: s.clock.Now()}); err != nil {
 			return err
 		}

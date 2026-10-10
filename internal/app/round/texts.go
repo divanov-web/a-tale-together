@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"taletogether/internal/model"
+	"taletogether/internal/service/narrator"
 	"taletogether/internal/service/rules"
 )
 
@@ -74,13 +75,15 @@ func firstRoundLaterText(g model.Game, next time.Time, now time.Time) string {
 	return fmt.Sprintf("«%s» — раунды открываются в игровое окно %s–%s. Первый раунд в %s.", g.Title, g.PlayFrom, g.PlayTo, FormatTime(g, next, now))
 }
 
-// chronicleText — хроника раунда без LLM (пункт 09 заменит рассказчиком): публичные и локационные события словами.
+// chronicleText — шаблонная хроника без модели (сбой или отсутствие рассказчика): публичные и локационные события словами.
 func chronicleText(g model.Game, r model.Round, events []model.Event, state *model.RoundSnapshot) string {
 	var lines []string
 	for _, ev := range events {
-		if line := eventWords(ev, state); line != "" {
-			lines = append(lines, "• "+line)
+		if ev.Type == model.EventCharacterMoved && ev.LocationID != nil && model.LocationID(payloadNum(ev, "from")) != *ev.LocationID {
+			continue // второе событие перехода (для видимости в локации назначения) не дублируем
 		}
+		_, line := narrator.Describe(ev, state)
+		lines = append(lines, "• "+line)
 	}
 	if len(lines) == 0 {
 		lines = append(lines, "• тихий раунд: никто ничего заметного не сделал")
@@ -88,8 +91,8 @@ func chronicleText(g model.Game, r model.Round, events []model.Event, state *mod
 	return fmt.Sprintf("%s — итоги\n%s", header(g, r.RoundNo), strings.Join(lines, "\n"))
 }
 
-// privateText — приватный итог заявки: статус, исход, проверка (числа по режиму), события персонажа.
-func privateText(g model.Game, r model.Round, res model.ActionResult, own []model.Event, preset rules.ModePreset) string {
+// noticeText — уведомление о заявке игроку: статус, исход, проверка (числа по режиму), приватные события персонажа.
+func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model.Event, preset rules.ModePreset) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s — ваш итог\nЗаявка «%s»: ", header(g, r.RoundNo), truncateText(res.Intent.RawText, 80))
 	switch res.Status {
@@ -127,7 +130,7 @@ func privateText(g model.Game, r model.Round, res model.ActionResult, own []mode
 		case model.EventFactLearned:
 			facts = append(facts, "• "+payloadStr(ev, "fact"))
 		case model.EventConditionAdded:
-			facts = append(facts, "• состояние: "+conditionWords(payloadStr(ev, "condition")))
+			facts = append(facts, "• состояние: "+narrator.ConditionWords(payloadStr(ev, "condition")))
 		case model.EventHPChanged:
 			facts = append(facts, fmt.Sprintf("• HP: %s", payloadStr(ev, "to")))
 		}
@@ -137,34 +140,6 @@ func privateText(g model.Game, r model.Round, res model.ActionResult, own []mode
 	}
 	b.WriteString("\nСледующая заявка: /act <текст> после открытия раунда.")
 	return b.String()
-}
-
-// eventWords — событие словами для хроники.
-func eventWords(ev model.Event, state *model.RoundSnapshot) string {
-	name := func(key string) string {
-		id := model.CharacterID(payloadNum(ev, key))
-		if c, ok := state.Character(id); ok {
-			return c.Nickname
-		}
-		return "кто-то"
-	}
-	switch ev.Type {
-	case model.EventCharacterMoved:
-		if ev.LocationID != nil && model.LocationID(payloadNum(ev, "from")) != *ev.LocationID {
-			return "" // второе событие перехода (для видимости в локации назначения) не дублируем в хронике
-		}
-		return fmt.Sprintf("%s уходит из «%s» в «%s»", name("character_id"), payloadStr(ev, "from_name"), payloadStr(ev, "to_name"))
-	case model.EventObjectChanged:
-		if payloadStr(ev, "to") != "" {
-			return fmt.Sprintf("%s: «%s» теперь %s", name("character_id"), payloadStr(ev, "title"), stateWords(payloadStr(ev, "to")))
-		}
-		return fmt.Sprintf("%s находит: %s", name("character_id"), payloadStr(ev, "title"))
-	case model.EventCharacterDied:
-		return fmt.Sprintf("%s выбывает из истории", payloadStr(ev, "nickname"))
-	case model.EventCharacterReturned:
-		return fmt.Sprintf("%s возвращается в историю", payloadStr(ev, "nickname"))
-	}
-	return ""
 }
 
 func payloadStr(ev model.Event, key string) string {
@@ -184,34 +159,6 @@ func payloadNum(ev model.Event, key string) float64 {
 	_ = json.Unmarshal(ev.Payload, &p)
 	v, _ := p[key].(float64)
 	return v
-}
-
-func stateWords(state string) string {
-	switch state {
-	case "locked":
-		return "заперто"
-	case "open":
-		return "открыто"
-	case "broken":
-		return "сломано"
-	case "closed":
-		return "закрыто"
-	}
-	return state
-}
-
-func conditionWords(c string) string {
-	switch c {
-	case model.ConditionWounded:
-		return "ранен"
-	case model.ConditionExhausted:
-		return "истощён"
-	case model.ConditionHidden:
-		return "скрыт"
-	case model.ConditionDetained:
-		return "задержан"
-	}
-	return c
 }
 
 func truncateText(s string, n int) string {

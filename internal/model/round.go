@@ -31,6 +31,7 @@ type Round struct {
 	ClosedAt   *time.Time
 	Seed       int64
 	Snapshot   *RoundSnapshot // nil до заморозки
+	Narration  *Narration     // хроника рассказчика (пункт 09); nil до публикации или при шаблонной хронике
 	SkipReason string         // причина пропуска для /status, например «заявок 1 из 2»
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
@@ -107,6 +108,23 @@ func (c SnapshotCharacter) HasCondition(name string) bool {
 	return false
 }
 
+// Narration — ответ рассказчика по схеме (docs/llm/round-calls.md, вызов 2): общий текст раунда и блок на сцену.
+// Хранится в `rounds.narration`; последние хроники идут в контекст следующего вызова как выжимка.
+type Narration struct {
+	PromptVersion string           `json:"prompt_version"`
+	Chronicle     string           `json:"chronicle"`
+	Scenes        []NarrationScene `json:"scenes"`
+	Patched       []int64          `json:"patched,omitempty"` // события, дописанные кодом после дозапроса
+}
+
+// NarrationScene — блок хроники по сцене (локации; с группами — по группе).
+type NarrationScene struct {
+	LocationID LocationID `json:"location_id"`
+	Party      string     `json:"party"`
+	Text       string     `json:"text"`
+	EventSeqs  []int64    `json:"event_seqs"`
+}
+
 // SnapshotSubmission — заявка в снимке раунда.
 type SnapshotSubmission struct {
 	SubmissionID SubmissionID `json:"submission_id"`
@@ -145,15 +163,18 @@ type Submission struct {
 // OutboxKind — вид исходящего игрового сообщения.
 type OutboxKind string
 
-// Виды сообщений outbox; хроника и приватные итоги появятся в пункте 09.
+// Виды сообщений outbox.
 const (
 	OutboxScene       OutboxKind = "scene"        // стартовая сцена
 	OutboxRoundOpen   OutboxKind = "round_open"   // анонс открытия раунда
 	OutboxRoundClosed OutboxKind = "round_closed" // раунд закрыт или пропущен
 	OutboxSystem      OutboxKind = "system"       // пауза, возобновление, служебные уведомления игры
-	OutboxChronicle   OutboxKind = "chronicle"    // хроника раунда в группу
-	OutboxPrivate     OutboxKind = "private"      // приватный итог игроку
+	OutboxChronicle   OutboxKind = "chronicle"    // хроника раунда в группу; длинная делится на части (part 1..N)
+	OutboxPrivate     OutboxKind = "private"      // уведомление о заявке игроку в личку
 )
+
+// TelegramTextMaxLen — лимит текста одного сообщения Telegram; игровые тексты длиннее делятся на части при постановке в outbox.
+const TelegramTextMaxLen = 4096
 
 // OutboxStatus — статус доставки сообщения.
 type OutboxStatus string

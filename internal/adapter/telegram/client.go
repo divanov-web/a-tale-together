@@ -68,7 +68,7 @@ func (c *Client) Run(ctx context.Context, h Handler) error {
 	return nil
 }
 
-// SendText отправляет обычное текстовое сообщение (ответы на команды, ADR-0006). Деление длинных текстов — пункт плана 09.
+// SendText отправляет обычное текстовое сообщение (ответы на команды, ADR-0006). Длинные игровые тексты делит сценарий при постановке в outbox (ADR-0011).
 func (c *Client) SendText(ctx context.Context, chat model.TelegramChatID, text string) error {
 	if _, err := c.Send(ctx, chat, text); err != nil {
 		return fmt.Errorf("telegram.SendText: %w", err)

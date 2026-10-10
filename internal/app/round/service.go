@@ -1,5 +1,6 @@
-// Package round — жизненный цикл раунда без разрешения (пункт плана 05): запуск кампании, открытие раундов
-// по расписанию и игровому окну, приём заявок, заморозка снимка или пропуск без кворума, пауза, ручной шаг в dev.
+// Package round — жизненный цикл раунда (пункты плана 05, 07–09): запуск кампании, открытие раундов по расписанию
+// и игровому окну, приём заявок, заморозка снимка или пропуск без кворума, разрешение с двумя вызовами LLM и
+// публикация через outbox, пауза, ручной шаг в dev.
 package round
 
 import (
@@ -42,6 +43,7 @@ type Store interface {
 	OpenRound(ctx context.Context, game model.GameID) (model.Round, error)
 	LastRound(ctx context.Context, game model.GameID) (model.Round, error)
 	RoundByNo(ctx context.Context, game model.GameID, no int) (model.Round, error)
+	RecentNarrations(ctx context.Context, game model.GameID, limit int) ([]model.Narration, error)
 	UpsertSubmission(ctx context.Context, s model.Submission) (model.Submission, error)
 	GetSubmission(ctx context.Context, game model.GameID, round model.RoundID, character model.CharacterID) (model.Submission, error)
 	ListSubmissions(ctx context.Context, game model.GameID, round model.RoundID) ([]model.Submission, error)
@@ -50,7 +52,7 @@ type Store interface {
 	EnqueueOutbox(ctx context.Context, m model.OutboxMessage) error
 }
 
-// LLM — вызов модели с учётом в `llm_runs`; реализует `app/llm.Service`. Пусто — заявки разбираются кодом.
+// LLM — вызов модели с учётом в `llm_runs`; реализует `app/llm.Service`. Пусто — заявки разбираются кодом, хроника шаблоном.
 type LLM interface {
 	Complete(ctx context.Context, call applm.Call, req model.LLMRequest) (model.LLMResponse, error)
 }
@@ -91,7 +93,8 @@ type Service struct {
 	logger *slog.Logger
 	// AnnounceSkipped — слать в группу сообщение о пропуске раунда без кворума; `cmd` включает в dev.
 	AnnounceSkipped bool
-	// LLM — интерпретатор заявок (вызов 1 из 2 на раунд, пункт 08); nil — разбор типовых команд кодом.
+	// LLM — интерпретатор заявок (вызов 1 из 2, пункт 08) и рассказчик (вызов 2 из 2, пункт 09); nil — разбор типовых
+	// команд кодом и шаблонная хроника.
 	LLM  LLM
 	seed func() int64
 }
@@ -489,7 +492,7 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 		return err
 	}
 	s.logger.Info("round frozen", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("submissions", len(subs)))
-	return s.resolve(ctx, g, chat, r, cm.Definition, now)
+	return s.resolve(ctx, g, chat, r, genre, cm.Definition, chars, now)
 }
 
 // activity — статус персонажа после раунда: заявка возвращает в `active`, пропуски ведут в `waiting`, затем `inactive`

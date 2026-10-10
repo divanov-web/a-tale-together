@@ -294,7 +294,9 @@ func (r *resolver) check(c *model.SnapshotCharacter, loc *model.SnapshotLocation
 	}
 	res.Status, res.Check, res.Outcome = model.ResultResolved, &info, info.Outcome
 	res.Summary = summary + " — " + outcomeWords(info.Outcome)
-	r.emit(res, model.EventCheckRolled, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "object": obj.Key, "free": objIdx < 0 || in.FreeCheck(), "check": info})
+	// Попытка и её исход видны присутствующим в локации (рассказчик описывает их в хронике, docs/llm/round-calls.md);
+	// числа броска из полезной нагрузки в контекст рассказчика попадают только в режиме «механика».
+	r.emit(res, model.EventCheckRolled, model.VisibilityLocation, nil, c, map[string]any{"character_id": c.ID, "object": obj.Key, "title": obj.Title, "free": objIdx < 0 || in.FreeCheck(), "summary": summary, "check": info})
 	if info.Outcome == model.OutcomeFailure {
 		r.applyFail(res, c, loc, ap.OnFail)
 		return false

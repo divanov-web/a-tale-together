@@ -11,11 +11,11 @@ import (
 	"taletogether/internal/model"
 )
 
-const roundColumns = `id, game_id, season_id, round_no, status, opens_at, deadline_at, closed_at, seed, snapshot, skip_reason, created_at, updated_at`
+const roundColumns = `id, game_id, season_id, round_no, status, opens_at, deadline_at, closed_at, seed, snapshot, narration, skip_reason, created_at, updated_at`
 
 func scanRound(row pgx.Row) (model.Round, error) {
 	var r model.Round
-	err := row.Scan(&r.ID, &r.GameID, &r.SeasonID, &r.RoundNo, &r.Status, &r.OpensAt, &r.DeadlineAt, &r.ClosedAt, &r.Seed, &r.Snapshot, &r.SkipReason, &r.CreatedAt, &r.UpdatedAt)
+	err := row.Scan(&r.ID, &r.GameID, &r.SeasonID, &r.RoundNo, &r.Status, &r.OpensAt, &r.DeadlineAt, &r.ClosedAt, &r.Seed, &r.Snapshot, &r.Narration, &r.SkipReason, &r.CreatedAt, &r.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Round{}, model.ErrNotFound
 	}
@@ -33,14 +33,32 @@ VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ` + roundColumns
 	return out, nil
 }
 
-// UpdateRound сохраняет статус, дедлайн, закрытие, seed, снимок и причину пропуска.
+// UpdateRound сохраняет статус, дедлайн, закрытие, seed, снимок, хронику рассказчика и причину пропуска.
 func (s *Store) UpdateRound(ctx context.Context, r model.Round) error {
-	const q = `UPDATE rounds SET status = $3, deadline_at = $4, closed_at = $5, seed = $6, snapshot = $7, skip_reason = $8, updated_at = now()
+	const q = `UPDATE rounds SET status = $3, deadline_at = $4, closed_at = $5, seed = $6, snapshot = $7, narration = $8, skip_reason = $9, updated_at = now()
 WHERE game_id = $1 AND id = $2`
-	if _, err := s.db(ctx).Exec(ctx, q, r.GameID, r.ID, r.Status, r.DeadlineAt, r.ClosedAt, r.Seed, r.Snapshot, r.SkipReason); err != nil {
+	if _, err := s.db(ctx).Exec(ctx, q, r.GameID, r.ID, r.Status, r.DeadlineAt, r.ClosedAt, r.Seed, r.Snapshot, r.Narration, r.SkipReason); err != nil {
 		return fmt.Errorf("postgres.UpdateRound: %w", err)
 	}
 	return nil
+}
+
+// RecentNarrations возвращает хроники рассказчика последних опубликованных раундов игры, от новых к старым, не больше limit.
+func (s *Store) RecentNarrations(ctx context.Context, game model.GameID, limit int) ([]model.Narration, error) {
+	rows, err := s.db(ctx).Query(ctx, `SELECT narration FROM rounds WHERE game_id = $1 AND narration IS NOT NULL ORDER BY round_no DESC LIMIT $2`, game, limit)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.RecentNarrations: %w", err)
+	}
+	defer rows.Close()
+	var out []model.Narration
+	for rows.Next() {
+		var n model.Narration
+		if err := rows.Scan(&n); err != nil {
+			return nil, fmt.Errorf("postgres.RecentNarrations: scan: %w", err)
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
 }
 
 // OpenRound возвращает открытый раунд игры.

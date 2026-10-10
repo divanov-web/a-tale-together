@@ -3,5 +3,5 @@
 - Публичный вход: `New(ctx, Settings, logger)`, `Client.Run(ctx, Handler)`, `Client.SendText` (ответы на команды), `Client.Send` (возвращает `message_id`, для воркера outbox), `Client.SetCommands`, `Client.IsChatAdmin`, `Client.Username`.
 - Входящие: текстовые сообщения → `model.Incoming` с командой без `@bot` (чужие `/cmd@other_bot` отбрасываются); `my_chat_member` → `model.ChatMemberChange` со статусом бота `member/admin/left`.
 - Ошибки библиотеки в лог; 409 Conflict означает второй экземпляр с тем же токеном.
-- Планируется: деление длинных сообщений (пункт 09), webhook по отдельному ADR.
+- Длинные игровые тексты делятся на части сценарием при постановке в outbox (`app/round.splitParts`, ADR-0011), адаптер отправляет части как отдельные сообщения. Планируется: webhook по отдельному ADR.
 - Связи: `.claude/rules/telegram.md`, [команды](../../../docs/architecture/telegram-commands.md).

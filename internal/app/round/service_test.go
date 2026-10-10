@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,7 +55,8 @@ func newWorld(t *testing.T, settings model.GameSettings) *world {
 	for i, nick := range []string{"Элис", "Боб", "Кэт"} {
 		u, _ := store.UpsertUser(ctx, model.TelegramUser{ID: model.TelegramUserID(10 + i), Username: nick})
 		_ = store.AddMember(ctx, model.GameMember{GameID: g.ID, UserID: u.ID, Role: model.RolePlayer, Status: model.MemberActive})
-		ch, err := store.CreateCharacter(ctx, model.Character{GameID: g.ID, SeasonID: season.ID, UserID: u.ID, ModelID: 1, Nickname: nick, Archetype: "rogue", Status: model.CharacterActive, FactionID: f.ID, HP: 6})
+		ch, err := store.CreateCharacter(ctx, model.Character{GameID: g.ID, SeasonID: season.ID, UserID: u.ID, ModelID: 1, Nickname: nick, Archetype: "rogue", Status: model.CharacterActive, FactionID: f.ID, HP: 6,
+			Attributes: map[string]int{"strength": 2, "agility": 3, "wits": 4, "will": 3}, Skills: map[string]int{"awareness": 2}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -414,30 +416,49 @@ func TestTick_LockedOrDbErrorIsReported(t *testing.T) {
 	}
 }
 
-// fakeLLM — провайдер через app/llm.Call: записанный JSON или ошибка; запоминает вызовы.
+// fakeLLM — провайдер через app/llm.Call: записанный JSON по роли или ошибка; запоминает вызовы.
 type fakeLLM struct {
-	json  string
-	err   error
-	calls []applm.Call
+	json    string // ответ интерпретатора
+	narr    string // ответ рассказчика; пусто — ошибка вызова (шаблонная хроника)
+	err     error
+	narrErr error
+	calls   []applm.Call
+	inputs  []string
 }
 
-func (f *fakeLLM) Complete(_ context.Context, call applm.Call, _ model.LLMRequest) (model.LLMResponse, error) {
+func (f *fakeLLM) Complete(_ context.Context, call applm.Call, req model.LLMRequest) (model.LLMResponse, error) {
 	f.calls = append(f.calls, call)
+	f.inputs = append(f.inputs, req.Input)
+	if call.Role == model.RoleNarrator {
+		if f.narrErr != nil || f.narr == "" {
+			return model.LLMResponse{}, errors.New("narrator down")
+		}
+		return model.LLMResponse{JSON: json.RawMessage(f.narr), TokensIn: 80, TokensOut: 40}, nil
+	}
 	if f.err != nil {
 		return model.LLMResponse{}, f.err
 	}
 	return model.LLMResponse{JSON: json.RawMessage(f.json), TokensIn: 50, TokensOut: 10}, nil
 }
 
-// TestResolve_Interpreter: заявки раунда уходят в интерпретатор одним вызовом с ролью и раундом; свободное
-// испытание из ответа модели разрешается движком; при сбое модели — разбор кодом, раунд публикуется.
-func TestResolve_Interpreter(t *testing.T) {
-	t.Parallel()
+func (f *fakeLLM) byRole(role model.LLMRole) []applm.Call {
+	var out []applm.Call
+	for _, c := range f.calls {
+		if c.Role == role {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// towerWorld — мир с локациями жанра и персонажами на стартовой локации с характеристиками (в app/game это делает
+// создание игры и персонажа).
+func towerWorld(t *testing.T) *world {
+	t.Helper()
 	s := model.DefaultGameSettings()
 	s.MinRoundAnswers = 1
 	w := newWorld(t, s)
 	ctx := context.Background()
-	// Локации жанра и стартовая локация персонажей (в app/game это делает создание игры и персонажа).
 	genre, _ := w.store.GetGenre(ctx, w.game.GenreID)
 	var start model.LocationID
 	for i, lt := range genre.Template.Locations {
@@ -451,12 +472,19 @@ func TestResolve_Interpreter(t *testing.T) {
 	}
 	for i := range w.chars {
 		w.chars[i].LocationID = &start
-		w.chars[i].Attributes = map[string]int{"strength": 2, "agility": 3, "wits": 4, "will": 3}
-		w.chars[i].Skills = map[string]int{"awareness": 2}
 		if err := w.store.SaveCharacterState(ctx, w.game.ID, w.chars[i]); err != nil {
 			t.Fatal(err)
 		}
 	}
+	return w
+}
+
+// TestResolve_Interpreter: заявки раунда уходят в интерпретатор одним вызовом с ролью и раундом; свободное
+// испытание из ответа модели разрешается движком; при сбое модели — разбор кодом, раунд публикуется.
+func TestResolve_Interpreter(t *testing.T) {
+	t.Parallel()
+	w := towerWorld(t)
+	ctx := context.Background()
 	llm := &fakeLLM{}
 	w.svc.LLM = llm
 	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
@@ -476,7 +504,7 @@ func TestResolve_Interpreter(t *testing.T) {
 	 {"submission_id":%d,"character_id":%d,"action_type":"move","target":"Зал Серой башни","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}]}`,
 		sub1.ID, sub1.CharacterID, sub2.ID, sub2.CharacterID)
 	w.tick(t, 10*time.Minute)
-	if len(llm.calls) != 1 || llm.calls[0].Role != model.RoleInterpreter || llm.calls[0].Round == nil || llm.calls[0].Game == nil || llm.calls[0].PromptVersion == "" {
+	if calls := llm.byRole(model.RoleInterpreter); len(calls) != 1 || calls[0].Round == nil || calls[0].Game == nil || calls[0].PromptVersion == "" {
 		t.Fatalf("llm calls = %+v", llm.calls)
 	}
 	info, _ := w.svc.Info(ctx, w.game)
@@ -506,5 +534,108 @@ func TestResolve_Interpreter(t *testing.T) {
 	actions, _ = w.store.ListResolvedActions(ctx, w.game.ID, info.Last.ID)
 	if info.Last.Status != model.RoundPublished || len(actions) != 1 || actions[0].Intent.ActionType != model.ActionWait || len(actions[0].Intent.Ambiguities) == 0 {
 		t.Fatalf("fallback round = %+v / %+v", info.Last.Status, actions)
+	}
+}
+
+// TestResolve_Narrator: после движка рассказчик получает один вызов с ролью и раундом; хроника в группу состоит из
+// его текста по сценам и подходов следующего раунда с шансами, посчитанными кодом; ответ сохранён у раунда и уходит
+// выжимкой в следующий вызов; длинная хроника делится на части; при сбое рассказчика — шаблонная хроника, раунд опубликован.
+func TestResolve_Narrator(t *testing.T) {
+	t.Parallel()
+	w := towerWorld(t)
+	ctx := context.Background()
+	llm := &fakeLLM{}
+	w.svc.LLM = llm
+	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
+		t.Fatal(err)
+	}
+	w.reload(t)
+	_, sub, err := w.svc.Submit(ctx, w.game, w.chars[0], "иду к башне")
+	if err != nil {
+		t.Fatal(err)
+	}
+	llm.json = fmt.Sprintf(`{"intents":[{"submission_id":%d,"character_id":%d,"action_type":"move","target":"Зал Серой башни","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}]}`, sub.ID, sub.CharacterID)
+	w.tick(t, 10*time.Minute)
+	info, _ := w.svc.Info(ctx, w.game)
+	r1 := *info.Last
+	locs, _ := w.store.ListLocations(ctx, w.game.ID)
+	byName := map[string]model.LocationID{}
+	for _, l := range locs {
+		byName[l.Name] = l.ID
+	}
+	events, _ := w.store.ListEvents(ctx, w.game.ID, r1.ID)
+	if len(events) != 2 {
+		t.Fatalf("events = %+v", events)
+	}
+	// Рассказчик вызван и упал (ответа нет): шаблонная хроника с подходами, раунд опубликован, хроника у раунда пуста.
+	calls := llm.byRole(model.RoleNarrator)
+	if len(calls) != 1 || calls[0].Round == nil || *calls[0].Round != r1.ID || calls[0].PromptVersion != "narrator/v1" {
+		t.Fatalf("narrator calls = %+v", calls)
+	}
+	if r1.Status != model.RoundPublished || r1.Narration != nil {
+		t.Fatalf("round after narrator failure = %+v", r1)
+	}
+	msgs := w.outbox(t)
+	fallback := msgs[2]
+	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "«Мир» — раунд 1 — итоги\n• Элис уходит из «Рыночная площадь» в «Зал Серой башни»") {
+		t.Fatalf("fallback chronicle = %q", fallback.Text)
+	}
+	if !strings.Contains(fallback.Text, "— Рыночная площадь (Боб, Кэт) —\nВарианты: прочитать (Разум/внимательность, сложность 1: Боб 67 %, Кэт 67 %).") {
+		t.Fatalf("fallback options = %q", fallback.Text)
+	}
+	// Второй раунд: рассказчик отвечает; в его контексте сцены, события и выжимки нет (прошлой хроники не было).
+	w.reload(t)
+	_, sub, err = w.svc.Submit(ctx, w.game, w.chars[1], "читаю доску")
+	if err != nil {
+		t.Fatal(err)
+	}
+	llm.json = fmt.Sprintf(`{"intents":[{"submission_id":%d,"character_id":%d,"action_type":"explore","target":"notice_board","approach_idx":0,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}]}`, sub.ID, sub.CharacterID)
+	square, hall := byName["Рыночная площадь"], byName["Зал Серой башни"]
+	llm.narr = fmt.Sprintf(`{"chronicle":"Осень в Мире густеет.","scenes":[{"location_id":%d,"party":"Площадь","text":"Боб читает объявление.","event_seqs":[3]},{"location_id":%d,"party":"Башня","text":"Элис ждёт в зале.","event_seqs":[]}]}`, square, hall)
+	w.tick(t, 10*time.Minute)
+	info, _ = w.svc.Info(ctx, w.game)
+	r2 := *info.Last
+	if r2.Narration == nil || r2.Narration.PromptVersion != "narrator/v1" || len(r2.Narration.Scenes) != 2 || r2.Narration.Chronicle != "Осень в Мире густеет." {
+		t.Fatalf("narration = %+v", r2.Narration)
+	}
+	input := llm.inputs[len(llm.inputs)-1]
+	if !strings.Contains(input, `"round_no":2`) || !strings.Contains(input, `"actor":"Боб"`) || !strings.Contains(input, `"previous":[]`) || !strings.Contains(input, `"tone":"Маленький город`) {
+		t.Fatalf("narrator input = %s", input)
+	}
+	var chron model.OutboxMessage
+	for _, m := range w.outbox(t) {
+		if m.Kind == model.OutboxChronicle && m.RoundID != nil && *m.RoundID == r2.ID {
+			chron = m
+		}
+	}
+	if chron.ID == 0 {
+		t.Fatalf("chronicle message for round 2 missing: %+v", w.outbox(t))
+	}
+	want := "«Мир» — раунд 2\nОсень в Мире густеет.\n\n— Площадь —\nБоб читает объявление.\nВарианты: прочитать (Разум/внимательность, сложность 1: Боб 67 %, Кэт 67 %).\n\n— Башня —\nЭлис ждёт в зале."
+	if chron.Text != want {
+		t.Fatalf("chronicle text = %q\nwant %q", chron.Text, want)
+	}
+	// Третий раунд: выжимка прошлой хроники в контексте; длинный ответ делится на части с подписью продолжения.
+	w.reload(t)
+	if _, sub, err = w.svc.Submit(ctx, w.game, w.chars[1], "жду"); err != nil {
+		t.Fatal(err)
+	}
+	llm.json = fmt.Sprintf(`{"intents":[{"submission_id":%d,"character_id":%d,"action_type":"wait","target":"","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}]}`, sub.ID, sub.CharacterID)
+	long := strings.Repeat("Ветер гонит листья по площади. ", 200)
+	llm.narr = fmt.Sprintf(`{"chronicle":"Долгий вечер.","scenes":[{"location_id":%d,"party":"Площадь","text":"%s","event_seqs":[]},{"location_id":%d,"party":"Башня","text":"Тихо.","event_seqs":[]}]}`, square, long, hall)
+	w.tick(t, 10*time.Minute)
+	input = llm.inputs[len(llm.inputs)-1]
+	if !strings.Contains(input, `"previous":["Осень в Мире густеет."]`) {
+		t.Fatalf("previous digest missing: %s", input)
+	}
+	info, _ = w.svc.Info(ctx, w.game)
+	var parts []model.OutboxMessage
+	for _, m := range w.outbox(t) {
+		if m.Kind == model.OutboxChronicle && m.RoundID != nil && *m.RoundID == info.Last.ID {
+			parts = append(parts, m)
+		}
+	}
+	if len(parts) != 3 || parts[1].Part != 2 || !strings.HasPrefix(parts[1].Text, "«Мир» — раунд 3 (продолжение)\n") || len([]rune(parts[0].Text)) > partLimit || !strings.Contains(parts[2].Text, "— Башня —\nТихо.") {
+		t.Fatalf("parts = %d: %+v", len(parts), parts)
 	}
 }
