@@ -9,7 +9,7 @@ argument-hint: "[rule <тема> | scenario <имя> | questions]"
 ## Источники
 
 - Концепт §4, §5, §7, §14 и риски §1–3, §6, §9 (`docs/concept/`): требования, гипотезы, открытые вопросы.
-- `docs/game/`: `rules.md` (индекс правил), `character.md` (персонаж), `checks.md` (испытания), `game-modes.md`, `game-formats.md`, `actions.md` (каталог), `round.md` (цикл раунда), `scenarios.md` (эталоны), `open-questions.md` (вопросы руководителю).
+- `docs/game/`: `rules.md` (индекс правил), `character.md` (персонаж), `checks.md` (испытания), `game-modes.md`, `game-formats.md`, `factions.md`, `parties.md`, `models/` (сущности как данные с JSON), `actions.md` (каталог), `round.md` (цикл раунда), `scenarios.md` (эталоны), `open-questions.md` (вопросы руководителю).
 
 ## Границы решений
 

@@ -45,7 +45,7 @@ users ──< chats (owner_user_id)
 | `telegram_updates` | дедупликация входящих | `update_id`, `received_at` | `update_id` |
 | `llm_profiles` | настройки провайдера LLM | `name`, `provider`, `model_interpreter`, `model_narrator`, `params jsonb`, `enabled` | `name` |
 | `genres` | справочник жанров с шаблонами | `code`, `name`, `character_model_id` → `character_models`, `template jsonb` (тон, стартовая сцена, архетипы, имена фракций по умолчанию, стартовые локации), `enabled` | `code` |
-| `character_models` | модель персонажа: какие характеристики и навыки существуют | `code`, `rules_version`, `definition jsonb` (attributes[], skills[], archetypes[], стартовые очки, формула HP) | `code` |
+| `character_models` | модель персонажа ([модели](../game/models/README.md)) | `code`, `rules_version`, `definition jsonb` (attributes[], skills[], archetypes[], стартовые очки, формула HP) | `code` |
 | `app_settings` | глобальные настройки бота | `key`, `value` (в т.ч. `default_llm_profile`) | `key` |
 
 ## Таблицы игры
@@ -54,8 +54,8 @@ users ──< chats (owner_user_id)
 |---|---|---|---|
 | `games` | настройки и статус мира | `chat_id` → `chats`, `genre_id` → `genres`, `format` (global/novel/series, по умолчанию `novel`; этап 1 только он), `mode` (mechanics/balanced/narrative, по умолчанию `balanced`; этап 1 только он), `title`, `status` (draft/active/paused/finished; список расширяется по ходу разработки), `timezone`, `play_from time` и `play_to time` (игровое окно в сутках, оба nullable), `round_minutes` (10–60, по умолчанию 15), `settings jsonb` (ends_at, max_rounds, max_players, max_active_locations, max_parties = 3, max_active_goals, goal_cooldown_rounds), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
 | `game_members` | участие пользователей | `game_id`, `user_id` → `users`, `role` (admin/player), `status` (active/left/kicked), `joined_at` | `(game_id, user_id)` |
-| `factions` | стороны конфликта | `game_id`, `code` (good/evil/neutral), `name`, `description` | `(game_id, code)` |
-| `parties` | группы персонажей для общей истории | `game_id`, `season_id`, `name`, `status` (active/disbanded) | `(season_id, name)`; число активных групп сезона ≤ `settings.max_parties` |
+| `factions` | стороны конфликта ([модель](../game/models/factions.md)) | `game_id`, `code` (good/evil/neutral), `title`, `description`, `tone`, `relations jsonb` | `(game_id, code)` |
+| `parties` | группы персонажей для общей истории ([модель](../game/models/party.md)) | `game_id`, `season_id`, `name`, `status` (active/disbanded), `leader_character_id`, `location_id`, `motto`, `summary` | `(season_id, name)`; число активных групп сезона ≤ `settings.max_parties` |
 | `characters` | персонажи | `game_id`, `season_id` → `seasons`, `user_id`, `model_id` → `character_models`, `nickname`, `archetype`, `public_bio varchar(100)`, `secret_bio varchar(100)`, `status` (active/waiting/inactive), `missed_rounds`, `faction_id` → `factions`, `party_id` → `parties` (nullable), `hp`, `conditions jsonb`, `inventory jsonb`, `location_id`, `xp` | `(season_id, user_id)`; FK `(game_id, user_id)` → `game_members` |
 | `character_stats` | значения характеристик и навыков | `game_id`, `character_id`, `kind` (attribute/skill), `key` (из `character_models.definition`), `value` | `(character_id, kind, key)` |
 | `seasons` | сезоны сериала; у остальных типов единственный сезон 1 | `game_id`, `season_no`, `title`, `status` (active/finished), `started_at`, `finished_at` | `(game_id, season_no)` |
