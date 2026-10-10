@@ -48,6 +48,7 @@ argument-hint: "[status | map | extend <область>]"
 | Правило | `rules/llm.md` | `internal/adapter/llm/**`, `internal/service/{interpreter,narrator}/**`, `assets/prompts/**` |
 | Правило | `rules/telegram.md` | `internal/adapter/telegram/**`, `internal/app/bot/**` |
 | Правило | `rules/docs.md` | `docs/**`, `**/readme.md`, `README.md` |
+| Правило | `rules/guide.md` | `guide/**` — руководство игрока со стороны пользователя |
 | Правило | `rules/meta.md` | `.claude/**`, `CLAUDE.md` |
 
 ## Рабочий цикл задачи

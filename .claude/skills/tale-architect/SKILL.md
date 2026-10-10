@@ -8,7 +8,7 @@ argument-hint: "[adr <тема> | layout | review]"
 
 ## Источники
 
-- `docs/architecture/`: `layers.md` (слои, пакеты MVP, интерфейсы, транзакции), `overview.md`, `project-layout.md`, `data-model.md`, `round-pipeline.md`, `telegram-commands.md`; справочник реализованных команд `docs/commands/`.
+- `docs/architecture/`: `layers.md` (слои, пакеты MVP, интерфейсы, транзакции), `overview.md`, `project-layout.md`, `data-model.md`, `round-pipeline.md`, `telegram-commands.md`; руководство игрока по командам `guide/commands.md`.
 - `docs/dev/coding-rules.md`: стартовые правила программирования.
 - `docs/decisions/`: принятые ADR; `_template.md`.
 - [Обзор архитектуры](../../../docs/architecture/overview.md) — источник правды; риски §5, §7 (`docs/concept/`, не источник правды) — гипотезы для нереализованного: изоляция миров, идемпотентность, атомарность, приватность, наблюдаемость, бюджет.
