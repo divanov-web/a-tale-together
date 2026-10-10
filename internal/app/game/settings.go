@@ -99,8 +99,8 @@ func (s *Service) apply(ctx context.Context, g *model.Game, key, value string) e
 		g.GenreID = genre.ID
 	case "round_minutes":
 		n, err := strconv.Atoi(value)
-		if err != nil || n < 10 || n > 60 {
-			return fmt.Errorf("%w: длительность раунда от 10 до 60 минут", ErrBadValue)
+		if err != nil || n < s.MinRoundMinutes || n > model.MaxRoundMinutes {
+			return fmt.Errorf("%w: длительность раунда от %d до %d минут", ErrBadValue, s.MinRoundMinutes, model.MaxRoundMinutes)
 		}
 		g.RoundMinutes = n
 	case "timezone":

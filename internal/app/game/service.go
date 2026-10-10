@@ -77,11 +77,13 @@ type Service struct {
 	newCode func() string
 	// Defaults — настройки нового мира; `cmd` меняет их по окружению (кворум 1 в dev).
 	Defaults model.GameSettings
+	// MinRoundMinutes — нижняя граница `round_minutes` для `/set`; в dev `cmd` опускает её до минуты.
+	MinRoundMinutes int
 }
 
 // New собирает сервис игры.
 func New(store Store, rights Rights, clock Clock, logger *slog.Logger) *Service {
-	return &Service{store: store, rights: rights, clock: clock, logger: logger, newCode: joinCode, Defaults: model.DefaultGameSettings()}
+	return &Service{store: store, rights: rights, clock: clock, logger: logger, newCode: joinCode, Defaults: model.DefaultGameSettings(), MinRoundMinutes: model.MinRoundMinutes}
 }
 
 // DefaultGenre — код жанра для новой игры, пока жанр не выбран в настройках.

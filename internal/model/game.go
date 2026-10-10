@@ -56,6 +56,9 @@ const (
 	MaxActiveLocationsDefault = 4  // то же: лимит активных локаций мира
 	MinRoundAnswersDefault    = 2
 	MinRoundAnswersDev        = 1
+	MinRoundMinutes           = 10 // продуктовый минимум длительности раунда
+	MinRoundMinutesDev        = 1  // песочница: короткие раунды для прогонов
+	MaxRoundMinutes           = 60
 )
 
 // DefaultGameSettings — настройки нового мира по умолчанию.

@@ -84,6 +84,7 @@ func run() error {
 	games := game.New(store, chats, clock, logger)
 	if cfg.AppEnv == "dev" {
 		games.Defaults.MinRoundAnswers = model.MinRoundAnswersDev // кворум 1 на время разработки
+		games.MinRoundMinutes = model.MinRoundMinutesDev          // короткие раунды для прогонов в песочнице
 	}
 	rounds := round.New(store, games, clock, logger)
 	rounds.AnnounceSkipped = cfg.AppEnv == "dev" // на время разработки пропуск раунда анонсируется в группу
