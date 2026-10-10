@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"taletogether/internal/app/round"
 	"taletogether/internal/model"
@@ -37,6 +38,107 @@ func (s *Service) gamePause(ctx context.Context, req *request) error {
 		return s.reply(ctx, req.in, fmt.Sprintf("Игра «%s» на паузе. Возобновить: /pause", g.Title))
 	}
 	return s.reply(ctx, req.in, fmt.Sprintf("Игра «%s» возобновлена.", g.Title))
+}
+
+// gameFinish — /finish в группе: открытый раунд закрывается и разрешается при наличии заявок, затем финальная хроника.
+func (s *Service) gameFinish(ctx context.Context, req *request) error {
+	g, err := s.games.OfChat(ctx, req.chat.ID)
+	if err != nil {
+		return err
+	}
+	if g, err = s.rounds.Finish(ctx, g, req.user.ID); err != nil {
+		return err
+	}
+	return s.reply(ctx, req.in, fmt.Sprintf("Игра «%s» завершена. Финальная хроника отправлена в группу.", g.Title))
+}
+
+// gameReset — /reset в группе (только dev): игра в черновик, ход игры удалён, персонажи на старте.
+func (s *Service) gameReset(ctx context.Context, req *request) error {
+	g, err := s.games.OfChat(ctx, req.chat.ID)
+	if err != nil {
+		return err
+	}
+	if g, err = s.rounds.Reset(ctx, g, req.user.ID); err != nil {
+		return err
+	}
+	return s.reply(ctx, req.in, fmt.Sprintf("Игра «%s» сброшена в черновик: раунды, события и сообщения удалены, персонажи на стартовой локации. Запуск: /begin.", g.Title))
+}
+
+// roundDetail — /round [номер] в группе (только dev): карточка раунда для разбора: статус, попытки, заявки с итогами, метрики.
+func (s *Service) roundDetail(ctx context.Context, req *request) error {
+	arg, _ := splitArgs(req.in.Args)
+	no := 0
+	if arg != "" {
+		n, err := strconv.Atoi(arg)
+		if err != nil || n < 1 {
+			return s.reply(ctx, req.in, "Формат: /round [номер раунда]")
+		}
+		no = n
+	}
+	g, err := s.games.OfChat(ctx, req.chat.ID)
+	if err != nil {
+		return err
+	}
+	d, err := s.rounds.Detail(ctx, g, no)
+	if err != nil {
+		return err
+	}
+	return s.reply(ctx, req.in, roundCard(g, d, s.clock.Now()))
+}
+
+// roundCard — текст карточки раунда.
+func roundCard(g model.Game, d round.Detail, now time.Time) string {
+	r := d.Round
+	var b strings.Builder
+	fmt.Fprintf(&b, "Раунд %d — %s", r.RoundNo, r.Status)
+	if r.Attempts > 0 {
+		fmt.Fprintf(&b, ", неудачных попыток %d", r.Attempts)
+	}
+	fmt.Fprintf(&b, "\nОткрыт %s, дедлайн %s", round.FormatTime(g, r.OpensAt, now), round.FormatTime(g, r.DeadlineAt, now))
+	if r.ClosedAt != nil {
+		fmt.Fprintf(&b, ", закрыт %s", round.FormatTime(g, *r.ClosedAt, now))
+	}
+	if r.SkipReason != "" {
+		b.WriteString("\nПричина: " + r.SkipReason)
+	}
+	fmt.Fprintf(&b, "\nЗаявок: %d; итогов: %d; событий: %d", len(d.Submissions), len(d.Results), d.Events)
+	if m := r.Metrics; m != nil {
+		fmt.Fprintf(&b, "\nМетрики (попытка %d): всего %d мс — заморозка %d, интерпретатор %d, движок %d, рассказчик %d, публикация %d", m.Attempt, m.TotalMS, m.FreezeMS, m.InterpretMS, m.EngineMS, m.NarrateMS, m.PublishMS)
+		fmt.Fprintf(&b, "\nLLM: вызовов %d, токены %d/%d; запасной разбор: %s; шаблонная хроника: %s; безопасных толкований %d, дописано событий %d, замечаний %d",
+			m.LLMCalls, m.TokensIn, m.TokensOut, yesNo(m.InterpreterFallback), yesNo(m.NarratorFallback), m.Safe, m.Patched, m.Issues)
+		fmt.Fprintf(&b, "\nИтоги: resolved %d, rejected %d, ambiguous %d; хроника частей %d, уведомлений %d", m.Resolved, m.Rejected, m.Ambiguous, m.ChronicleParts, m.Notices)
+	}
+	results := map[model.SubmissionID]model.ActionResult{}
+	for _, res := range d.Results {
+		results[res.SubmissionID] = res
+	}
+	for _, sub := range d.Submissions {
+		fmt.Fprintf(&b, "\n• %s (%s): «%s»", d.Names[sub.CharacterID], sub.Status, truncate(sub.RawText, 60))
+		if res, ok := results[sub.ID]; ok {
+			fmt.Fprintf(&b, " → %s %s", res.Status, res.Intent.ActionType)
+			if res.Summary != "" {
+				b.WriteString(": " + res.Summary)
+			} else if res.Reason != "" {
+				b.WriteString(": " + res.Reason)
+			}
+		}
+	}
+	return b.String()
+}
+
+func yesNo(v bool) string {
+	if v {
+		return "да"
+	}
+	return "нет"
+}
+
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // roundNext — /next в группе (только dev): закрыть текущий раунд и открыть следующий.
@@ -118,6 +220,8 @@ func (s *Service) roundLines(ctx context.Context, g model.Game) (current, last, 
 		switch info.Last.Status {
 		case model.RoundSkipped:
 			last = fmt.Sprintf("%d пропущен: %s", info.Last.RoundNo, info.Last.SkipReason)
+		case model.RoundFailed:
+			last = fmt.Sprintf("%d не разрешён: %s", info.Last.RoundNo, info.Last.SkipReason)
 		case model.RoundFrozen, model.RoundResolving, model.RoundResolved, model.RoundPublished:
 			n := 0
 			if info.Last.Snapshot != nil {

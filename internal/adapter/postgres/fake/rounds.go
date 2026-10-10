@@ -3,6 +3,7 @@ package fake
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -57,8 +58,35 @@ func (s *Store) UpdateRound(_ context.Context, r model.Round) error {
 	if !ok || ex.GameID != r.GameID {
 		return model.ErrNotFound
 	}
-	ex.Status, ex.DeadlineAt, ex.ClosedAt, ex.Seed, ex.Snapshot, ex.Narration, ex.SkipReason, ex.UpdatedAt = r.Status, r.DeadlineAt, r.ClosedAt, r.Seed, r.Snapshot, r.Narration, r.SkipReason, s.now()
+	ex.Status, ex.DeadlineAt, ex.ClosedAt, ex.Seed, ex.Snapshot, ex.Narration, ex.SkipReason, ex.Attempts, ex.Metrics, ex.UpdatedAt = r.Status, r.DeadlineAt, r.ClosedAt, r.Seed, r.Snapshot, r.Narration, r.SkipReason, r.Attempts, r.Metrics, s.now()
 	s.rounds[r.ID] = ex
+	return nil
+}
+
+// DeleteGameProgress — см. postgres.Store.
+func (s *Store) DeleteGameProgress(_ context.Context, game model.GameID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, r := range s.rounds {
+		if r.GameID == game {
+			delete(s.rounds, id)
+		}
+	}
+	for id, sub := range s.subs {
+		if sub.GameID == game {
+			delete(s.subs, id)
+		}
+	}
+	s.outbox = slices.DeleteFunc(s.outbox, func(m model.OutboxMessage) bool { return m.GameID == game })
+	s.events = slices.DeleteFunc(s.events, func(ev model.Event) bool { return ev.GameID == game })
+	var resolved []model.ActionResult
+	var keys []resolvedKey
+	for i, r := range s.resolved {
+		if s.resolvedRounds[i].game != game {
+			resolved, keys = append(resolved, r), append(keys, s.resolvedRounds[i])
+		}
+	}
+	s.resolved, s.resolvedRounds = resolved, keys
 	return nil
 }
 

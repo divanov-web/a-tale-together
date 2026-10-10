@@ -64,6 +64,7 @@ func (s *Service) registry() []command {
 		{name: "create", contexts: ctxAny, description: "создать персонажа в текущей игре", groupDesc: "создать мир в этом чате", run: s.create, needsChat: true},
 		{name: "begin", contexts: ctxGroup, description: "начать кампанию: стартовая сцена и первый раунд", run: s.gameBegin, needsChat: true},
 		{name: "pause", contexts: ctxGroup, description: "пауза и возобновление игры", run: s.gamePause, needsChat: true},
+		{name: "finish", contexts: ctxGroup, description: "завершить игру: последний раунд и финальная хроника", run: s.gameFinish, needsChat: true},
 		{name: "status", contexts: ctxAny, description: "состояние игры, раунд и причина простоя", run: s.gameStatus, needsChat: true},
 		{name: "act", contexts: ctxPrivate, description: "<текст> — заявка на текущий раунд", run: s.act},
 		{name: "set", contexts: ctxPrivate, description: "<параметр> <значение> — настройка игры", run: s.gameSet},
@@ -77,7 +78,9 @@ func (s *Service) registry() []command {
 	}
 	if s.settings.Env == "dev" {
 		cmds = append(cmds, command{name: "next", contexts: ctxGroup, description: "закрыть раунд и открыть следующий (только dev)", run: s.roundNext, needsChat: true},
-			command{name: "replay", contexts: ctxGroup, description: "<номер> — воспроизвести раунд по снимку и seed (только dev)", run: s.roundReplay, needsChat: true})
+			command{name: "replay", contexts: ctxGroup, description: "<номер> — воспроизвести раунд по снимку и seed (только dev)", run: s.roundReplay, needsChat: true},
+			command{name: "round", contexts: ctxGroup, description: "[номер] — карточка раунда: заявки, итоги, попытки, метрики (только dev)", run: s.roundDetail, needsChat: true},
+			command{name: "reset", contexts: ctxGroup, description: "сбросить игру в черновик, персонажи остаются (только dev)", run: s.gameReset, needsChat: true})
 	}
 	return cmds
 }

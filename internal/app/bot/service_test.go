@@ -585,3 +585,55 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 	}
 	mustContain(t, last.Text, "отклонена", "действие «красться» появится в пункте плана 12")
 }
+
+func TestRound_FinishResetAndDetail(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
+	mustContain(t, h.send(owner, private(owner), "/set min_answers 2"), "Сохранено")
+	h.joinAndCreate(alice, code, "1", "Элис", "1", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "2", "1", "-", "-")
+	mustContain(t, h.send(owner, groupChat, "/round"), "Раунда с таким номером нет")
+	mustContain(t, h.send(owner, groupChat, "/finish"), "Игра не запущена")
+	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята: раунд 1")
+	mustContain(t, h.send(owner, groupChat, "/round"), "Раунд 1 — open", "Заявок: 1; итогов: 0; событий: 0", "• Элис (pending): «идти к башне»")
+	mustContain(t, h.send(owner, groupChat, "/round x"), "Формат: /round")
+	mustContain(t, h.send(alice, groupChat, "/finish"), "Нет прав")
+	// Завершение с открытым раундом: одна заявка разрешается без кворума, финальная хроника в группе.
+	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
+	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
+	mustContain(t, h.send(owner, groupChat, "/finish"), "Игра «Песочница» завершена")
+	msgs, _ := h.store.ListOutbox(context.Background(), g.ID)
+	var texts []string
+	for _, m := range msgs {
+		if m.TelegramChatID == groupChat {
+			texts = append(texts, m.Text)
+		}
+	}
+	mustContain(t, texts[2], "раунд 1 — итоги", "Элис уходит")
+	mustContain(t, texts[len(texts)-1], "«Песочница» — история завершена", "Игру завершил администратор. Раундов сыграно: 1.", "• Элис — ", "Зал Серой башни")
+	// Завершённая игра перестаёт быть игрой чата и текущей игрой игрока: ответы «игры нет», новая игра создаётся заново.
+	mustContain(t, h.send(alice, private(alice), "/act ждать"), "Игры нет")
+	mustContain(t, h.send(owner, groupChat, "/finish"), "Игры нет")
+	mustContain(t, h.send(owner, groupChat, "/round 1"), "Игры нет")
+	// Сброс в dev: игра в черновик, персонажи на месте, /begin работает снова.
+	h.clock.advance(time.Minute) // лимит частоты команд владельца
+	code2 := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
+	h.joinAndCreate(alice, code2, "1", "Элис", "1", "1", "-", "-")
+	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
+	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
+	mustContain(t, h.send(alice, private(alice), "/character"), "локация: Зал Серой башни")
+	mustContain(t, h.send(owner, groupChat, "/round 1"), "Раунд 1 — published", "Метрики (попытка 1)", "запасной разбор: да", "• Элис (frozen): «идти к башне» → resolved move: переходит")
+	h.clock.advance(time.Minute)
+	mustContain(t, h.send(owner, groupChat, "/reset"), "сброшена в черновик")
+	mustContain(t, h.send(alice, private(alice), "/character"), "локация: Рыночная площадь")
+	mustContain(t, h.send(alice, groupChat, "/status"), "черновик")
+	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 1")
+}

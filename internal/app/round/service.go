@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -50,6 +51,7 @@ type Store interface {
 	MoveSubmissions(ctx context.Context, game model.GameID, from, to model.RoundID) error
 	SetSubmissionsStatus(ctx context.Context, game model.GameID, round model.RoundID, status model.SubmissionStatus) error
 	EnqueueOutbox(ctx context.Context, m model.OutboxMessage) error
+	DeleteGameProgress(ctx context.Context, game model.GameID) error
 }
 
 // LLM — вызов модели с учётом в `llm_runs`; реализует `app/llm.Service`. Пусто — заявки разбираются кодом, хроника шаблоном.
@@ -104,19 +106,21 @@ type Service struct {
 	seed func() int64
 	// Journal — журнал чатов; nil — выключен.
 	Journal Journal
+	// MaxAttempts — попыток закрыть раунд до статуса `failed` (ADR-0013); по умолчанию model.MaxRoundAttempts.
+	MaxAttempts int
 }
 
-// journal пишет событие раунда в журнал группы игры; без журнала ничего не делает.
+// journal пишет событие раунда в журнал группы игры с номером попытки; без журнала ничего не делает.
 func (s *Service) journal(ctx context.Context, g model.Game, chat model.TelegramChatID, r model.Round, event string, data any) {
 	if s.Journal == nil {
 		return
 	}
-	s.Journal.Write(ctx, model.ChatLogRecord{TS: s.clock.Now(), Kind: model.ChatLogRound, Chat: chat, GameID: g.ID, RoundID: r.ID, RoundNo: r.RoundNo, Event: event, Data: data})
+	s.Journal.Write(ctx, model.ChatLogRecord{TS: s.clock.Now(), Kind: model.ChatLogRound, Chat: chat, GameID: g.ID, RoundID: r.ID, RoundNo: r.RoundNo, Attempt: r.Attempts + 1, Event: event, Data: data})
 }
 
 // New собирает сервис раунда.
 func New(store Store, rights Rights, clock Clock, logger *slog.Logger) *Service {
-	return &Service{store: store, rights: rights, clock: clock, logger: logger, seed: rand.Int64}
+	return &Service{store: store, rights: rights, clock: clock, logger: logger, seed: rand.Int64, MaxAttempts: model.MaxRoundAttempts}
 }
 
 // Begin запускает кампанию: статус `active`, стартовая сцена из шаблона жанра в outbox, первый раунд
@@ -382,7 +386,9 @@ func (s *Service) Info(ctx context.Context, game model.Game) (Info, error) {
 }
 
 // Tick — шаг планировщика: закрыть раунды с истёкшим дедлайном и открыть следующие у игр, чьё `next_round_at` наступило.
-// Каждая игра в своей транзакции под блокировкой строки; ошибка одной игры не останавливает остальные.
+// Каждая игра в своей транзакции под блокировкой строки; ошибка или паника одной игры не останавливает остальные.
+// Откат транзакции закрытия считается неудачной попыткой раунда (ADR-0013): после MaxAttempts раунд получает `failed`,
+// заявки переносятся в следующий.
 func (s *Service) Tick(ctx context.Context, now time.Time) error {
 	ids, err := s.store.DueGameIDs(ctx, now)
 	if err != nil {
@@ -390,25 +396,82 @@ func (s *Service) Tick(ctx context.Context, now time.Time) error {
 	}
 	var errs []error
 	for _, id := range ids {
-		err := s.store.InTx(ctx, func(ctx context.Context) error {
-			g, err := s.store.LockGame(ctx, id)
-			if errors.Is(err, model.ErrNotFound) {
-				return nil // занята другим воркером
-			}
-			if err != nil {
-				return err
-			}
-			if g.Status != model.GameActive || g.NextRoundAt == nil || g.NextRoundAt.After(now) {
-				return nil
-			}
-			return s.advance(ctx, &g, now, false)
-		})
-		if err != nil {
+		if err := s.tickGame(ctx, id, now); err != nil {
 			s.logger.Error("round tick failed", slog.Int64("game_id", int64(id)), slog.Any("err", err))
 			errs = append(errs, fmt.Errorf("game %d: %w", id, err))
+			if noteErr := s.noteFailure(ctx, id, now, err); noteErr != nil {
+				s.logger.Error("round failure not recorded", slog.Int64("game_id", int64(id)), slog.Any("err", noteErr))
+			}
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// tickGame продвигает одну игру в транзакции; паника конвейера превращается в ошибку, транзакция откатывается.
+func (s *Service) tickGame(ctx context.Context, id model.GameID, now time.Time) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return s.store.InTx(ctx, func(ctx context.Context) error {
+		g, err := s.store.LockGame(ctx, id)
+		if errors.Is(err, model.ErrNotFound) {
+			return nil // занята другим воркером
+		}
+		if err != nil {
+			return err
+		}
+		if g.Status != model.GameActive || g.NextRoundAt == nil || g.NextRoundAt.After(now) {
+			return nil
+		}
+		return s.advance(ctx, &g, now, false)
+	})
+}
+
+// noteFailure в отдельной транзакции увеличивает счётчик попыток открытого раунда с истёкшим дедлайном;
+// при MaxAttempts раунд закрывается со статусом `failed`, группа получает сообщение, заявки переносятся в следующий раунд.
+func (s *Service) noteFailure(ctx context.Context, id model.GameID, now time.Time, cause error) error {
+	return s.store.InTx(ctx, func(ctx context.Context) error {
+		g, err := s.store.LockGame(ctx, id)
+		if errors.Is(err, model.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		open, err := s.store.OpenRound(ctx, g.ID)
+		if errors.Is(err, model.ErrNotFound) || (err == nil && open.DeadlineAt.After(now)) {
+			return nil // сбой не относится к закрытию раунда
+		}
+		if err != nil {
+			return err
+		}
+		chat, err := s.store.GetChat(ctx, g.ChatID)
+		if err != nil {
+			return err
+		}
+		open.Attempts++
+		if open.Attempts < s.MaxAttempts {
+			if err := s.store.UpdateRound(ctx, open); err != nil {
+				return err
+			}
+			s.journal(ctx, g, chat.TelegramChatID, open, "attempt_failed", map[string]any{"attempt": open.Attempts, "error": cause.Error()})
+			return nil
+		}
+		open.Status = model.RoundFailed
+		open.ClosedAt = &now
+		open.SkipReason = "сбой разрешения: " + truncateText(cause.Error(), 200)
+		if err := s.store.UpdateRound(ctx, open); err != nil {
+			return err
+		}
+		s.logger.Error("round failed", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(open.ID)), slog.Int("attempts", open.Attempts))
+		s.journal(ctx, g, chat.TelegramChatID, open, "failed", map[string]any{"attempts": open.Attempts, "error": cause.Error()})
+		if err := s.enqueue(ctx, g, chat, &open.ID, model.OutboxRoundClosed, roundFailedText(g, open)); err != nil {
+			return err
+		}
+		return s.afterClose(ctx, &g, chat, open.RoundNo, false)
+	})
 }
 
 // advance закрывает открытый раунд, если дедлайн прошёл, и открывает следующий; force игнорирует игровое окно.
@@ -417,6 +480,7 @@ func (s *Service) advance(ctx context.Context, g *model.Game, now time.Time, for
 	if err != nil {
 		return err
 	}
+	closed := 0 // номер последнего закрытого раунда для границ рассказа
 	open, err := s.store.OpenRound(ctx, g.ID)
 	switch {
 	case err == nil:
@@ -424,27 +488,61 @@ func (s *Service) advance(ctx context.Context, g *model.Game, now time.Time, for
 			g.NextRoundAt = &open.DeadlineAt
 			return s.store.UpdateGame(ctx, *g)
 		}
-		if err := s.close(ctx, *g, chat, open, now); err != nil {
+		if err := s.close(ctx, *g, chat, open, now, quorum(*g)); err != nil {
 			return err
 		}
-	case !errors.Is(err, model.ErrNotFound):
+		closed = open.RoundNo
+	case errors.Is(err, model.ErrNotFound):
+		last, err := s.store.LastRound(ctx, g.ID)
+		if err != nil && !errors.Is(err, model.ErrNotFound) {
+			return err
+		}
+		closed = last.RoundNo
+	default:
 		return err
 	}
-	_, err = s.openNext(ctx, g, chat, now, force)
+	return s.afterClose(ctx, g, chat, closed, force)
+}
+
+// afterClose открывает следующий раунд от текущего момента (игроки получают полный раунд после долгого разрешения)
+// или завершает игру по границе рассказа (`max_rounds`, `ends_at`).
+func (s *Service) afterClose(ctx context.Context, g *model.Game, chat model.Chat, closed int, force bool) error {
+	now := s.clock.Now()
+	if reason := boundary(*g, closed, now); reason != "" {
+		return s.finish(ctx, g, chat, now, closed, reason)
+	}
+	_, err := s.openNext(ctx, g, chat, now, force)
 	return err
 }
 
-// close замораживает раунд (снимок, seed, статусы персонажей по пропускам) или пропускает его без кворума.
-func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r model.Round, now time.Time) error {
+// boundary — причина завершения игры по границам рассказа после раунда closed; пусто, если игра продолжается.
+func boundary(g model.Game, closed int, now time.Time) string {
+	if g.Settings.MaxRounds > 0 && closed >= g.Settings.MaxRounds {
+		return fmt.Sprintf("сыграно %d раундов из %d", closed, g.Settings.MaxRounds)
+	}
+	if g.Settings.EndsAt != nil && !now.Before(*g.Settings.EndsAt) {
+		return "наступила дата окончания " + g.Settings.EndsAt.In(location(g.Timezone)).Format("02.01.2006")
+	}
+	return ""
+}
+
+// quorum — минимум заявок для разрешения раунда, не меньше 1.
+func quorum(g model.Game) int {
+	if g.Settings.MinRoundAnswers < 1 {
+		return 1
+	}
+	return g.Settings.MinRoundAnswers
+}
+
+// close замораживает раунд (снимок, seed, статусы персонажей по пропускам) или пропускает его без кворума;
+// затем разрешает в той же транзакции. Длительность шагов попадает в метрики раунда.
+func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r model.Round, now time.Time, quorum int) error {
+	started := s.clock.Now()
 	subs, err := s.store.ListSubmissions(ctx, g.ID, r.ID)
 	if err != nil {
 		return err
 	}
 	r.ClosedAt = &now
-	quorum := g.Settings.MinRoundAnswers
-	if quorum < 1 {
-		quorum = 1
-	}
 	if len(subs) < quorum {
 		r.Status = model.RoundSkipped
 		r.SkipReason = fmt.Sprintf("заявок %d из %d", len(subs), quorum)
@@ -514,7 +612,14 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 	}
 	s.logger.Info("round frozen", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("submissions", len(subs)))
 	s.journal(ctx, g, chat.TelegramChatID, r, "frozen", frozenData(r, chars, subs))
-	return s.resolve(ctx, g, chat, r, genre, cm.Definition, chars, now)
+	m := &model.RoundMetrics{Attempt: r.Attempts + 1, Submissions: len(subs), FreezeMS: s.clock.Now().Sub(started).Milliseconds()}
+	if err := s.resolve(ctx, g, chat, r, genre, cm.Definition, chars, now, m); err != nil {
+		return err
+	}
+	if d := time.Duration(m.TotalMS) * time.Millisecond; d > time.Duration(g.RoundMinutes)*time.Minute {
+		s.logger.Warn("round resolution exceeded round interval", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Duration("took", d))
+	}
+	return nil
 }
 
 // frozenData — содержимое записи журнала о заморозке: seed, заявки с никнеймами и статусы персонажей.
@@ -569,7 +674,7 @@ func (s *Service) openNext(ctx context.Context, g *model.Game, chat model.Chat, 
 		return false, err
 	}
 	carried := 0
-	if last.ID != 0 && last.Status == model.RoundSkipped {
+	if last.ID != 0 && (last.Status == model.RoundSkipped || last.Status == model.RoundFailed) {
 		pending, err := s.store.ListSubmissions(ctx, g.ID, last.ID)
 		if err != nil {
 			return false, err

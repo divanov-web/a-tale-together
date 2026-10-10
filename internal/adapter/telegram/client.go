@@ -77,12 +77,36 @@ func (c *Client) SendText(ctx context.Context, chat model.TelegramChatID, text s
 }
 
 // Send отправляет текст и возвращает идентификатор сообщения Telegram; используется воркером outbox.
+// Ошибки классифицируются для повторов (ADR-0013): окончательный отказ Telegram → `model.ErrSendRejected`,
+// 429 → `model.RetryAfterError`, остальное (сеть, 5xx, таймаут) — временная ошибка.
 func (c *Client) Send(ctx context.Context, chat model.TelegramChatID, text string) (int64, error) {
 	m, err := c.bot.SendMessage(ctx, &bot.SendMessageParams{ChatID: int64(chat), Text: text})
 	if err != nil {
-		return 0, fmt.Errorf("telegram.Send: chat %d: %w", chat, err)
+		return 0, fmt.Errorf("telegram.Send: chat %d: %w", chat, classify(err))
 	}
 	return int64(m.ID), nil
+}
+
+// classify сопоставляет ошибку библиотеки с сентинелами модели: отказы 400/401/403/404 и переезд чата — окончательные,
+// 429 — ожидание `retry_after` (без него минута).
+func classify(err error) error {
+	var tooMany *bot.TooManyRequestsError
+	if errors.As(err, &tooMany) {
+		after := time.Duration(tooMany.RetryAfter) * time.Second
+		if after <= 0 {
+			after = time.Minute
+		}
+		return &model.RetryAfterError{After: after, Err: err}
+	}
+	for _, permanent := range []error{bot.ErrorForbidden, bot.ErrorBadRequest, bot.ErrorNotFound, bot.ErrorUnauthorized} {
+		if errors.Is(err, permanent) {
+			return fmt.Errorf("%w: %w", model.ErrSendRejected, err)
+		}
+	}
+	if bot.IsMigrateError(err) {
+		return fmt.Errorf("%w: %w", model.ErrSendRejected, err)
+	}
+	return err
 }
 
 // IsChatAdmin сообщает, является ли пользователь создателем или администратором группы Telegram.

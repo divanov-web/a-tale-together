@@ -42,7 +42,7 @@ func TestJournal_RoundEvents(t *testing.T) {
 	llm.json = fmt.Sprintf(`{"intents":[{"submission_id":%d,"character_id":%d,"action_type":"move","target":"Зал Серой башни","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}]}`, sub.ID, sub.CharacterID)
 	llm.narr = `{"chronicle":"Вечер.","scenes":[{"location_id":2,"party":"Башня","text":"Элис входит в зал.","event_seqs":[1,2]}]}`
 	w.tick(t, 10*time.Minute)
-	if got := j.events(); got != "opened submission frozen interpreted narrated resolved published opened" {
+	if got := j.events(); got != "opened submission frozen interpreted narrated resolved published metrics opened" {
 		t.Fatalf("events = %q", got)
 	}
 	for _, r := range j.recs {
@@ -70,8 +70,11 @@ func TestJournal_RoundEvents(t *testing.T) {
 	if pd := j.recs[6].Data.(map[string]any); pd["chronicle_parts"] != 1 || pd["notices"] != 0 {
 		t.Fatalf("published data = %+v", pd)
 	}
-	if j.recs[7].RoundNo != 2 {
-		t.Fatalf("next round = %+v", j.recs[7])
+	if md, ok := j.recs[7].Data.(*model.RoundMetrics); !ok || md.Submissions != 1 || md.Resolved != 1 || md.LLMCalls < 2 || j.recs[7].Attempt != 1 {
+		t.Fatalf("metrics data = %+v", j.recs[7].Data)
+	}
+	if j.recs[8].RoundNo != 2 {
+		t.Fatalf("next round = %+v", j.recs[8])
 	}
 	// Без заявок раунд пропускается: запись с причиной, затем новый раунд.
 	j.recs = nil

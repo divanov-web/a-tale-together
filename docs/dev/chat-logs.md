@@ -10,16 +10,17 @@
 | `ts`, `kind`, `chat_id` | время, вид (`in`, `out`, `llm`, `round`, `error`), чат |
 | `update_id`, `duplicate`, `user`, `command`, `text` | входящее: update, повтор, автор (`id`, `username`, `name`), команда, текст |
 | `game_id`, `round_id`, `round_no` | игра и раунд; у входящих в личке — текущая игра игрока |
-| `event` | `in`: `my_chat_member`, `rate_limited`; `round`: `opened`, `submission`, `skipped`, `frozen`, `interpreted`, `narrated`, `resolved`, `published` |
+| `event` | `in`: `my_chat_member`, `rate_limited`; `round`: `opened`, `submission`, `skipped`, `frozen`, `interpreted`, `narrated`, `resolved`, `published`, `metrics`, `attempt_failed`, `failed`, `finished`, `reset` |
+| `attempt` (у `round`) | номер попытки закрытия раунда: записи прерванной попытки остаются в журнале, в БД фиксируется только успешная ([ADR-0013](../decisions/0013-round-resilience.md)) |
 | `outbox_id`, `outbox_kind`, `part`, `attempt`, `telegram_message_id`, `error` | исходящее outbox: попытка отправки; `out` без `outbox_id` — синхронный ответ на команду |
 | `llm` | `role`, `prompt_version`, `profile`, `provider`, `model`, `system`, `input`, `output`, `tokens_in`, `tokens_out`, `duration_ms` |
-| `data` | подробности события раунда: `opened` — `deadline_at`, `carried`; `submission` — персонаж и текст; `skipped` — `reason`; `frozen` — `seed`, заявки с никнеймами, статусы персонажей; `interpreted` — `intents`, `calls`, `safe` или `fallback` с `error`; `narrated` — `narration`, `calls`, `patched`, `issues` или `fallback`; `resolved` — `results`, `events`; `published` — `chronicle_parts`, `notices` |
+| `data` | подробности события раунда: `opened` — `deadline_at`, `carried`; `submission` — персонаж и текст; `skipped` — `reason`; `frozen` — `seed`, заявки с никнеймами, статусы персонажей; `interpreted` — `intents`, `calls`, `safe` или `fallback` с `error`; `narrated` — `narration`, `calls`, `patched`, `issues` или `fallback`; `resolved` — `results`, `events`; `published` — `chronicle_parts`, `notices`; `metrics` — `model.RoundMetrics` (миллисекунды шагов, вызовы и токены, запасные пути, статусы заявок); `attempt_failed` — `attempt`, `error` (откат транзакции закрытия); `failed` — `attempts`, `error` (раунд не разрешён, заявки перенесены); `finished` — `reason`, `rounds`; `reset` — `characters` |
 
 Где что искать: вызовы LLM и события раунда — в папке группы игры; `/act` игрока — `in` в его личке и `submission` в группе; уведомление о заявке — `out` с `outbox_kind: private` в личке; хроника — `out` с `outbox_kind: chronicle` по частям в группе.
 
 ## Разбор сбоя
 1. Чат и день: группа игры по `/status` или `chats.telegram_chat_id`; личка — Telegram ID игрока (`/me`).
-2. Раунд: `grep '"round_no":N' logs/chats/<chat>/<день>.jsonl` даёт цепочку `opened → submission → frozen → interpreted → narrated → resolved → published`; обрыв цепочки показывает шаг сбоя, `error` в записи — причину.
+2. Раунд: `grep '"round_no":N' logs/chats/<chat>/<день>.jsonl` даёт цепочку `opened → submission → frozen → interpreted → narrated → resolved → published → metrics`; обрыв цепочки показывает шаг сбоя, `error` в записи — причину; `attempt_failed` — попытка откатилась и повторится следующим тиком (стек паники в `logs/bot.log`), `failed` — раунд закрыт со сбоем после трёх попыток. В Telegram то же показывает dev-команда `/round N`.
 3. Намерения против заявок: `jq -c 'select(.event=="frozen") | .data.submissions' …` и `jq -c 'select(.event=="interpreted") | .data.intents' …`; расхождение — промпт интерпретатора или валидация.
 4. Вход и выход модели: `jq -r 'select(.kind=="llm" and .round_id==ID) | .llm.input, .llm.output' …`; дозапрос виден как вторая запись той же роли.
 5. Хроника и доставка: `jq -c 'select(.kind=="out" and .round_id==ID) | {outbox_id,part,attempt,telegram_message_id,error}' …`; `error` без последующей записи с `telegram_message_id` — сообщение в `failed`.

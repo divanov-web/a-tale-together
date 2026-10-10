@@ -124,3 +124,72 @@ func TestDeliver_Journal(t *testing.T) {
 		t.Fatalf("sent = %+v", r)
 	}
 }
+
+// classifying — фейковый Telegram с заданной ошибкой на каждую отправку.
+type classifying struct {
+	err  error
+	sent int
+}
+
+func (s *classifying) Send(context.Context, model.TelegramChatID, string) (int64, error) {
+	if s.err != nil {
+		return 0, s.err
+	}
+	s.sent++
+	return int64(s.sent), nil
+}
+
+func TestDeliver_RejectedFailsAtOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	c := &clock{t: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)}
+	store := fake.New(c.Now)
+	snd := &classifying{err: errors.Join(model.ErrSendRejected, errors.New("forbidden: bot was blocked"))}
+	svc := New(store, snd, c, Settings{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	_ = store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: 1, TelegramChatID: 5, Kind: model.OutboxPrivate, Text: "x", SendAfter: c.t})
+	if _, err := svc.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	msgs, _ := store.ListOutbox(ctx, 1)
+	if msgs[0].Status != model.OutboxFailed || msgs[0].Attempts != 1 || msgs[0].LastError == "" {
+		t.Fatalf("rejected message = %+v", msgs[0])
+	}
+}
+
+func TestDeliver_RetryAfterDefersWholeBatch(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	c := &clock{t: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)}
+	store := fake.New(c.Now)
+	snd := &classifying{err: &model.RetryAfterError{After: 30 * time.Second, Err: errors.New("too many requests")}}
+	svc := New(store, snd, c, Settings{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	j := &fakeJournal{}
+	svc.Journal = j
+	round := model.RoundID(1)
+	for part := 1; part <= 3; part++ {
+		_ = store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: 1, RoundID: &round, TelegramChatID: -100, Kind: model.OutboxChronicle, Part: part, Text: "часть", SendAfter: c.t})
+	}
+	if _, err := svc.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	msgs, _ := store.ListOutbox(ctx, 1)
+	for i, m := range msgs {
+		if m.Status != model.OutboxPending || !m.SendAfter.Equal(c.t.Add(30*time.Second)) || m.Attempts != 1 {
+			t.Fatalf("deferred[%d] = %+v", i, m)
+		}
+	}
+	if len(j.recs) != 1 { // отправлялась только первая часть; остальные отложены без попытки
+		t.Fatalf("journal = %+v", j.recs)
+	}
+	snd.err = nil
+	c.t = c.t.Add(30 * time.Second)
+	if n, err := svc.Deliver(ctx); err != nil || n != 3 {
+		t.Fatalf("after pause = %d, %v", n, err)
+	}
+	msgs, _ = store.ListOutbox(ctx, 1)
+	for i, m := range msgs {
+		if m.Status != model.OutboxSent || m.TelegramMessageID == nil || *m.TelegramMessageID != int64(i+1) {
+			t.Fatalf("sent[%d] = %+v", i, m)
+		}
+	}
+}

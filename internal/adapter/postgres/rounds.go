@@ -11,11 +11,11 @@ import (
 	"taletogether/internal/model"
 )
 
-const roundColumns = `id, game_id, season_id, round_no, status, opens_at, deadline_at, closed_at, seed, snapshot, narration, skip_reason, created_at, updated_at`
+const roundColumns = `id, game_id, season_id, round_no, status, opens_at, deadline_at, closed_at, seed, snapshot, narration, skip_reason, attempts, metrics, created_at, updated_at`
 
 func scanRound(row pgx.Row) (model.Round, error) {
 	var r model.Round
-	err := row.Scan(&r.ID, &r.GameID, &r.SeasonID, &r.RoundNo, &r.Status, &r.OpensAt, &r.DeadlineAt, &r.ClosedAt, &r.Seed, &r.Snapshot, &r.Narration, &r.SkipReason, &r.CreatedAt, &r.UpdatedAt)
+	err := row.Scan(&r.ID, &r.GameID, &r.SeasonID, &r.RoundNo, &r.Status, &r.OpensAt, &r.DeadlineAt, &r.ClosedAt, &r.Seed, &r.Snapshot, &r.Narration, &r.SkipReason, &r.Attempts, &r.Metrics, &r.CreatedAt, &r.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Round{}, model.ErrNotFound
 	}
@@ -33,11 +33,11 @@ VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ` + roundColumns
 	return out, nil
 }
 
-// UpdateRound сохраняет статус, дедлайн, закрытие, seed, снимок, хронику рассказчика и причину пропуска.
+// UpdateRound сохраняет статус, дедлайн, закрытие, seed, снимок, хронику рассказчика, причину пропуска, попытки и метрики.
 func (s *Store) UpdateRound(ctx context.Context, r model.Round) error {
-	const q = `UPDATE rounds SET status = $3, deadline_at = $4, closed_at = $5, seed = $6, snapshot = $7, narration = $8, skip_reason = $9, updated_at = now()
+	const q = `UPDATE rounds SET status = $3, deadline_at = $4, closed_at = $5, seed = $6, snapshot = $7, narration = $8, skip_reason = $9, attempts = $10, metrics = $11, updated_at = now()
 WHERE game_id = $1 AND id = $2`
-	if _, err := s.db(ctx).Exec(ctx, q, r.GameID, r.ID, r.Status, r.DeadlineAt, r.ClosedAt, r.Seed, r.Snapshot, r.Narration, r.SkipReason); err != nil {
+	if _, err := s.db(ctx).Exec(ctx, q, r.GameID, r.ID, r.Status, r.DeadlineAt, r.ClosedAt, r.Seed, r.Snapshot, r.Narration, r.SkipReason, r.Attempts, r.Metrics); err != nil {
 		return fmt.Errorf("postgres.UpdateRound: %w", err)
 	}
 	return nil
@@ -96,6 +96,22 @@ func (s *Store) LockGame(ctx context.Context, id model.GameID) (model.Game, erro
 		return model.Game{}, fmt.Errorf("postgres.LockGame: %w", err)
 	}
 	return g, nil
+}
+
+// DeleteGameProgress удаляет ход игры для сброса в dev (ADR-0013): раунды с заявками, события, итоги и outbox;
+// участники, персонажи, локации и `llm_runs` остаются.
+func (s *Store) DeleteGameProgress(ctx context.Context, game model.GameID) error {
+	for _, q := range []string{
+		`DELETE FROM messages_outbox WHERE game_id = $1`,
+		`DELETE FROM resolved_actions WHERE game_id = $1`,
+		`DELETE FROM world_events WHERE game_id = $1`,
+		`DELETE FROM rounds WHERE game_id = $1`,
+	} {
+		if _, err := s.db(ctx).Exec(ctx, q, game); err != nil {
+			return fmt.Errorf("postgres.DeleteGameProgress: %w", err)
+		}
+	}
+	return nil
 }
 
 // DueGameIDs возвращает активные игры, у которых наступило время планировщика.

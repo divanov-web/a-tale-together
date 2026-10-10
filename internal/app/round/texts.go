@@ -57,6 +57,46 @@ func roundSkippedText(g model.Game, r model.Round) string {
 	return fmt.Sprintf("%s. %s.", header(g, r.RoundNo), SkippedText)
 }
 
+// roundFailedText — сообщение о раунде, который не удалось разрешить (ADR-0013); заявки переходят в следующий.
+func roundFailedText(g model.Game, r model.Round) string {
+	return fmt.Sprintf("%s не удалось разрешить: сбой на стороне бота. Заявки перенесены в следующий раунд.", header(g, r.RoundNo))
+}
+
+// finishedText — финальная хроника шаблоном: причина, число раундов, итог каждого персонажа.
+func finishedText(g model.Game, rounds int, reason string, chars []model.Character, locations []model.Location, def model.CharacterModelDef) string {
+	names := map[model.LocationID]string{}
+	for _, l := range locations {
+		names[l.ID] = l.Name
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "«%s» — история завершена\n%s. Раундов сыграно: %d.", g.Title, upperFirst(reason), rounds)
+	if len(chars) > 0 {
+		b.WriteString("\nПерсонажи:")
+	}
+	for _, c := range chars {
+		maxHP, err := rules.HP(def, c.Attributes)
+		if err != nil || maxHP <= 0 {
+			maxHP = max(c.HP, 1)
+		}
+		where := "неизвестно где"
+		if c.LocationID != nil {
+			if n, ok := names[*c.LocationID]; ok {
+				where = n
+			}
+		}
+		fmt.Fprintf(&b, "\n• %s — %s, HP %d/%d, %s", c.Nickname, narrator.StatusWords(c.Status), c.HP, maxHP, where)
+	}
+	return b.String()
+}
+
+func upperFirst(s string) string {
+	r := []rune(s)
+	if len(r) == 0 {
+		return s
+	}
+	return strings.ToUpper(string(r[0])) + string(r[1:])
+}
+
 func pausedText(g model.Game) string {
 	return fmt.Sprintf("«%s» — игра на паузе. Раунды не открываются; возобновить: /pause.", g.Title)
 }

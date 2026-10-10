@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -40,6 +42,7 @@ type Store struct {
 	llmRuns        []model.LLMRun
 	settings       map[string]string
 	nextID         int64
+	txDepth        int
 	// Err, если задан, возвращается всеми методами: имитация сбоя БД.
 	Err error
 }
@@ -76,12 +79,82 @@ func (s *Store) id() int64 {
 	return s.nextID
 }
 
-// InTx выполняет fn без реальной транзакции.
-func (s *Store) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
+// InTx выполняет fn как транзакцию: при ошибке или панике состояние откатывается к снимку на входе
+// (как в Postgres), паника пробрасывается дальше. Вложенный вызов идёт в той же транзакции.
+func (s *Store) InTx(ctx context.Context, fn func(ctx context.Context) error) (err error) {
 	if s.Err != nil {
 		return s.Err
 	}
+	s.mu.Lock()
+	if s.txDepth > 0 {
+		s.txDepth++
+		s.mu.Unlock()
+		defer func() { s.mu.Lock(); s.txDepth--; s.mu.Unlock() }()
+		return fn(ctx)
+	}
+	s.txDepth++
+	snap := s.snapshot()
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.txDepth--
+		if r := recover(); r != nil {
+			s.restore(snap)
+			panic(r)
+		}
+		if err != nil {
+			s.restore(snap)
+		}
+	}()
 	return fn(ctx)
+}
+
+// state — копия изменяемых таблиц для отката транзакции.
+type state struct {
+	updates     map[int64]bool
+	users       map[model.UserID]model.User
+	chats       map[model.ChatID]model.Chat
+	mods        map[model.ChatID][]moderator
+	dialogs     map[model.UserID]model.Dialog
+	games       map[model.GameID]model.Game
+	seasons     map[model.SeasonID]model.Season
+	facts       map[model.FactionID]model.Faction
+	members     map[memberKey]model.GameMember
+	chars       map[model.CharacterID]model.Character
+	rounds      map[model.RoundID]model.Round
+	subs        map[model.SubmissionID]model.Submission
+	outbox      []model.OutboxMessage
+	locations   map[model.LocationID]model.Location
+	events      []model.Event
+	resolved    []model.ActionResult
+	resolvedRnd []resolvedKey
+	llmProfiles map[model.LLMProfileID]model.LLMProfile
+	llmRuns     []model.LLMRun
+	settings    map[string]string
+	nextID      int64
+}
+
+func (s *Store) snapshot() state {
+	mods := make(map[model.ChatID][]moderator, len(s.mods))
+	for k, v := range s.mods {
+		mods[k] = slices.Clone(v)
+	}
+	return state{
+		updates: maps.Clone(s.updates), users: maps.Clone(s.users), chats: maps.Clone(s.chats), mods: mods, dialogs: maps.Clone(s.dialogs),
+		games: maps.Clone(s.games), seasons: maps.Clone(s.seasons), facts: maps.Clone(s.facts), members: maps.Clone(s.members),
+		chars: maps.Clone(s.chars), rounds: maps.Clone(s.rounds), subs: maps.Clone(s.subs), outbox: slices.Clone(s.outbox),
+		locations: maps.Clone(s.locations), events: slices.Clone(s.events), resolved: slices.Clone(s.resolved), resolvedRnd: slices.Clone(s.resolvedRounds),
+		llmProfiles: maps.Clone(s.llmProfiles), llmRuns: slices.Clone(s.llmRuns), settings: maps.Clone(s.settings), nextID: s.nextID,
+	}
+}
+
+func (s *Store) restore(st state) {
+	s.updates, s.users, s.chats, s.mods, s.dialogs = st.updates, st.users, st.chats, st.mods, st.dialogs
+	s.games, s.seasons, s.facts, s.members, s.chars = st.games, st.seasons, st.facts, st.members, st.chars
+	s.rounds, s.subs, s.outbox, s.locations = st.rounds, st.subs, st.outbox, st.locations
+	s.events, s.resolved, s.resolvedRounds = st.events, st.resolved, st.resolvedRnd
+	s.llmProfiles, s.llmRuns, s.settings, s.nextID = st.llmProfiles, st.llmRuns, st.settings, st.nextID
 }
 
 // MarkUpdate — см. postgres.Store.

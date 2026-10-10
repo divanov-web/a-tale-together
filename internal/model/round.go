@@ -16,8 +16,11 @@ const (
 	RoundResolving RoundStatus = "resolving" // интерпретация и разрешение
 	RoundResolved  RoundStatus = "resolved"  // события зафиксированы
 	RoundPublished RoundStatus = "published" // тексты в outbox
-	RoundFailed    RoundStatus = "failed"
+	RoundFailed    RoundStatus = "failed"    // разрешение не удалось MaxRoundAttempts раз подряд; заявки перенесены в следующий раунд
 )
+
+// MaxRoundAttempts — попыток закрыть раунд (заморозка и разрешение одной транзакцией) до статуса `failed` (ADR-0013).
+const MaxRoundAttempts = 3
 
 // Round — раунд игры: окно приёма заявок, снимок и seed на дедлайн.
 type Round struct {
@@ -32,9 +35,38 @@ type Round struct {
 	Seed       int64
 	Snapshot   *RoundSnapshot // nil до заморозки
 	Narration  *Narration     // хроника рассказчика (пункт 09); nil до публикации или при шаблонной хронике
-	SkipReason string         // причина пропуска для /status, например «заявок 1 из 2»
+	SkipReason string         // причина пропуска или сбоя для /status, например «заявок 1 из 2»
+	Attempts   int            // неудачных попыток закрыть раунд (транзакция откатилась); считается вне транзакции (ADR-0013)
+	Metrics    *RoundMetrics  // метрики разрешения (пункт 10); nil до публикации
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+}
+
+// RoundMetrics — измерения разрешения раунда (docs/architecture/round-pipeline.md, «Измеряется»): длительность шагов,
+// вызовы и токены модели, запасные пути, статусы заявок. Хранятся в `rounds.metrics`, пишутся в лог и журнал чата.
+type RoundMetrics struct {
+	Attempt             int   `json:"attempt"`      // номер успешной попытки (1 — с первого раза)
+	FreezeMS            int64 `json:"freeze_ms"`    // снимок и статусы персонажей
+	InterpretMS         int64 `json:"interpret_ms"` // вызов интерпретатора или разбор кодом
+	EngineMS            int64 `json:"engine_ms"`    // движок, события, свёртка, запись состояния
+	NarrateMS           int64 `json:"narrate_ms"`   // вызов рассказчика или шаблон
+	PublishMS           int64 `json:"publish_ms"`   // постановка в outbox
+	TotalMS             int64 `json:"total_ms"`     // от дедлайна до публикации в этой попытке
+	LLMCalls            int   `json:"llm_calls"`    // вызовов модели (с дозапросами)
+	TokensIn            int   `json:"tokens_in"`
+	TokensOut           int   `json:"tokens_out"`
+	InterpreterFallback bool  `json:"interpreter_fallback"` // заявки разобраны кодом
+	NarratorFallback    bool  `json:"narrator_fallback"`    // хроника шаблонная
+	Submissions         int   `json:"submissions"`
+	Resolved            int   `json:"resolved"`
+	Rejected            int   `json:"rejected"`
+	Ambiguous           int   `json:"ambiguous"` // безопасных толкований
+	Safe                int   `json:"safe"`      // заявок с безопасным толкованием интерпретатора
+	Events              int   `json:"events"`
+	Patched             int   `json:"patched"` // событий, дописанных кодом в хронику
+	Issues              int   `json:"issues"`  // замечаний к ответам рассказчика
+	ChronicleParts      int   `json:"chronicle_parts"`
+	Notices             int   `json:"notices"`
 }
 
 // RoundSnapshot — состояние на дедлайн: персонажи, локации и заявки; воспроизведение движка по снимку и seed.

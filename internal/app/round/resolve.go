@@ -50,12 +50,14 @@ func snapshot(g model.Game, chars []model.Character, locations []model.Location,
 // resolve разрешает замороженный раунд (пункты 07–09): интерпретатор одним вызовом (или разбор кодом) → движок →
 // события, итоги, состояние персонажей и локаций → рассказчик одним вызовом (или шаблон) → статус `published`,
 // хроника частями и уведомления о заявках в outbox. Внутри транзакции заморозки (ADR-0010, ADR-0011): вызовы модели
-// держат блокировку игры, `/act` и `/status` её не ждут.
-func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, chars []model.Character, now time.Time) error {
+// держат блокировку игры, `/act` и `/status` её не ждут. Метрики шагов (пункт 10) пишутся в `rounds.metrics`, лог и журнал.
+func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, chars []model.Character, now time.Time, m *model.RoundMetrics) error {
 	if r.Snapshot == nil {
 		return fmt.Errorf("round.resolve: round %d without snapshot", r.ID)
 	}
-	intents := s.interpret(ctx, g, chat, r, def)
+	step := s.clock.Now()
+	intents := s.interpret(ctx, g, chat, r, def, m)
+	m.InterpretMS, step = s.lap(step)
 	result := engine.Resolve(*r.Snapshot, intents, r.Seed)
 	offset, err := s.store.NextEventSeq(ctx, g.ID)
 	if err != nil {
@@ -83,28 +85,58 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 	if err := s.saveState(ctx, g, r.Snapshot, &state, now); err != nil {
 		return err
 	}
+	m.Events = len(result.Events)
+	for _, res := range result.Results {
+		switch res.Status {
+		case model.ResultResolved:
+			m.Resolved++
+		case model.ResultRejected:
+			m.Rejected++
+		case model.ResultAmbiguous:
+			m.Ambiguous++
+		}
+	}
+	m.EngineMS, step = s.lap(step)
 	r.Status = model.RoundPublished
-	r.Narration = s.narrate(ctx, g, chat, r, genre, def, &state, chars, result.Events)
+	r.Narration = s.narrate(ctx, g, chat, r, genre, def, &state, chars, result.Events, m)
+	m.NarrateMS, step = s.lap(step)
+	s.journal(ctx, g, chat.TelegramChatID, r, "resolved", map[string]any{"results": result.Results, "events": result.Events})
+	if err := s.publish(ctx, g, chat, r, &state, result, def, m); err != nil {
+		return err
+	}
+	m.PublishMS, _ = s.lap(step)
+	m.TotalMS = s.clock.Now().Sub(now).Milliseconds()
+	r.Metrics = m
 	if err := s.store.UpdateRound(ctx, r); err != nil {
 		return err
 	}
-	s.journal(ctx, g, chat.TelegramChatID, r, "resolved", map[string]any{"results": result.Results, "events": result.Events})
-	if err := s.publish(ctx, g, chat, r, &state, result, def); err != nil {
-		return err
-	}
 	s.logger.Info("round resolved", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("events", len(result.Events)), slog.Int("results", len(result.Results)))
+	s.logger.Info("round metrics", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("attempt", m.Attempt),
+		slog.Int64("total_ms", m.TotalMS), slog.Int64("interpret_ms", m.InterpretMS), slog.Int64("engine_ms", m.EngineMS), slog.Int64("narrate_ms", m.NarrateMS),
+		slog.Int("llm_calls", m.LLMCalls), slog.Int("tokens_in", m.TokensIn), slog.Int("tokens_out", m.TokensOut),
+		slog.Bool("interpreter_fallback", m.InterpreterFallback), slog.Bool("narrator_fallback", m.NarratorFallback),
+		slog.Int("submissions", m.Submissions), slog.Int("resolved", m.Resolved), slog.Int("rejected", m.Rejected), slog.Int("ambiguous", m.Ambiguous), slog.Int("safe", m.Safe),
+		slog.Int("events", m.Events), slog.Int("patched", m.Patched), slog.Int("issues", m.Issues))
+	s.journal(ctx, g, chat.TelegramChatID, r, "metrics", m)
 	return nil
+}
+
+// lap — миллисекунды с момента since и новый отсчёт.
+func (s *Service) lap(since time.Time) (int64, time.Time) {
+	now := s.clock.Now()
+	return now.Sub(since).Milliseconds(), now
 }
 
 // interpret — вызов 1 из 2 (docs/llm/round-calls.md): все заявки снимка одним вызовом модели через `app/llm.Complete`
 // с ролью `interpreter` и раундом для учёта. Без провайдера, профиля или при сбое — запасной разбор кодом
 // (`interpreter.Fallback`: типовые команды, остальное безопасное толкование); раунд не падает.
-func (s *Service) interpret(ctx context.Context, g model.Game, chat model.Chat, r model.Round, def model.CharacterModelDef) []model.Intent {
+func (s *Service) interpret(ctx context.Context, g model.Game, chat model.Chat, r model.Round, def model.CharacterModelDef, m *model.RoundMetrics) []model.Intent {
 	snap := *r.Snapshot
 	if len(snap.Submissions) == 0 {
 		return nil
 	}
 	if s.LLM == nil {
+		m.InterpreterFallback = true
 		intents := interpreter.Fallback(snap, "интерпретатор не настроен: типовые команды")
 		s.journal(ctx, g, chat.TelegramChatID, r, "interpreted", map[string]any{"fallback": "интерпретатор не настроен", "intents": intents})
 		return intents
@@ -116,6 +148,7 @@ func (s *Service) interpret(ctx context.Context, g model.Game, chat model.Chat, 
 	res, err := svc.Interpret(ctx, snap, def)
 	if err != nil {
 		s.logger.Warn("interpreter unavailable, typed fallback", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Any("err", err))
+		m.InterpreterFallback = true
 		intents := interpreter.Fallback(snap, "интерпретатор недоступен: типовые команды")
 		s.journal(ctx, g, chat.TelegramChatID, r, "interpreted", map[string]any{"fallback": "интерпретатор недоступен", "error": err.Error(), "intents": intents})
 		return intents
@@ -124,14 +157,16 @@ func (s *Service) interpret(ctx context.Context, g model.Game, chat model.Chat, 
 		slog.Int("submissions", len(snap.Submissions)), slog.Int("calls", res.Calls), slog.Int("safe", res.Invalid),
 		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
 	s.journal(ctx, g, chat.TelegramChatID, r, "interpreted", map[string]any{"calls": res.Calls, "safe": res.Invalid, "intents": res.Intents})
+	m.LLMCalls, m.TokensIn, m.TokensOut, m.Safe = m.LLMCalls+res.Calls, m.TokensIn+res.TokensIn, m.TokensOut+res.TokensOut, res.Invalid
 	return res.Intents
 }
 
 // narrate — вызов 2 из 2 (docs/llm/round-calls.md): публичные и локационные события, состояние после свёртки,
 // описания персонажей как данные и выжимка прошлых хроник → хроника по сценам через `app/llm.Complete` с ролью
 // `narrator`. Без провайдера, при сбое, утечке или превышении бюджета — nil: публикуется шаблонная хроника, раунд не откатывается.
-func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, state *model.RoundSnapshot, chars []model.Character, events []model.Event) *model.Narration {
+func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, state *model.RoundSnapshot, chars []model.Character, events []model.Event, m *model.RoundMetrics) *model.Narration {
 	if s.LLM == nil {
+		m.NarratorFallback = true
 		s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"fallback": "рассказчик не настроен: шаблонная хроника"})
 		return nil
 	}
@@ -160,6 +195,7 @@ func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r 
 	res, err := svc.Narrate(ctx, p)
 	if err != nil {
 		s.logger.Warn("narrator unavailable, template chronicle", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Any("err", err))
+		m.NarratorFallback = true
 		s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"fallback": "шаблонная хроника", "error": err.Error()})
 		return nil
 	}
@@ -167,6 +203,7 @@ func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r 
 		slog.Int("scenes", len(res.Narration.Scenes)), slog.Int("calls", res.Calls), slog.Int("patched", res.Patched), slog.Int("issues", len(res.Issues)),
 		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
 	s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"calls": res.Calls, "patched": res.Patched, "issues": res.Issues, "narration": res.Narration})
+	m.LLMCalls, m.TokensIn, m.TokensOut, m.Patched, m.Issues = m.LLMCalls+res.Calls, m.TokensIn+res.TokensIn, m.TokensOut+res.TokensOut, res.Patched, len(res.Issues)
 	return &res.Narration
 }
 
@@ -209,7 +246,7 @@ func (s *Service) saveState(ctx context.Context, g model.Game, before *model.Rou
 
 // publish ставит в outbox хронику (рассказчика или шаблонную) с подходами следующего раунда, частями по лимиту
 // Telegram, и уведомление о заявке каждому подавшему её.
-func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r model.Round, state *model.RoundSnapshot, result engine.Result, def model.CharacterModelDef) error {
+func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r model.Round, state *model.RoundSnapshot, result engine.Result, def model.CharacterModelDef, m *model.RoundMetrics) error {
 	preset := rules.Preset(g.Mode)
 	chronicle := chronicleMessage(g, r, visibility.Public(result.Events), state, narrator.Options(state, def, g.Mode))
 	for i, part := range splitParts(chronicle, header(g, r.RoundNo)+" (продолжение)\n", partLimit) {
@@ -241,6 +278,7 @@ func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r 
 		}
 		notices++
 	}
+	m.ChronicleParts, m.Notices = parts, notices
 	s.journal(ctx, g, chat.TelegramChatID, r, "published", map[string]any{"chronicle_parts": parts, "notices": notices})
 	return nil
 }
