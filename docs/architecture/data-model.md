@@ -10,7 +10,7 @@
 |---|---|---|---|
 | Пользователь | `users` | уникальный пользователь Telegram, писавший боту или добавивший его в чат | владеет чатами, участвует в играх, имеет персонажей |
 | Чат | `chats` | Telegram-группа, куда добавили бота: владелец, модераторы, статус бота в чате | 1 владелец; N модераторов (`chat_moderators`); N игр, из них не более одной незавершённой |
-| Игра | `games` | запущенный мир с настройками и типом (глобальная, рассказ, сериал), привязан к чату | 1 чат; N участников (`game_members`); N персонажей, сезонов, раундов, локаций |
+| Игра | `games` | запущенный мир с форматом (глобальная, рассказ, сериал) и режимом (механика, баланс, повествование), привязан к чату | 1 чат; N участников (`game_members`); N персонажей, сезонов, раундов, локаций |
 | Персонаж | `characters` | персонаж пользователя в конкретной игре | ровно один на пару (игра, пользователь); требует участия в игре |
 
 Вспомогательные: `chat_moderators` (права в чате), `game_members` (участие и роль в игре), `seasons` (сезоны сериала), `character_goals` и `goal_steps` (поздний этап), `telegram_updates` (дедупликация), остальные таблицы раунда и LLM ниже.
@@ -44,7 +44,7 @@ users ──< chats (owner_user_id)
 
 | Таблица | Назначение | Ключевые поля | Уникальность |
 |---|---|---|---|
-| `games` | настройки и статус мира | `chat_id` → `chats`, `kind` (global/story/serial, [типы игр](../game/game-types.md)), `title`, `genre`, `status` (draft/active/paused/finished), `settings jsonb` (ends_at, max_rounds, round_duration_minutes, timezone, active_windows, pause_overnight, max_players, max_active_locations, story_mode mechanics/balanced/story), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
+| `games` | настройки и статус мира | `chat_id` → `chats`, `format` (global/novel/series, [форматы игр](../game/game-formats.md)), `title`, `genre`, `status` (draft/active/paused/finished), `settings jsonb` (ends_at, max_rounds, round_duration_minutes, timezone, active_windows, pause_overnight, max_players, max_active_locations, mode mechanics/balanced/narrative), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
 | `game_members` | участие пользователей | `game_id`, `user_id` → `users`, `role` (admin/player), `status` (active/left/kicked), `joined_at` | `(game_id, user_id)` |
 | `characters` | персонажи | `game_id`, `user_id`, `name`, `archetype`, `stats jsonb`, `hp`, `conditions jsonb`, `inventory jsonb`, `location_id`, `schema_version` | `(game_id, user_id)`; FK `(game_id, user_id)` → `game_members` |
 | `seasons` | сезоны сериала; у остальных типов единственный сезон 1 | `game_id`, `season_no`, `title`, `status` (active/finished), `started_at`, `finished_at` | `(game_id, season_no)` |
