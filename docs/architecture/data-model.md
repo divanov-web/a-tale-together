@@ -44,7 +44,7 @@ users ──< chats (owner_user_id)
 | `chat_moderators` | права в чате, ручной список владельца | `chat_id` → `chats`, `user_id` → `users`, `granted_by_user_id` | `(chat_id, user_id)` |
 | `telegram_updates` | дедупликация входящих | `update_id`, `received_at` | `update_id` |
 | `dialogs` | состояние диалога в личке (настройка игры, создание персонажа; ADR-0008) | `user_id` → `users`, `kind`, `step`, `game_id`, `data jsonb` (черновик), `updated_at` | `user_id` |
-| `llm_profiles` | настройки провайдера LLM (миграция `00009`, стартовый `local-claude`) | `name`, `provider`, `model_interpreter`, `model_narrator`, `params jsonb` (effort, temperature, max_output, max_budget_usd, timeout_seconds, parallelism), `enabled` | `name` |
+| `llm_profiles` | настройки провайдера LLM (миграция `00009`, стартовый `local-claude`; модели `sonnet` / `opus` с миграции `00011`) | `name`, `provider`, `model_interpreter`, `model_narrator`, `params jsonb` (effort, temperature, max_output, max_budget_usd, timeout_seconds, parallelism), `enabled` | `name` |
 | `genres` | справочник жанров с шаблонами | `code`, `name`, `character_model_id` → `character_models`, `template jsonb` (тон, стартовая сцена, архетипы, имена фракций по умолчанию, стартовые локации), `enabled` | `code` |
 | `character_models` | модель персонажа ([модели](../game/models/README.md)) | `code`, `rules_version`, `definition jsonb` (attributes[], skills[], archetypes[], стартовые очки, формула HP) | `code` |
 | `app_settings` | глобальные настройки бота (миграция `00009`) | `key`, `value` (в т.ч. `default_llm_profile`), `updated_at` | `key` |

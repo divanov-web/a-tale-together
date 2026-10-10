@@ -39,7 +39,7 @@ test: ## Юнит-тесты
 test-integration: ## Тесты с БД (DATABASE_URL_TEST)
 	$(GO) test -tags integration ./...
 
-eval-interpreter: ## Оценочный набор интерпретатора на живом claude-cli (EVAL_ARGS="-v -case name -model haiku")
+eval-interpreter: ## Оценочный набор интерпретатора на живом claude-cli (EVAL_ARGS="-v -case name -model haiku"; по умолчанию sonnet)
 	$(GO) run ./cmd/eval-interpreter $(EVAL_ARGS)
 
 lint: ## gofmt, go vet, golangci-lint при наличии
