@@ -142,15 +142,15 @@ type Season struct {
 // FactionCode — стабильный ключ фракции.
 type FactionCode string
 
-// Коды фракций этапа 1.
+// Стартовые коды фракций: две стороны конфликта. Число фракций администратору не показывается;
+// новые фракции с произвольным кодом создаёт рассказчик по сюжету (поздний этап, план 13).
 const (
-	FactionGood    FactionCode = "good"
-	FactionEvil    FactionCode = "evil"
-	FactionNeutral FactionCode = "neutral"
+	FactionGood FactionCode = "good"
+	FactionEvil FactionCode = "evil"
 )
 
-// FactionCodes — порядок фракций в ответах и шаблонах.
-var FactionCodes = []FactionCode{FactionGood, FactionEvil, FactionNeutral}
+// FactionCodes — стартовые фракции в порядке вывода; созданные по сюжету идут после них.
+var FactionCodes = []FactionCode{FactionGood, FactionEvil}
 
 // Faction — сторона конфликта в игре (docs/game/models/factions.md).
 type Faction struct {

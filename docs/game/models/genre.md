@@ -7,7 +7,7 @@
 |---|---|
 | `character_model` | код модели персонажа ([базовая](character-basic.md)) |
 | `tone` | стиль рассказчика по умолчанию: 2–3 фразы для промпта |
-| `factions` | три фракции по умолчанию ([модель фракций](factions.md)) |
+| `factions` | две стартовые фракции ([модель фракций](factions.md)) |
 | `locations` | стартовые локации с объектами и сложностью ([модель локации](location.md)), 3–4 штуки |
 | `opening_scene` | стартовая сцена: 300–600 символов, с местами для имён фракций и названия мира |
 | `items` | каталог предметов: ключ, название, теги, бонус к навыку |
@@ -23,7 +23,7 @@
   "tone": "Маленький город на краю леса. Приключение, лёгкая ирония, без мрачности.",
   "factions": ["см. models/factions.md"],
   "locations": ["см. models/location.md"],
-  "opening_scene": "В {{world_title}} наступает осень. {{faction_good}} объявил награду за пропавшего гонца, {{faction_evil}} молчит, а на рынке {{faction_neutral}} шепчутся о свете в старой башне...",
+  "opening_scene": "В {{world_title}} наступает осень. {{faction_good}} объявил награду за пропавшего гонца, {{faction_evil}} молчит, а на рынке шепчутся о свете в старой башне...",
   "items": [
     {"key": "sword", "title": "Меч", "tags": ["weapon", "melee"], "bonus": {"skill": "melee", "dice": 1}},
     {"key": "lockpicks", "title": "Отмычки", "tags": ["tool"], "bonus": {"skill": "thievery", "dice": 1}}

@@ -18,7 +18,7 @@ sudo -u postgres psql -c "create user tale with password 'tale';" -c "create dat
 ```bash
 cp .env.example .env
 ```
-Заполнить `TELEGRAM_BOT_TOKEN` (тестовый бот от BotFather), ключи провайдеров LLM по [providers.md](../llm/providers.md). `.env` в git не попадает.
+Заполнить `TELEGRAM_BOT_TOKEN` (тестовый бот от BotFather), ключи провайдеров LLM по [providers.md](../llm/providers.md). Необязательные: `SCHEDULER_TICK` (период планировщика раундов, 10s), `OUTBOX_TICK` (период воркера доставки, 3s). `.env` в git не попадает.
 
 ## Команды
 | Команда | Действие |
@@ -26,7 +26,7 @@ cp .env.example .env
 | `make check` | проверка окружения: Go, `.env`, Postgres, токен бота, goose |
 | `make build` | сборка в `bin/bot` |
 | `make run` | запуск бота в терминале |
-| `make start` / `make stop` / `make restart` | бот в фоне: pid `bin/bot.pid`, лог `logs/bot.log`; `restart` после каждой правки кода |
+| `make start` / `make stop` / `make restart` | бот в фоне: pid `bin/bot.pid`, лог `logs/bot.log`; выполняет только руководитель, см. [go_commands.md](../go_commands.md) |
 | `make logs` | последние строки лога фонового бота |
 | `make test` | юнит-тесты |
 | `make test-integration` | тесты с БД (`DATABASE_URL_TEST`) |
@@ -36,9 +36,9 @@ cp .env.example .env
 
 ## Первый запуск
 ```bash
-make check && make migrate && make run
+make check && make migrate && make start
 ```
-Бот пишет `telegram polling started bot=<username>`. Проверка: `/ping` в группе-песочнице и в личке бота → `pong`, версия, время. Остановка `Ctrl+C`. Второй экземпляр с тем же токеном получает в логе `409 Conflict`.
+Бот пишет `telegram polling started bot=<username>`. Проверка: `/ping` в группе-песочнице и в личке бота → `pong`, версия, время. Остановка `make stop`. Второй экземпляр с тем же токеном получает в логе `409 Conflict`.
 
 ## GoLand
 Проект открыт из Windows; SDK указать WSL (`\\wsl$\Ubuntu\home\divanov\.local\go`), build tag `os=linux` уже в `.idea`.

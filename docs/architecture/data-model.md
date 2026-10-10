@@ -12,7 +12,7 @@
 | Чат | `chats` | Telegram-группа, куда добавили бота: владелец, модераторы, статус бота в чате | 1 владелец; N модераторов (`chat_moderators`); N игр, из них не более одной незавершённой |
 | Игра | `games` | запущенный мир: жанр из справочника, формат, режим, статус, игровое окно, длительность раунда; привязан к чату | 1 чат; 1 жанр; N участников (`game_members`); N сезонов, фракций, групп, раундов, локаций |
 | Персонаж | `characters` | персонаж пользователя в сезоне игры: никнейм, характеристики по модели персонажа, открытое и скрытое описание, статус, фракция, группа | ровно один на пару (сезон, пользователь); требует участия в игре; в сериале новый сезон — новая строка с перенесённой прокачкой |
-| Фракция | `factions` | сторона конфликта в игре; на старте ровно три (добро, зло, нейтралитет) с именами по сюжету | N персонажей; имена по умолчанию из шаблона жанра ([фракции](../game/factions.md)) |
+| Фракция | `factions` | сторона конфликта в игре; на старте две (добро и зло), новые создаёт рассказчик по сюжету с именами по сюжету | N персонажей; имена по умолчанию из шаблона жанра ([фракции](../game/factions.md)) |
 | Группа | `parties` | логическая группа персонажей, для которой рассказчик пишет общую историю; на старте не более 3 групп в сезоне, размер не ограничен | N персонажей; совместные испытания только внутри группы ([группы](../game/parties.md)) |
 
 Вспомогательные: `chat_moderators` (права в чате), `dialogs` (состояние диалогов в личке), `game_members` (участие и роль в игре), `seasons` (сезоны), `genres` и `character_models` (справочники жанров и моделей персонажа), `character_stats` (значения характеристик и навыков), `character_goals` и `goal_steps` (поздний этап), `telegram_updates` (дедупликация), остальные таблицы раунда и LLM ниже.
@@ -55,17 +55,17 @@ users ──< chats (owner_user_id)
 |---|---|---|---|
 | `games` | настройки и статус мира | `chat_id` → `chats`, `genre_id` → `genres`, `format` (global/novel/series, по умолчанию `novel`; этап 1 только он), `mode` (mechanics/balanced/narrative, по умолчанию `balanced`; этап 1 только он), `title`, `status` (draft/active/paused/finished; список расширяется по ходу разработки), `timezone`, `play_from time` и `play_to time` (игровое окно в сутках, оба nullable), `round_minutes` (10–60, по умолчанию 15), `settings jsonb` (ends_at, max_rounds, max_round_players = 20 — лимит обрабатываемых за раунд игроков, внутренняя настройка, миграция `00006`; max_active_locations = 4 — лимит локаций, внутренняя настройка; max_parties = 3, max_active_goals, goal_cooldown_rounds, min_round_answers = 2 — кворум раунда, миграция `00005`), `rules_version`, `llm_profile_id` (nullable, появится с пунктом 06), `join_code`, `created_by_user_id` → `users`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
 | `game_members` | участие пользователей | `game_id`, `user_id` → `users`, `role` (admin/player), `status` (active/left/kicked), `joined_at` | `(game_id, user_id)` |
-| `factions` | стороны конфликта ([модель](../game/models/factions.md)) | `game_id`, `code` (good/evil/neutral), `title`, `description`, `tone`, `relations jsonb` | `(game_id, code)` |
+| `factions` | стороны конфликта ([модель](../game/models/factions.md)) | `game_id`, `code` (good, evil или код фракции, созданной рассказчиком), `title`, `description`, `tone`, `relations jsonb` | `(game_id, code)` |
 | `parties` | группы персонажей для общей истории ([модель](../game/models/party.md)) | `game_id`, `season_id`, `name`, `status` (active/disbanded), `leader_character_id`, `location_id`, `motto`, `summary` | `(season_id, name)`; число активных групп сезона ≤ `settings.max_parties` |
 | `characters` | персонажи | `game_id`, `season_id` → `seasons`, `user_id`, `model_id` → `character_models`, `nickname`, `archetype`, `public_bio varchar(100)`, `secret_bio varchar(100)`, `status` (active/waiting/inactive), `missed_rounds`, `faction_id` → `factions`, `party_id` → `parties` (nullable), `hp`, `conditions jsonb`, `inventory jsonb`, `location_id`, `xp` | `(season_id, user_id)`; FK `(game_id, user_id)` → `game_members` |
 | `character_stats` | значения характеристик и навыков | `game_id`, `character_id`, `kind` (attribute/skill), `key` (из `character_models.definition`), `value` | `(character_id, kind, key)` |
 | `seasons` | сезоны сериала; у остальных типов единственный сезон 1 | `game_id`, `season_no`, `title`, `status` (active/finished), `started_at`, `finished_at` | `(game_id, season_no)` |
 | `locations` | места и связи | `game_id`, `name`, `description`, `links jsonb`, `difficulty` (0–2, прибавляется к сложности проверок), `objects jsonb` (объекты с `approaches`: действие, характеристика, навык, сложность), `active` | `(game_id, name)` |
-| `rounds` | раунды | `game_id`, `season_id`, `round_no`, `opens_at`, `deadline_at`, `status` (open/frozen/resolving/resolved/published/failed), `seed`, `snapshot jsonb` | `(game_id, round_no)` |
-| `action_submissions` | заявки | `game_id`, `round_id`, `character_id`, `raw_text`, `status`, `submitted_at`, `telegram_message_id` | `(round_id, character_id)` |
+| `rounds` | раунды (миграция `00008`) | `game_id`, `season_id`, `round_no`, `opens_at`, `deadline_at`, `closed_at`, `status` (open/frozen/skipped/resolving/resolved/published/failed), `seed`, `snapshot jsonb` (персонажи и заявки на дедлайн), `skip_reason` | `(game_id, round_no)`; частичный `game_id where status = 'open'` |
+| `action_submissions` | заявки (миграция `00008`) | `game_id`, `round_id`, `character_id`, `raw_text`, `status` (pending/frozen; статусы разрешения — пункт 07), `submitted_at`, `updated_at`, `telegram_message_id` | `(round_id, character_id)`; при пропуске раунда `round_id` переносится в следующий |
 | `resolved_actions` | намерения и итоги | `game_id`, `round_id`, `submission_id`, `intent jsonb`, `status`, `checks jsonb`, `conflict_group` | `submission_id` |
 | `world_events` | журнал событий | `game_id`, `round_id`, `seq`, `type`, `payload jsonb`, `visibility`, `visible_to bigint[]` | `(game_id, seq)` |
-| `messages_outbox` | исходящие | `game_id`, `round_id`, `telegram_chat_id`, `text`, `kind` (chronicle/private/system), `status`, `telegram_message_id`, `attempts`, `send_after` | дедуп по `(round_id, telegram_chat_id, kind, part)` |
+| `messages_outbox` | исходящие (миграция `00008`, ADR-0009) | `game_id`, `round_id` (nullable), `telegram_chat_id`, `kind` (scene/round_open/round_closed/system; chronicle/private — пункт 09), `part`, `text`, `status` (pending/sending/sent/failed/unknown), `telegram_message_id`, `attempts`, `send_after`, `claimed_at`, `last_error`, `sent_at` | дедуп по `(round_id, telegram_chat_id, kind, part)` при заданном `round_id` |
 | `llm_runs` | прогоны LLM | `game_id`, `round_id`, `profile_id`, `provider`, `role` (interpreter/narrator), `model`, `prompt_version`, `tokens_in`, `tokens_out`, `cost_usd`, `subscription bool`, `duration_ms`, `error`, `request_id` | |
 
 ## Таблицы поздних этапов
@@ -80,11 +80,11 @@ users ──< chats (owner_user_id)
 - Внутри БД связи по `id`; идентификаторы Telegram (`telegram_id`, `telegram_chat_id`) только в `users`, `chats`, `messages_outbox`.
 - В чате не более одной незавершённой игры; завершённые остаются историей. У игры всегда есть активный сезон; у `global` и `story` он единственный.
 - Персонаж создаётся только у активного участника игры; у пары (сезон, пользователь) не более одного персонажа. Ключи `character_stats` только из модели персонажа жанра.
-- Фракций у игры ровно три на этапе 1; персонаж всегда в одной фракции. Активных групп в сезоне не больше `max_parties`; размер группы не ограничен; персонаж не более чем в одной группе сезона.
+- На старте у игры две фракции, новые создаёт рассказчик по сюжету; персонаж всегда в одной фракции. Активных групп в сезоне не больше `max_parties`; размер группы не ограничен; персонаж не более чем в одной группе сезона.
 - `secret_bio` и `public_bio` — текст игрока: в промпт попадают как данные в выделенном блоке, `secret_bio` только в контекст рассказчика для этого персонажа.
 - Состояние персонажей и локаций производно от `world_events`; прямые правки без события запрещены.
 - У каждой заявки раунда ровно одна строка в `resolved_actions` после разрешения.
-- `rounds.snapshot` хранит версию состояния и список заявок на момент дедлайна; воспроизведение движка по снимку и `seed`.
+- `rounds.snapshot` хранит версию состояния и список заявок на момент дедлайна; воспроизведение движка по снимку и `seed`. У игры не более одного открытого раунда; `games.next_round_at` — единственный таймер планировщика (ADR-0009).
 - Повторная отправка outbox не создаёт второе сообщение: `telegram_message_id` сохраняется, неопределённый исход помечается и перепроверяется.
 
 ## Открыто

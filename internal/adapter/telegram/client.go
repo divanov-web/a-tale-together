@@ -68,13 +68,21 @@ func (c *Client) Run(ctx context.Context, h Handler) error {
 	return nil
 }
 
-// SendText отправляет обычное текстовое сообщение. Деление длинных текстов — пункт плана 09.
+// SendText отправляет обычное текстовое сообщение (ответы на команды, ADR-0006). Деление длинных текстов — пункт плана 09.
 func (c *Client) SendText(ctx context.Context, chat model.TelegramChatID, text string) error {
-	_, err := c.bot.SendMessage(ctx, &bot.SendMessageParams{ChatID: int64(chat), Text: text})
-	if err != nil {
-		return fmt.Errorf("telegram.SendText: chat %d: %w", chat, err)
+	if _, err := c.Send(ctx, chat, text); err != nil {
+		return fmt.Errorf("telegram.SendText: %w", err)
 	}
 	return nil
+}
+
+// Send отправляет текст и возвращает идентификатор сообщения Telegram; используется воркером outbox.
+func (c *Client) Send(ctx context.Context, chat model.TelegramChatID, text string) (int64, error) {
+	m, err := c.bot.SendMessage(ctx, &bot.SendMessageParams{ChatID: int64(chat), Text: text})
+	if err != nil {
+		return 0, fmt.Errorf("telegram.Send: chat %d: %w", chat, err)
+	}
+	return int64(m.ID), nil
 }
 
 // IsChatAdmin сообщает, является ли пользователь создателем или администратором группы Telegram.

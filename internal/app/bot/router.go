@@ -53,7 +53,7 @@ func (c command) hint() string {
 
 // registry — команды в порядке вывода в /help и меню.
 func (s *Service) registry() []command {
-	return []command{
+	cmds := []command{
 		{name: "start", contexts: ctxPrivate, description: "открыть личку; с кодом — войти в игру", run: s.start},
 		{name: "help", contexts: ctxAny, description: "список команд", run: s.help},
 		{name: "me", contexts: ctxPrivate, description: "кто я: чаты и игры", run: s.me},
@@ -62,7 +62,10 @@ func (s *Service) registry() []command {
 		{name: "mod", contexts: ctxGroup, description: "add|remove @user — модераторы чата (владелец)", run: s.chatMod, needsChat: true},
 		{name: "owner", contexts: ctxGroup, description: "@user — передать владение чатом", run: s.chatOwner, needsChat: true},
 		{name: "create", contexts: ctxAny, description: "создать персонажа в текущей игре", groupDesc: "создать мир в этом чате", run: s.create, needsChat: true},
-		{name: "status", contexts: ctxAny, description: "состояние игры и причина простоя", run: s.gameStatus, needsChat: true},
+		{name: "begin", contexts: ctxGroup, description: "начать кампанию: стартовая сцена и первый раунд", run: s.gameBegin, needsChat: true},
+		{name: "pause", contexts: ctxGroup, description: "пауза и возобновление игры", run: s.gamePause, needsChat: true},
+		{name: "status", contexts: ctxAny, description: "состояние игры, раунд и причина простоя", run: s.gameStatus, needsChat: true},
+		{name: "act", contexts: ctxPrivate, description: "<текст> — заявка на текущий раунд", run: s.act},
 		{name: "set", contexts: ctxPrivate, description: "<параметр> <значение> — настройка игры", run: s.gameSet},
 		{name: "join", contexts: ctxPrivate, description: "<код> — войти в игру", run: s.join},
 		{name: "games", contexts: ctxPrivate, description: "[номер] — мои игры и выбор текущей", run: s.gamesList},
@@ -71,6 +74,10 @@ func (s *Service) registry() []command {
 		{name: "secret", contexts: ctxPrivate, description: "<текст> — скрытое описание персонажа до 100 символов", run: s.characterSecret},
 		{name: "cancel", contexts: ctxPrivate, description: "прервать диалог", run: s.cancel},
 	}
+	if s.settings.Env == "dev" {
+		cmds = append(cmds, command{name: "next", contexts: ctxGroup, description: "закрыть раунд и открыть следующий (только dev)", run: s.roundNext, needsChat: true})
+	}
+	return cmds
 }
 
 func (s *Service) lookup(name string) (command, bool) {

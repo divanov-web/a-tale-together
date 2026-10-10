@@ -13,5 +13,5 @@
 | `timers` | что NPC делает без игроков: `{"every_rounds": 3, "action": "move", "to": "market"}` |
 
 ```json
-{"key": "old_jorg", "title": "старый Йорг", "faction_code": "neutral", "location_id": 2, "attitude": {"default": 0}, "knowledge": [{"fact": "гонец ушёл к башне", "when": {"attitude_min": 1}}], "stats": {"wits": 3, "persuasion": 2}, "timers": []}
+{"key": "old_jorg", "title": "старый Йорг", "faction_code": null, "location_id": 2, "attitude": {"default": 0}, "knowledge": [{"fact": "гонец ушёл к башне", "when": {"attitude_min": 1}}], "stats": {"wits": 3, "persuasion": 2}, "timers": []}
 ```

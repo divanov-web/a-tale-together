@@ -56,7 +56,7 @@ argument-hint: "[status | map | extend <область>]"
 2. Классифицировать: архитектура → `/tale-architect`; механика → `/tale-gamedesign`; промпт LLM → `/tale-prompts`; среда → `/tale-env`; иначе код по правилам области.
 3. Архитектурное или спорное решение → ADR до кода. Изменение концепта → вопрос в `docs/game/open-questions.md`, работа продолжается по безопасному допущению.
 4. Код → `make test` → `make lint` → readme пакета, `docs/` и статусы шагов в файле пункта плана обновлены.
-5. Применить локально (правило руководителя 2026-10-10): после правок кода `make restart` (фоновый бот, лог `logs/bot.log`); после правок схемы или `settings` — `make migrate` на `tale` и `tale_test`, затем проверить строки уже запущенных игр и при необходимости поправить их SQL (значения по умолчанию, dev-режим), результат показать в отчёте.
+5. Применить локально (правило руководителя 2026-10-10): бота запускает, перезапускает и останавливает только руководитель (`make start`/`make restart`/`make stop`, `docs/go_commands.md`) — Claude эти команды не выполняет, а в отчёте пишет «нужен `make restart`». Базу обновляет Claude: после правок схемы или `settings` — `make migrate` на `tale` и `tale_test`, затем проверить строки уже запущенных игр и при необходимости поправить их SQL (значения по умолчанию, dev-режим), результат показать в отчёте.
 6. Отчёт по форме выше.
 
 ## Саморасширение
@@ -68,8 +68,8 @@ argument-hint: "[status | map | extend <область>]"
 
 ## Среда (кратко)
 
-Go 1.27 в `~/.local/go/bin`; PostgreSQL 16 локально в WSL (apt); `.env` по `.env.example`; команды `make check build run start stop restart logs test test-integration lint migrate fmt`. Подробно: `/tale-env`, `docs/dev/environment.md`.
+Go 1.27 в `~/.local/go/bin`; PostgreSQL 16 локально в WSL (apt); `.env` по `.env.example`; команды `make check build logs test test-integration lint migrate fmt`; `make start/restart/stop` — только руководитель (`docs/go_commands.md`). Подробно: `/tale-env`, `docs/dev/environment.md`.
 
 ## Статус
 
-План и текущий пункт: `docs/plan/README.md`; этапы концепта: `docs/roadmap.md`. Вопросы руководителю: `docs/game/open-questions.md`. Режим: реализация плана по команде руководителя; пожелания по-прежнему раскладываются по `docs/`. Пункты 01–03 готовы, 04 в работе (группы и стартовая локация отложены); следующий пункт 05 (раунд и заявки).
+План и текущий пункт: `docs/plan/README.md`; этапы концепта: `docs/roadmap.md`. Вопросы руководителю: `docs/game/open-questions.md`. Режим: реализация плана по команде руководителя; пожелания по-прежнему раскладываются по `docs/`. Пункты 01–03 и 05 готовы, 04 в работе (группы и стартовая локация отложены); следующий пункт 06 (локальные токены LLM).

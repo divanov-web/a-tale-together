@@ -29,3 +29,12 @@ type CharacterID int64
 
 // LocationID — идентификатор локации.
 type LocationID int64
+
+// RoundID — идентификатор раунда.
+type RoundID int64
+
+// SubmissionID — идентификатор заявки на раунд.
+type SubmissionID int64
+
+// OutboxID — идентификатор исходящего сообщения в messages_outbox.
+type OutboxID int64

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
@@ -13,12 +14,14 @@ import (
 
 // Config — настройки приложения. Секреты дефолтов не имеют и проверяются в Validate.
 type Config struct {
-	TelegramBotToken string `env:"TELEGRAM_BOT_TOKEN"` // Токен бота Telegram
-	DatabaseURL      string `env:"DATABASE_URL"`       // DSN PostgreSQL
-	DatabaseURLTest  string `env:"DATABASE_URL_TEST"`  // DSN тестовой БД для интеграционных тестов
-	AppEnv           string `env:"APP_ENV"`            // dev|prod: в prod отключены dev-команды
-	LogLevel         string `env:"LOG_LEVEL"`          // debug|info|warn|error
-	MigrateOnStart   bool   `env:"MIGRATE_ON_START"`   // Применять миграции при старте
+	TelegramBotToken string        `env:"TELEGRAM_BOT_TOKEN"` // Токен бота Telegram
+	DatabaseURL      string        `env:"DATABASE_URL"`       // DSN PostgreSQL
+	DatabaseURLTest  string        `env:"DATABASE_URL_TEST"`  // DSN тестовой БД для интеграционных тестов
+	AppEnv           string        `env:"APP_ENV"`            // dev|prod: в prod отключены dev-команды
+	LogLevel         string        `env:"LOG_LEVEL"`          // debug|info|warn|error
+	MigrateOnStart   bool          `env:"MIGRATE_ON_START"`   // Применять миграции при старте
+	SchedulerTick    time.Duration `env:"SCHEDULER_TICK"`     // Период планировщика раундов
+	OutboxTick       time.Duration `env:"OUTBOX_TICK"`        // Период воркера доставки outbox
 	LLM              LLM
 }
 
@@ -37,6 +40,8 @@ func Defaults() Config {
 		DatabaseURLTest: "postgres://tale:tale@localhost:5432/tale_test?sslmode=disable",
 		AppEnv:          "dev",
 		LogLevel:        "info",
+		SchedulerTick:   10 * time.Second,
+		OutboxTick:      3 * time.Second,
 		LLM:             LLM{ClaudeCLIPath: "claude"},
 	}
 }

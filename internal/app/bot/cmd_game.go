@@ -102,26 +102,20 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 	if len(limits) == 0 {
 		limits = append(limits, "до /finish")
 	}
+	current, last, next, err := s.roundLines(ctx, g)
+	if err != nil {
+		return "", err
+	}
+	if g.Status == model.GameDraft {
+		next = "игра не запущена: настройка и набор игроков; старт — /begin в группе"
+	}
 	return templates.Render("status", map[string]any{
 		"Title": g.Title, "Status": statusTitle(g.Status), "Genre": st.Genre.Title, "Format": string(g.Format), "Mode": string(g.Mode),
 		"SeasonNo": st.Season.SeasonNo, "RulesVersion": g.RulesVersion, "RoundMinutes": g.RoundMinutes, "Timezone": g.Timezone,
 		"PlayWindow": window, "Limits": strings.Join(limits, ", "), "MembersCount": len(st.Members),
 		"CharactersCount": len(st.Characters), "Factions": factions, "Characters": chars, "JoinLink": s.joinLink(g),
-		"MinAnswers": g.Settings.MinRoundAnswers, "Idle": idleReason(g),
+		"MinAnswers": g.Settings.MinRoundAnswers, "CurrentRound": current, "LastRound": last, "NextRound": next,
 	})
-}
-
-// idleReason — почему игра стоит; раунды появятся в пункте плана 05, пока только статус игры.
-func idleReason(g model.Game) string {
-	switch g.Status {
-	case model.GameDraft:
-		return "игра не запущена: настройка и набор игроков"
-	case model.GamePaused:
-		return "игра на паузе"
-	case model.GameFinished:
-		return "игра завершена"
-	}
-	return ""
 }
 
 // gameSet — /set <параметр> <значение> для текущей игры.

@@ -42,9 +42,8 @@ func FantasyTemplate() model.GenreTemplate {
 		CharacterModel: "basic_fantasy",
 		Tone:           "Маленький город на краю леса. Приключение, лёгкая ирония, без мрачности.",
 		Factions: []model.FactionTemplate{
-			{Code: model.FactionGood, Title: "Орден Рассвета", Description: "Хранители города, верят в закон и свет.", Tone: "строгие, не безгрешные", Relations: map[string]string{"evil": "hostile", "neutral": "neutral"}},
-			{Code: model.FactionEvil, Title: "Гильдия теней", Description: "Контрабандисты и шпионы; хотят свободы от Ордена.", Tone: "сторона конфликта, не злодеи", Relations: map[string]string{"good": "hostile", "neutral": "neutral"}},
-			{Code: model.FactionNeutral, Title: "Вольные", Description: "Торговцы и наёмники, выгода превыше флага.", Tone: "циничные посредники", Relations: map[string]string{"good": "neutral", "evil": "neutral"}},
+			{Code: model.FactionGood, Title: "Орден Рассвета", Description: "Хранители города, верят в закон и свет.", Tone: "строгие, не безгрешные", Relations: map[string]string{"evil": "hostile"}},
+			{Code: model.FactionEvil, Title: "Гильдия теней", Description: "Контрабандисты и шпионы; хотят свободы от Ордена.", Tone: "сторона конфликта, не злодеи", Relations: map[string]string{"good": "hostile"}},
 		},
 		OpeningScene: "В {{world_title}} наступает осень.",
 		Items: []model.ItemTemplate{

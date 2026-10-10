@@ -16,7 +16,10 @@ import (
 	"taletogether/internal/adapter/telegram"
 	"taletogether/internal/app/bot"
 	"taletogether/internal/app/chat"
+	"taletogether/internal/app/delivery"
 	"taletogether/internal/app/game"
+	"taletogether/internal/app/round"
+	"taletogether/internal/app/scheduler"
 	"taletogether/internal/config"
 	"taletogether/internal/model"
 )
@@ -68,14 +71,19 @@ func run() error {
 	if cfg.AppEnv == "dev" {
 		games.Defaults.MinRoundAnswers = model.MinRoundAnswersDev // кворум 1 на время разработки
 	}
-	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username()}, store, store, tg, chats, games, clock, logger)
+	rounds := round.New(store, games, clock, logger)
+	rounds.AnnounceSkipped = cfg.AppEnv == "dev" // на время разработки пропуск раунда анонсируется в группу
+	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username()}, store, store, tg, chats, games, rounds, clock, logger)
 	if err := commands.RegisterMenu(ctx); err != nil {
 		logger.Warn("command menu not registered", slog.Any("err", err))
 	}
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return tg.Run(gctx, commands) })
-	// TODO(пункт 05): планировщик раундов и воркер outbox.
+	g.Go(func() error { return scheduler.New(rounds, clock, cfg.SchedulerTick, logger).Run(gctx) })
+	g.Go(func() error {
+		return delivery.New(store, tg, clock, delivery.Settings{Interval: cfg.OutboxTick}, logger).Run(gctx)
+	})
 
 	err = g.Wait()
 	logger.Info("bot stopped")

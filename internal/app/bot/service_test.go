@@ -13,6 +13,7 @@ import (
 	"taletogether/internal/adapter/postgres/fake"
 	"taletogether/internal/app/chat"
 	"taletogether/internal/app/game"
+	"taletogether/internal/app/round"
 	"taletogether/internal/model"
 )
 
@@ -45,9 +46,12 @@ func (f *fakeTelegram) last(chat model.TelegramChatID) string {
 	return f.sent[chat][len(f.sent[chat])-1]
 }
 
+// fixedClock — управляемое время теста; advance сдвигает его вперёд.
 type fixedClock struct{ t time.Time }
 
-func (c fixedClock) Now() time.Time { return c.t }
+func (c *fixedClock) Now() time.Time { return c.t }
+
+func (c *fixedClock) advance(d time.Duration) { c.t = c.t.Add(d) }
 
 // harness — собранный сервис с фейками и счётчиком update_id.
 type harness struct {
@@ -55,19 +59,23 @@ type harness struct {
 	svc    *Service
 	store  *fake.Store
 	tg     *fakeTelegram
+	clock  *fixedClock
+	rounds *round.Service
 	nextID int64
 }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	clock := fixedClock{t: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)}
+	clock := &fixedClock{t: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)}
 	store := fake.New(clock.Now)
 	tg := &fakeTelegram{sent: map[model.TelegramChatID][]string{}, admins: map[model.TelegramUserID]bool{}}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	chats := chat.New(store, logger)
 	games := game.New(store, chats, clock, logger)
-	svc := New(Settings{Version: "v0.1", Env: "dev", BotUsername: "tale_bot"}, store, store, tg, chats, games, clock, logger)
-	return &harness{t: t, svc: svc, store: store, tg: tg}
+	rounds := round.New(store, games, clock, logger)
+	rounds.AnnounceSkipped = true
+	svc := New(Settings{Version: "v0.1", Env: "dev", BotUsername: "tale_bot"}, store, store, tg, chats, games, rounds, clock, logger)
+	return &harness{t: t, svc: svc, store: store, tg: tg, clock: clock, rounds: rounds}
 }
 
 const groupChat model.TelegramChatID = -100500
@@ -222,10 +230,9 @@ func TestGame_CreateSetupAndStatus(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "30"), "Кворум раунда", "Сейчас: 2")
 	mustContain(t, h.send(owner, private(owner), "3"), "Фракция добра")
 	mustContain(t, h.send(owner, private(owner), "Орден"), "Фракция зла")
-	mustContain(t, h.send(owner, private(owner), "-"), "Нейтральная фракция")
-	final := h.send(owner, private(owner), "Вольный люд")
+	final := h.send(owner, private(owner), "-")
 	mustContain(t, final, "Настройка завершена", "Мир «Хроники Серой башни» — черновик", "Раунд: 20 мин", "окно: 10:00–22:00",
-		"Границы: 30 раундов", "кворум 3", "Игроки: 1;", "Орден (good)", "Гильдия теней (evil)", "Вольный люд (neutral)")
+		"Границы: 30 раундов", "кворум 3", "Игроки: 1;", "Орден (good)", "Гильдия теней (evil)")
 
 	mustContain(t, h.send(alice, groupChat, "/status"), "Мир «Хроники Серой башни»")
 	mustContain(t, h.send(owner, private(owner), "/set ends_at 2026-12-31"), "Сохранено")
@@ -233,7 +240,7 @@ func TestGame_CreateSetupAndStatus(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/set bogus 1"), "неизвестный параметр")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 0"), "кворум раунда от 1 до 20")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
-	mustContain(t, h.send(alice, groupChat, "/status"), "кворум 1", "Следующий раунд: нет — игра не запущена")
+	mustContain(t, h.send(alice, groupChat, "/status"), "кворум 1", "Следующий раунд: игра не запущена")
 	mustContain(t, h.send(alice, groupChat, "/chat"), "Игра: «Хроники Серой башни» — черновик")
 }
 
@@ -289,7 +296,7 @@ func TestCharacter_ValidationInDialog(t *testing.T) {
 	reply := h.send(bob, private(bob), "/join "+code)
 	mustContain(t, reply, "Выберите фракцию")
 	mustContain(t, h.send(bob, private(bob), "9"), "выберите фракцию", "Повторите ответ")
-	mustContain(t, h.send(bob, private(bob), "neutral"), "Никнейм")
+	mustContain(t, h.send(bob, private(bob), "evil"), "Никнейм")
 	mustContain(t, h.send(bob, private(bob), "элис"), "Никнейм уже занят")
 	mustContain(t, h.send(bob, private(bob), "Б"), "от 2 до 30")
 	mustContain(t, h.send(bob, private(bob), "Боб"), "Архетип")
@@ -354,4 +361,138 @@ func TestCommands_MenuByContext(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/help"), "в личке", "/join", "/cancel")
 	mustContain(t, h.send(alice, groupChat, "/help"), "в группе", "/create — создать мир")
 	mustContain(t, h.send(alice, private(alice), "/help"), "/create — создать персонажа")
+}
+
+// outboxTexts — тексты очереди исходящих игры в порядке постановки.
+func (h *harness) outboxTexts() []string {
+	h.t.Helper()
+	c, err := h.store.GetChatByTelegramID(context.Background(), groupChat)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	g, err := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	msgs, err := h.store.ListOutbox(context.Background(), g.ID)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	var out []string
+	for _, m := range msgs {
+		out = append(out, m.Text)
+	}
+	return out
+}
+
+func TestRound_BeginActPauseNext(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(owner, private(owner), "/set min_answers 2"), "Сохранено")
+	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
+
+	mustContain(t, h.send(alice, groupChat, "/begin"), "Нет прав")
+	mustContain(t, h.send(owner, groupChat, "/begin"), "нет персонажей")
+	h.joinAndCreate(alice, code, "1", "Элис", "1", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "2", "1", "-", "-")
+	mustContain(t, h.send(alice, private(alice), "/act иду в башню"), "Игра не запущена")
+
+	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.send(owner, groupChat, "/begin"), "уже запущена")
+	texts := h.outboxTexts()
+	if len(texts) != 2 {
+		t.Fatalf("outbox after begin = %q; want scene and round 1", texts)
+	}
+	mustContain(t, texts[0], "«Песочница» — начало истории", "В Песочница наступает осень")
+	mustContain(t, texts[1], "«Песочница» — раунд 1 открыт", "Заявки до 12:15")
+	mustContain(t, h.send(alice, groupChat, "/status"), "идёт", "Текущий раунд: 1, заявки до 12:15; заявок 0 из 2", "Следующий раунд: сразу после текущего, в 12:15")
+
+	mustContain(t, h.send(alice, private(alice), "/act"), "Формат: /act")
+	mustContain(t, h.send(alice, private(alice), "/act "+strings.Repeat("я", 501)), "до 500 символов")
+	mustContain(t, h.send(alice, private(alice), "/act иду в башню"), "Заявка принята: раунд 1, до 12:15")
+	mustContain(t, h.send(alice, private(alice), "/act передумал"), "не чаще раза в минуту")
+	h.clock.advance(time.Minute)
+	mustContain(t, h.send(alice, private(alice), "/act иду на рынок"), "Заявка принята: раунд 1")
+	mustContain(t, h.send(nobody, private(nobody), "/act что-то"), "Игры нет")
+	mustContain(t, h.send(owner, private(owner), "/act что-то"), "Персонажа ещё нет")
+
+	// Дедлайн: заявок 1 из 2 — раунд пропущен с сообщением, заявка переносится в раунд 2.
+	h.clock.advance(15 * time.Minute)
+	if err := h.rounds.Tick(context.Background(), h.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	texts = h.outboxTexts()
+	mustContain(t, texts[2], "«Песочница» — раунд 1. Недостаточное количество участников. Раунд пропущен.")
+	mustContain(t, texts[3], "раунд 2 открыт", "Перенесено заявок из пропущенного раунда: 1")
+	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 2, заявки до 12:31; заявок 1 из 2", "Предыдущий раунд: 1 пропущен: заявок 1 из 2")
+
+	// Кворум собран: раунд 2 заморожен со снимком; Боб без заявки — нет, оба подали.
+	mustContain(t, h.send(bob, private(bob), "/act слежу за гонцом"), "раунд 2")
+	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
+	texts = h.outboxTexts()
+	mustContain(t, texts[4], "раунд 2 закрыт, заявок: 2")
+	mustContain(t, texts[5], "раунд 3 открыт")
+	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 3", "Предыдущий раунд: 2 закрыт, заявок 2")
+
+	// Пауза и возобновление: открытый раунд получает новый дедлайн.
+	mustContain(t, h.send(owner, groupChat, "/pause"), "на паузе")
+	mustContain(t, h.send(alice, private(alice), "/act жду"), "Игра на паузе")
+	mustContain(t, h.send(alice, groupChat, "/status"), "пауза", "Следующий раунд: игра на паузе")
+	h.clock.advance(time.Hour)
+	mustContain(t, h.send(owner, groupChat, "/pause"), "возобновлена")
+	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 3, заявки до 13:31")
+	mustContain(t, h.send(alice, private(alice), "/act иду дальше"), "Заявка принята: раунд 3")
+}
+
+func TestRound_StatusTransitionsAndWindow(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
+	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
+	mustContain(t, h.send(owner, private(owner), "/set play_window 13:00-14:00"), "Сохранено")
+	h.joinAndCreate(alice, code, "1", "Элис", "1", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "2", "1", "-", "-")
+
+	// Старт вне окна: первый раунд в начале окна.
+	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.outboxTexts()[1], "Первый раунд в 13:00")
+	mustContain(t, h.send(alice, groupChat, "/status"), "Следующий раунд: в 13:00 (игровое окно 13:00–14:00)")
+	mustContain(t, h.send(alice, private(alice), "/act рано"), "нет открытого раунда")
+	h.clock.advance(30 * time.Minute)
+	if err := h.rounds.Tick(context.Background(), h.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, h.send(alice, groupChat, "/status"), "Следующий раунд: в 13:00")
+	h.clock.advance(30 * time.Minute)
+	if err := h.rounds.Tick(context.Background(), h.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 1, заявки до 13:15")
+
+	// Три раунда подряд только Элис: Боб waiting → waiting → inactive; заявка возвращает его в active.
+	for i := 0; i < 3; i++ {
+		mustContain(t, h.send(alice, private(alice), "/act иду"), "Заявка принята")
+		h.clock.advance(15 * time.Minute)
+		if err := h.rounds.Tick(context.Background(), h.clock.Now()); err != nil {
+			t.Fatal(err)
+		}
+		want := "waiting"
+		if i == 2 {
+			want = "inactive"
+		}
+		mustContain(t, h.send(bob, private(bob), "/character"), want)
+	}
+	// 13:45 — в окне, раунд 4 открыт; дедлайн 14:00 закрывает его, следующий раунд завтра в 13:00.
+	mustContain(t, h.send(bob, private(bob), "/act вернулся"), "Заявка принята: раунд 4")
+	mustContain(t, h.send(alice, private(alice), "/act иду"), "Заявка принята: раунд 4")
+	h.clock.advance(15 * time.Minute)
+	if err := h.rounds.Tick(context.Background(), h.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, h.send(bob, private(bob), "/character"), "active")
+	mustContain(t, h.send(alice, groupChat, "/status"), "Предыдущий раунд: 4 закрыт, заявок 2", "Следующий раунд: в 11.10 13:00")
 }

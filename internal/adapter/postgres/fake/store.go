@@ -29,6 +29,9 @@ type Store struct {
 	facts   map[model.FactionID]model.Faction
 	members map[memberKey]model.GameMember
 	chars   map[model.CharacterID]model.Character
+	rounds  map[model.RoundID]model.Round
+	subs    map[model.SubmissionID]model.Submission
+	outbox  []model.OutboxMessage
 	nextID  int64
 	// Err, если задан, возвращается всеми методами: имитация сбоя БД.
 	Err error
@@ -51,6 +54,7 @@ func New(now func() time.Time) *Store {
 		mods: map[model.ChatID][]moderator{}, dialogs: map[model.UserID]model.Dialog{}, genres: map[model.GenreID]model.Genre{},
 		cmodels: map[model.CharacterModelID]model.CharacterModel{}, games: map[model.GameID]model.Game{}, seasons: map[model.SeasonID]model.Season{},
 		facts: map[model.FactionID]model.Faction{}, members: map[memberKey]model.GameMember{}, chars: map[model.CharacterID]model.Character{},
+		rounds: map[model.RoundID]model.Round{}, subs: map[model.SubmissionID]model.Submission{},
 	}
 	cm := model.CharacterModel{ID: 1, Code: "basic_fantasy", Definition: BasicFantasy()}
 	s.cmodels[cm.ID] = cm

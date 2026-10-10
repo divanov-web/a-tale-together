@@ -11,6 +11,7 @@ import (
 
 	"taletogether/internal/app/chat"
 	"taletogether/internal/app/game"
+	"taletogether/internal/app/round"
 	"taletogether/internal/model"
 	"taletogether/internal/service/rules"
 )
@@ -58,6 +59,7 @@ type Service struct {
 	tg       Telegram
 	chats    *chat.Service
 	games    *game.Service
+	rounds   *round.Service
 	clock    Clock
 	logger   *slog.Logger
 	limiter  *limiter
@@ -65,8 +67,8 @@ type Service struct {
 }
 
 // New собирает сервис команд и реестр.
-func New(s Settings, store Store, dialogs Dialogs, tg Telegram, chats *chat.Service, games *game.Service, clock Clock, logger *slog.Logger) *Service {
-	svc := &Service{settings: s, store: store, dialogs: dialogs, tg: tg, chats: chats, games: games, clock: clock, logger: logger,
+func New(s Settings, store Store, dialogs Dialogs, tg Telegram, chats *chat.Service, games *game.Service, rounds *round.Service, clock Clock, logger *slog.Logger) *Service {
+	svc := &Service{settings: s, store: store, dialogs: dialogs, tg: tg, chats: chats, games: games, rounds: rounds, clock: clock, logger: logger,
 		limiter: newLimiter(clock, rateCapacity, rateWindow)}
 	svc.commands = svc.registry()
 	return svc
@@ -194,6 +196,8 @@ var userErrors = []error{
 	chat.ErrForbidden, chat.ErrUnknown,
 	game.ErrForbidden, game.ErrGameExists, game.ErrNoGame, game.ErrGameFinished, game.ErrNotMember,
 	game.ErrHasCharacter, game.ErrNoCharacter, game.ErrNicknameTaken, game.ErrChooseGame, game.ErrBadValue,
+	round.ErrForbidden, round.ErrAlreadyStarted, round.ErrNotActive, round.ErrPaused, round.ErrFinished, round.ErrNoCharacters,
+	round.ErrNoOpenRound, round.ErrEmpty, round.ErrTooLong, round.ErrTooFrequent,
 	rules.ErrInvalid, errUnknownUser,
 }
 

@@ -155,10 +155,10 @@ func (s *Store) UpdateFaction(ctx context.Context, f model.Faction) error {
 	return nil
 }
 
-// ListFactions возвращает фракции игры в порядке good, evil, neutral.
+// ListFactions возвращает фракции игры: стартовые good, evil, затем созданные по сюжету по id.
 func (s *Store) ListFactions(ctx context.Context, game model.GameID) ([]model.Faction, error) {
 	const q = `SELECT id, game_id, code, title, description, tone, relations FROM factions WHERE game_id = $1
-ORDER BY array_position(ARRAY['good', 'evil', 'neutral'], code), id`
+ORDER BY array_position(ARRAY['good', 'evil'], code), id`
 	rows, err := s.db(ctx).Query(ctx, q, game)
 	if err != nil {
 		return nil, fmt.Errorf("postgres.ListFactions: %w", err)

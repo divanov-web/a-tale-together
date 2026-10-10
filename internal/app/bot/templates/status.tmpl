@@ -7,5 +7,7 @@
 {{range .Factions}}• {{.Title}} ({{.Code}}): {{.Count}}
 {{end}}Персонажи:{{if not .Characters}} пока нет{{end}}
 {{range .Characters}}• {{.Nickname}} — {{.Archetype}}, {{.Faction}}, {{.Status}}
-{{end}}Следующий раунд: {{if .Idle}}нет — {{.Idle}}{{else}}по расписанию{{end}}
+{{end}}{{if .CurrentRound}}Текущий раунд: {{.CurrentRound}}
+{{end}}{{if .LastRound}}Предыдущий раунд: {{.LastRound}}
+{{end}}Следующий раунд: {{.NextRound}}
 Приглашение: {{.JoinLink}}

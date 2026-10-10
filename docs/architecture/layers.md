@@ -30,9 +30,9 @@ cmd/bot ──────────────► internal/app ──► int
 | `app/bot` | `New(...)`, `Service.Handle`, `Service.HandleChatMember`, `Service.RegisterMenu` | реестр команд с контекстами, лимит частоты, диалоги в личке (`dialogs`), вызов `app/chat` и `app/game`; ответы шаблонами `app/bot/templates` |
 | `app/chat` | `BotStatusChanged`, `Ensure`, `SetOwner`, `AddModerator`, `RemoveModerator`, `CanManage`, `Info` | чаты с ботом, владелец и модераторы, проверка прав (ADR-0007) |
 | `app/game` | `Create`, `Set`, `Join`, `Current`, `Status`, `CreateCharacter`, `SetBio`; позже `SubmitAction`, `Pause` | сценарии управления игрой, участниками и персонажами; права через `app/chat` |
-| `app/round` | `Run(ctx, gameID)` | заморозка → интерпретация → разрешение → фиксация → описание → outbox |
-| `app/scheduler` | `Run(ctx)` | тик: игры с `next_round_at <= now` в активном окне → `round.Run` под блокировкой |
-| `app/delivery` | `Run(ctx)` | воркер outbox → отправка → `telegram_message_id`, повторы |
+| `app/round` | `Begin`, `Pause`, `Next`, `Submit`, `Info`, `Tick(ctx, now)` | жизненный цикл раунда (ADR-0009): открытие по окну, заявки, заморозка со снимком и seed или пропуск без кворума, статусы персонажей по пропускам, анонсы в outbox; позже интерпретация → разрешение → фиксация → описание |
+| `app/scheduler` | `Run(ctx)` | тик по интервалу: `round.Tick` для игр с `next_round_at <= now`, каждая под блокировкой строки |
+| `app/delivery` | `Run(ctx)`, `Deliver(ctx)` | воркер outbox → `telegram.Send` → `telegram_message_id`, повторы с паузой, `unknown` при неопределённом исходе |
 | `service/rules` | `ValidateDraft`, `AutoDistribute`, `HP`, `Parse*`; позже `Catalog`, `Difficulty` | правила как данные: модель персонажа, каталог действий, сложности, формулы |
 | `service/engine` | `Resolve(snapshot, intents, rng) Result` | конфликтные группы, фазы, проверки, события; чистая функция |
 | `service/visibility` | `Filter(events, viewer)` | события, доступные адресату |
@@ -56,7 +56,7 @@ cmd/bot ──────────────► internal/app ──► int
 
 ## Поток раунда через слои
 
-1. `app/scheduler` выбирает игру → `app/round.Run`.
+1. `app/scheduler` → `app/round.Tick`: игра с наступившим `next_round_at` под `LockGame`.
 2. `round` → `postgres.FreezeRound` (снимок, seed).
 3. `round` → `interpreter.Parse` → `llm.Complete` → намерения.
 4. `round` → `engine.Resolve` → события и статусы заявок.

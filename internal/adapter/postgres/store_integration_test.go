@@ -5,9 +5,11 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"taletogether/internal/model"
 )
@@ -28,7 +30,7 @@ func newTestStore(t *testing.T) *Store {
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	if _, err := s.pool.Exec(ctx, `TRUNCATE telegram_updates, users, chats, chat_moderators, dialogs, games, seasons, factions, game_members, characters, character_stats CASCADE`); err != nil {
+	if _, err := s.pool.Exec(ctx, `TRUNCATE telegram_updates, users, chats, chat_moderators, dialogs, games, seasons, factions, game_members, characters, character_stats, rounds, action_submissions, messages_outbox CASCADE`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 	return s
@@ -113,7 +115,7 @@ func TestGameFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed genre: %v", err)
 	}
-	if genre.Template.CharacterModel != "basic_fantasy" || len(genre.Template.Factions) != 3 {
+	if genre.Template.CharacterModel != "basic_fantasy" || len(genre.Template.Factions) != 2 {
 		t.Fatalf("genre template = %+v", genre.Template)
 	}
 	cm, err := s.GetCharacterModel(ctx, genre.CharacterModelID)
@@ -167,7 +169,7 @@ func TestGameFlow(t *testing.T) {
 		t.Fatalf("ActiveSeason = %v, %v", got.ID, err)
 	}
 	factions, err := s.ListFactions(ctx, game.ID)
-	if err != nil || len(factions) != 3 || factions[0].Code != model.FactionGood || factions[0].Relations["evil"] != "hostile" {
+	if err != nil || len(factions) != 2 || factions[0].Code != model.FactionGood || factions[0].Relations["evil"] != "hostile" {
 		t.Fatalf("ListFactions = %+v, %v", factions, err)
 	}
 	factions[0].Title = "Орден"
@@ -267,5 +269,138 @@ func TestGameFlow(t *testing.T) {
 	}
 	if _, err := s.GetDialog(ctx, player.ID); !errors.Is(err, model.ErrNotFound) {
 		t.Fatalf("GetDialog after delete = %v; want ErrNotFound", err)
+	}
+
+	// Пункт 05: раунды, заявки, outbox на реальной схеме.
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	game.Status = model.GameActive
+	game.NextRoundAt = &now
+	if err := s.UpdateGame(ctx, game); err != nil {
+		t.Fatal(err)
+	}
+	if ids, err := s.DueGameIDs(ctx, now); err != nil || len(ids) != 1 || ids[0] != game.ID {
+		t.Fatalf("DueGameIDs = %v, %v", ids, err)
+	}
+	if ids, _ := s.DueGameIDs(ctx, now.Add(-time.Second)); len(ids) != 0 {
+		t.Fatalf("DueGameIDs before next_round_at = %v", ids)
+	}
+	r1, err := s.CreateRound(ctx, model.Round{GameID: game.ID, SeasonID: season.ID, RoundNo: 1, Status: model.RoundOpen, OpensAt: now, DeadlineAt: now.Add(15 * time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateRound(ctx, model.Round{GameID: game.ID, SeasonID: season.ID, RoundNo: 2, Status: model.RoundOpen, OpensAt: now, DeadlineAt: now}); err == nil {
+		t.Fatal("second open round accepted")
+	}
+	if got, err := s.OpenRound(ctx, game.ID); err != nil || got.ID != r1.ID {
+		t.Fatalf("OpenRound = %+v, %v", got, err)
+	}
+	sub, err := s.UpsertSubmission(ctx, model.Submission{GameID: game.ID, RoundID: r1.ID, CharacterID: created.ID, RawText: "иду", UpdatedAt: now})
+	if err != nil || sub.Status != model.SubmissionPending || !sub.SubmittedAt.Equal(now) {
+		t.Fatalf("UpsertSubmission = %+v, %v", sub, err)
+	}
+	again, err := s.UpsertSubmission(ctx, model.Submission{GameID: game.ID, RoundID: r1.ID, CharacterID: created.ID, RawText: "бегу", UpdatedAt: now.Add(time.Minute)})
+	if err != nil || again.ID != sub.ID || again.RawText != "бегу" || !again.SubmittedAt.Equal(now) || !again.UpdatedAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("UpsertSubmission again = %+v, %v", again, err)
+	}
+	if got, err := s.GetSubmission(ctx, game.ID, r1.ID, created.ID); err != nil || got.RawText != "бегу" {
+		t.Fatalf("GetSubmission = %+v, %v", got, err)
+	}
+	// Пропуск: заявка переезжает в раунд 2; снимок и seed замораживают раунд 2.
+	closed := now.Add(15 * time.Minute)
+	r1.Status, r1.SkipReason, r1.ClosedAt = model.RoundSkipped, "заявок 1 из 2", &closed
+	if err := s.UpdateRound(ctx, r1); err != nil {
+		t.Fatal(err)
+	}
+	r2, err := s.CreateRound(ctx, model.Round{GameID: game.ID, SeasonID: season.ID, RoundNo: 2, Status: model.RoundOpen, OpensAt: closed, DeadlineAt: closed.Add(15 * time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MoveSubmissions(ctx, game.ID, r1.ID, r2.ID); err != nil {
+		t.Fatal(err)
+	}
+	subs, err := s.ListSubmissions(ctx, game.ID, r2.ID)
+	if err != nil || len(subs) != 1 || subs[0].ID != sub.ID {
+		t.Fatalf("ListSubmissions after move = %+v, %v", subs, err)
+	}
+	snap := &model.RoundSnapshot{SchemaVersion: 1, Characters: []model.SnapshotCharacter{{ID: created.ID, Nickname: "Элис", Status: model.CharacterActive, HP: 8, FactionID: factions[0].ID, Conditions: []string{}}},
+		Submissions: []model.SnapshotSubmission{{SubmissionID: sub.ID, CharacterID: created.ID, Text: "бегу", SubmittedAt: now}}}
+	r2.Status, r2.Seed, r2.Snapshot = model.RoundFrozen, 42, snap
+	if err := s.UpdateRound(ctx, r2); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSubmissionsStatus(ctx, game.ID, r2.ID, model.SubmissionFrozen); err != nil {
+		t.Fatal(err)
+	}
+	last, err := s.LastRound(ctx, game.ID)
+	if err != nil || last.ID != r2.ID || last.Seed != 42 || last.Snapshot == nil || len(last.Snapshot.Submissions) != 1 || last.Snapshot.Characters[0].Nickname != "Элис" {
+		t.Fatalf("LastRound = %+v, %v", last, err)
+	}
+	if got, err := s.RoundByNo(ctx, game.ID, 1); err != nil || got.Status != model.RoundSkipped || got.SkipReason != "заявок 1 из 2" {
+		t.Fatalf("RoundByNo = %+v, %v", got, err)
+	}
+	if _, err := s.OpenRound(ctx, game.ID); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("OpenRound after freeze = %v", err)
+	}
+	if subs, _ = s.ListSubmissions(ctx, game.ID, r2.ID); subs[0].Status != model.SubmissionFrozen {
+		t.Fatalf("submission status = %s", subs[0].Status)
+	}
+	if err := s.UpdateCharacterActivity(ctx, game.ID, created.ID, model.CharacterWaiting, 1); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetCharacter(ctx, game.ID, season.ID, player.ID); got.Status != model.CharacterWaiting || got.MissedRounds != 1 {
+		t.Fatalf("character activity = %+v", got)
+	}
+	// Блокировка игры внутри транзакции; из второй транзакции строка пропускается.
+	err = s.InTx(ctx, func(txCtx context.Context) error {
+		if _, err := s.LockGame(txCtx, game.ID); err != nil {
+			return err
+		}
+		_, err := s.LockGame(ctx, game.ID) // пул, не транзакция: SKIP LOCKED
+		if !errors.Is(err, model.ErrNotFound) {
+			return fmt.Errorf("locked game visible: %v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("LockGame: %v", err)
+	}
+	// Outbox: дедуп по раунду и виду, claim с попыткой, финал.
+	msg := model.OutboxMessage{GameID: game.ID, RoundID: &r2.ID, TelegramChatID: -100, Kind: model.OutboxRoundClosed, Text: "закрыт", SendAfter: now}
+	for i := 0; i < 2; i++ {
+		if err := s.EnqueueOutbox(ctx, msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.EnqueueOutbox(ctx, model.OutboxMessage{GameID: game.ID, TelegramChatID: -100, Kind: model.OutboxScene, Text: "сцена", SendAfter: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := s.ListOutbox(ctx, game.ID)
+	if err != nil || len(queued) != 2 || queued[0].Part != 1 || queued[0].Status != model.OutboxPending {
+		t.Fatalf("ListOutbox = %+v, %v", queued, err)
+	}
+	claimed, err := s.ClaimOutbox(ctx, now, 5*time.Minute, 10)
+	if err != nil || len(claimed) != 1 || claimed[0].Attempts != 1 || claimed[0].Status != model.OutboxSending || claimed[0].Text != "закрыт" {
+		t.Fatalf("ClaimOutbox = %+v, %v", claimed, err)
+	}
+	if again, _ := s.ClaimOutbox(ctx, now, 5*time.Minute, 10); len(again) != 0 {
+		t.Fatalf("claimed twice: %+v", again)
+	}
+	id := int64(777)
+	sent := now.Add(time.Second)
+	claimed[0].Status, claimed[0].TelegramMessageID, claimed[0].SentAt = model.OutboxSent, &id, &sent
+	if err := s.FinishOutbox(ctx, claimed[0]); err != nil {
+		t.Fatal(err)
+	}
+	// Застрявшее sending → unknown.
+	stuck, _ := s.ClaimOutbox(ctx, now.Add(time.Hour), 5*time.Minute, 10) // сцена: send_after через час
+	if len(stuck) != 1 || stuck[0].Kind != model.OutboxScene {
+		t.Fatalf("scene claim = %+v", stuck)
+	}
+	if _, err := s.ClaimOutbox(ctx, now.Add(2*time.Hour), 5*time.Minute, 10); err != nil {
+		t.Fatal(err)
+	}
+	queued, _ = s.ListOutbox(ctx, game.ID)
+	if queued[0].Status != model.OutboxSent || *queued[0].TelegramMessageID != 777 || queued[1].Status != model.OutboxUnknown {
+		t.Fatalf("outbox final = %+v", queued)
 	}
 }
