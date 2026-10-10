@@ -28,7 +28,8 @@ cmd/bot ──────────────► internal/app ──► int
 | Пакет | Публичный вход | Суть |
 |---|---|---|
 | `app/bot` | `Register(bot, handlers)` | команды Telegram → разбор аргументов → `game_id` по чату → вызов `app/game`; ответы шаблонами |
-| `app/game` | `CreateGame`, `Join`, `CreateCharacter`, `SubmitAction`, `Status`, `Pause` | сценарии управления игрой и заявками |
+| `app/chat` | `Register`, `BotStatusChanged`, `SetOwner`, `AddModerator`, `RemoveModerator`, `CanManage` | чаты с ботом, владелец и модераторы, проверка прав (ADR-0007) |
+| `app/game` | `CreateGame`, `Join`, `CreateCharacter`, `SubmitAction`, `Status`, `Pause` | сценарии управления игрой и заявками; права через `app/chat` |
 | `app/round` | `Run(ctx, gameID)` | заморозка → интерпретация → разрешение → фиксация → описание → outbox |
 | `app/scheduler` | `Run(ctx)` | тик: игры с `next_round_at <= now` в активном окне → `round.Run` под блокировкой |
 | `app/delivery` | `Run(ctx)` | воркер outbox → отправка → `telegram_message_id`, повторы |

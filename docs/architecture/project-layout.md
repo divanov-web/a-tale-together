@@ -9,7 +9,7 @@ a-tale-together/
 ├── internal/
 │   ├── config/                  дефолты, .env/ENV, Validate
 │   ├── model/                   сущности, события, намерения, статусы
-│   ├── app/                     сценарии: bot, game, round, scheduler, delivery
+│   ├── app/                     сценарии: bot, chat, game, round, scheduler, delivery
 │   ├── service/                 логика: rules, engine, visibility, interpreter, narrator
 │   └── adapter/                 внешнее: postgres, telegram, llm
 ├── migrations/                  SQL-миграции goose (embed)
