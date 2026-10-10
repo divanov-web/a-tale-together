@@ -10,12 +10,15 @@
   "target_id": "o7",
   "location_id": "l2",
   "parameters": {"how": "ищу бумаги"},
+  "approach_id": null,
+  "risk": "normal",
   "fallback": {"action_type": "wait"},
   "ambiguities": ["какой из двух сундуков"]
 }
 ```
 - `action_type` только из каталога; неизвестное → `ambiguities` + `fallback`.
 - `target_id` только из переданного списка доступных целей; иначе `ambiguities`.
+- `approach_id` — выбранный подход из переданного списка; иначе `risk` (`normal / hard / extreme`) для свободного действия; число успехов назначает код по таблице правил.
 - Цепочка действий → первое действие, остальное в `ambiguities` с пометкой `extra`.
 
 ## Контекст вызова

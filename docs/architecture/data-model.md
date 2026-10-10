@@ -48,7 +48,7 @@ users ──< chats (owner_user_id)
 | `game_members` | участие пользователей | `game_id`, `user_id` → `users`, `role` (admin/player), `status` (active/left/kicked), `joined_at` | `(game_id, user_id)` |
 | `characters` | персонажи | `game_id`, `user_id`, `name`, `archetype`, `stats jsonb`, `hp`, `conditions jsonb`, `inventory jsonb`, `location_id`, `schema_version` | `(game_id, user_id)`; FK `(game_id, user_id)` → `game_members` |
 | `seasons` | сезоны сериала; у остальных типов единственный сезон 1 | `game_id`, `season_no`, `title`, `status` (active/finished), `started_at`, `finished_at` | `(game_id, season_no)` |
-| `locations` | места и связи | `game_id`, `name`, `description`, `links jsonb`, `active` | `(game_id, name)` |
+| `locations` | места и связи | `game_id`, `name`, `description`, `links jsonb`, `difficulty` (0–2, прибавляется к сложности проверок), `objects jsonb` (объекты с `approaches`: действие, характеристика, навык, сложность), `active` | `(game_id, name)` |
 | `rounds` | раунды | `game_id`, `season_id`, `round_no`, `opens_at`, `deadline_at`, `status` (open/frozen/resolving/resolved/published/failed), `seed`, `snapshot jsonb` | `(game_id, round_no)` |
 | `action_submissions` | заявки | `game_id`, `round_id`, `character_id`, `raw_text`, `status`, `submitted_at`, `telegram_message_id` | `(round_id, character_id)` |
 | `resolved_actions` | намерения и итоги | `game_id`, `round_id`, `submission_id`, `intent jsonb`, `status`, `checks jsonb`, `conflict_group` | `submission_id` |
