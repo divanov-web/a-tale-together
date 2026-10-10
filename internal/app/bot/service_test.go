@@ -548,7 +548,7 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 
 	texts := h.outboxTexts()
-	mustContain(t, texts[2], "«Песочница» — раунд 1 — итоги", "• Элис уходит из «Рыночная площадь» в «Зал Серой башни»")
+	mustContain(t, texts[2], "«Песочница» — раунд 1 — итоги", "• Элис (@alice) уходит из «Рыночная площадь» в «Зал Серой башни»")
 	privates := map[model.TelegramChatID][]string{}
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
 	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
@@ -612,7 +612,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 			texts = append(texts, m.Text)
 		}
 	}
-	mustContain(t, texts[2], "раунд 1 — итоги", "Элис уходит")
+	mustContain(t, texts[2], "раунд 1 — итоги", "Элис (@alice) уходит")
 	mustContain(t, texts[len(texts)-1], "«Песочница» — история завершена", "Игру завершил администратор. Раундов сыграно: 1.", "• Элис — ", "Зал Серой башни")
 	// Завершённая игра перестаёт быть игрой чата и текущей игрой игрока: ответы «игры нет», новая игра создаётся заново.
 	mustContain(t, h.send(alice, private(alice), "/act ждать"), "Игры нет")

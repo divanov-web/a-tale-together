@@ -14,6 +14,7 @@ import (
 	"taletogether/internal/adapter/postgres/fake"
 	applm "taletogether/internal/app/llm"
 	"taletogether/internal/model"
+	"taletogether/internal/service/narrator"
 )
 
 type clock struct{ t time.Time }
@@ -570,7 +571,7 @@ func TestResolve_Narrator(t *testing.T) {
 	}
 	// Рассказчик вызван и упал (ответа нет): шаблонная хроника с подходами, раунд опубликован, хроника у раунда пуста.
 	calls := llm.byRole(model.RoleNarrator)
-	if len(calls) != 1 || calls[0].Round == nil || *calls[0].Round != r1.ID || calls[0].PromptVersion != "narrator/v1" {
+	if len(calls) != 1 || calls[0].Round == nil || *calls[0].Round != r1.ID || calls[0].PromptVersion != narrator.PromptVersion {
 		t.Fatalf("narrator calls = %+v", calls)
 	}
 	if r1.Status != model.RoundPublished || r1.Narration != nil {
@@ -578,7 +579,7 @@ func TestResolve_Narrator(t *testing.T) {
 	}
 	msgs := w.outbox(t)
 	fallback := msgs[2]
-	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "«Мир» — раунд 1 — итоги\n• Элис уходит из «Рыночная площадь» в «Зал Серой башни»") {
+	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "«Мир» — раунд 1 — итоги\n• Элис (@Элис) уходит из «Рыночная площадь» в «Зал Серой башни»") {
 		t.Fatalf("fallback chronicle = %q", fallback.Text)
 	}
 	if !strings.Contains(fallback.Text, "— Рыночная площадь (Боб, Кэт) —\nВарианты:\n• прочитать (Разум/внимательность, сложность 1)") {
@@ -596,7 +597,7 @@ func TestResolve_Narrator(t *testing.T) {
 	w.tick(t, 10*time.Minute)
 	info, _ = w.svc.Info(ctx, w.game)
 	r2 := *info.Last
-	if r2.Narration == nil || r2.Narration.PromptVersion != "narrator/v1" || len(r2.Narration.Scenes) != 2 || r2.Narration.Chronicle != "Осень в Мире густеет." {
+	if r2.Narration == nil || r2.Narration.PromptVersion != narrator.PromptVersion || len(r2.Narration.Scenes) != 2 || r2.Narration.Chronicle != "Осень в Мире густеет." {
 		t.Fatalf("narration = %+v", r2.Narration)
 	}
 	input := llm.inputs[len(llm.inputs)-1]
@@ -612,7 +613,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if chron.ID == 0 {
 		t.Fatalf("chronicle message for round 2 missing: %+v", w.outbox(t))
 	}
-	want := "«Мир» — раунд 2\nОсень в Мире густеет.\n\n— Площадь —\nБоб читает объявление.\nВарианты:\n• прочитать (Разум/внимательность, сложность 1)\n\n— Башня —\nЭлис ждёт в зале."
+	want := "«Мир» — раунд 2\nОсень в Мире густеет.\n\n— Площадь —\nБоб (@Боб) читает объявление.\nВарианты:\n• прочитать (Разум/внимательность, сложность 1)\n\n— Башня —\nЭлис (@Элис) ждёт в зале."
 	if chron.Text != want {
 		t.Fatalf("chronicle text = %q\nwant %q", chron.Text, want)
 	}
@@ -648,5 +649,65 @@ func TestDeadline_RoundsUpToMinute(t *testing.T) {
 	}
 	if got := deadline(base, 5); !got.Equal(base.Add(5 * time.Minute)) {
 		t.Errorf("deadline on the minute = %v", got)
+	}
+}
+
+// TestFreeze_EntryMarks: первый раунд — все персонажи `new`; новый персонаж посреди игры — `new`; заявка после
+// `inactive` — `returned`; остальные без отметки (B1).
+func TestFreeze_EntryMarks(t *testing.T) {
+	t.Parallel()
+	s := model.DefaultGameSettings()
+	s.MinRoundAnswers = 1
+	s.InactiveAfterRounds = 1
+	w := newWorld(t, s)
+	ctx := context.Background()
+	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
+		t.Fatal(err)
+	}
+	w.reload(t)
+	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[1], "осматриваюсь"); err != nil {
+		t.Fatal(err)
+	}
+	w.tick(t, 10*time.Minute) // раунд 1 заморожен: все впервые
+	r1, _ := w.store.RoundByNo(ctx, w.game.ID, 1)
+	for _, c := range r1.Snapshot.Characters {
+		if c.Entry != model.EntryNew {
+			t.Fatalf("round 1 entry of %s = %q", c.Nickname, c.Entry)
+		}
+	}
+	// Элис пропустила раунд 1 → inactive (порог 1). Новый персонаж Дэн вступает перед раундом 2.
+	u, _ := w.store.UpsertUser(ctx, model.TelegramUser{ID: 99, Username: "dan"})
+	_ = w.store.AddMember(ctx, model.GameMember{GameID: w.game.ID, UserID: u.ID, Role: model.RolePlayer, Status: model.MemberActive})
+	dan, err := w.store.CreateCharacter(ctx, model.Character{GameID: w.game.ID, SeasonID: w.chars[0].SeasonID, UserID: u.ID, ModelID: 1, Nickname: "Дэн", Archetype: "rogue", Status: model.CharacterActive, FactionID: w.chars[0].FactionID,
+		Attributes: map[string]int{"strength": 2, "agility": 3, "wits": 4, "will": 3}, Skills: map[string]int{"awareness": 2}, LocationID: w.chars[0].LocationID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []model.Character{w.chars[0], dan} {
+		if _, _, err := w.svc.Submit(ctx, w.game, c, "осматриваюсь"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.tick(t, 10*time.Minute)
+	r2, _ := w.store.RoundByNo(ctx, w.game.ID, 2)
+	got := map[string]string{}
+	for _, c := range r2.Snapshot.Characters {
+		got[c.Nickname] = c.Entry
+	}
+	if got["Дэн"] != model.EntryNew || got["Элис"] != model.EntryReturned || got["Боб"] != "" || got["Кэт"] != "" {
+		t.Fatalf("round 2 entries = %v", got)
+	}
+}
+
+func TestTagMentions(t *testing.T) {
+	t.Parallel()
+	tags := map[string]string{"Кот": "@cat", "Котофей": "@kotofey", "Элис": "@alice", "Без": "@none"}
+	text := "«Мир» — раунд 3\nКотофей и Кот идут к Элис.\n\n— Площадь (Кот, Элис) —\nКот ждёт. Элис смотрит на Кота."
+	want := "«Мир» — раунд 3\nКотофей (@kotofey) и Кот (@cat) идут к Элис (@alice).\n\n— Площадь (Кот, Элис) —\nКот ждёт. Элис смотрит на Кота."
+	if got := tagMentions(text, tags); got != want {
+		t.Errorf("tagMentions =\n%s\nwant\n%s", got, want)
+	}
+	if got := tagMentions("нет никого", nil); got != "нет никого" {
+		t.Errorf("no tags = %q", got)
 	}
 }

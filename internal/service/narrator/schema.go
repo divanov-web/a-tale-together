@@ -3,7 +3,7 @@ package narrator
 import "encoding/json"
 
 // PromptVersion — версия промпта рассказчика, пишется в `llm_runs.prompt_version` и `rounds.narration`.
-const PromptVersion = "narrator/v1"
+const PromptVersion = "narrator/v2"
 
 // Schema — JSON-схема ответа модели: общий текст раунда и блок на сцену с упомянутыми событиями (docs/llm/round-calls.md).
 var Schema = json.RawMessage(`{

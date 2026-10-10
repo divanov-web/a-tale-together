@@ -116,6 +116,11 @@ func TestBuildInput(t *testing.T) {
 	if cellar.Characters[0].SecretBio != "на самом деле шпион Гильдии теней" || cellar.Characters[1].Status != "waiting" || cellar.Characters[1].Conditions[0] != "истощён" {
 		t.Errorf("cellar characters = %+v", cellar.Characters)
 	}
+	st := tower()
+	st.Characters[0].Entry = model.EntryReturned
+	if entry := BuildInput(Params{State: &st, Def: def()}); entry.Scenes[1].Characters[0].Entry != "returned" || !strings.Contains(entry.Encode(), `"entry":"returned"`) {
+		t.Errorf("entry mark missing: %+v", entry.Scenes[0].Characters)
+	}
 	if len(in.Scenes[0].Exits) != 1 || len(cellar.Objects) != 1 || cellar.Objects[0].State != "открыто" {
 		t.Errorf("exits/objects = %+v / %+v", in.Scenes[0].Exits, cellar.Objects)
 	}

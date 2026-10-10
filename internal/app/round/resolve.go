@@ -244,11 +244,33 @@ func (s *Service) saveState(ctx context.Context, g model.Game, before *model.Rou
 	return nil
 }
 
+// mentions — `@username` игроков по никнеймам персонажей снимка для тегов в хронике (B2); без username персонаж не тегается.
+func (s *Service) mentions(ctx context.Context, state *model.RoundSnapshot) (map[string]string, error) {
+	out := map[string]string{}
+	for _, c := range state.Characters {
+		user, err := s.store.GetUser(ctx, c.UserID)
+		if errors.Is(err, model.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if user.Username != "" {
+			out[c.Nickname] = "@" + user.Username
+		}
+	}
+	return out, nil
+}
+
 // publish ставит в outbox хронику (рассказчика или шаблонную) с подходами следующего раунда, частями по лимиту
 // Telegram, и уведомление о заявке каждому подавшему её.
 func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r model.Round, state *model.RoundSnapshot, result engine.Result, def model.CharacterModelDef, m *model.RoundMetrics) error {
 	preset := rules.Preset(g.Mode)
-	chronicle := chronicleMessage(g, r, visibility.Public(result.Events), state, narrator.Options(state, def, g.Mode))
+	mentions, err := s.mentions(ctx, state)
+	if err != nil {
+		return err
+	}
+	chronicle := tagMentions(chronicleMessage(g, r, visibility.Public(result.Events), state, narrator.Options(state, def, g.Mode)), mentions)
 	for i, part := range splitParts(chronicle, header(g, r.RoundNo)+" (продолжение)\n", partLimit) {
 		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: chat.TelegramChatID, Kind: model.OutboxChronicle, Part: i + 1, Text: part, SendAfter: s.clock.Now()}); err != nil {
 			return err

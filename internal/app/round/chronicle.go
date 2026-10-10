@@ -2,7 +2,9 @@ package round
 
 import (
 	"fmt"
+	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"taletogether/internal/model"
@@ -95,4 +97,55 @@ func splitParts(text, prefix string, limit int) []string {
 		parts[i] = prefix + parts[i]
 	}
 	return parts
+}
+
+// tagMentions дописывает `(@username)` после первого упоминания никнейма в тексте хроники (B2): игрок получает
+// уведомление Telegram, остальные видят, чей это персонаж. Совпадение только по целому слову; заголовки сцен
+// «— … —» и уже отмеченные ники пропускаются.
+func tagMentions(text string, mentions map[string]string) string {
+	if len(mentions) == 0 {
+		return text
+	}
+	nicks := make([]string, 0, len(mentions))
+	for n := range mentions {
+		nicks = append(nicks, n)
+	}
+	sort.Slice(nicks, func(i, j int) bool { return len(nicks[i]) > len(nicks[j]) }) // длинные ники раньше: «Кот» внутри «Котофей»
+	lines := strings.Split(text, "\n")
+	for _, nick := range nicks {
+		tag := " (" + mentions[nick] + ")"
+		for i, line := range lines {
+			if strings.HasPrefix(line, "— ") && strings.HasSuffix(line, " —") {
+				continue
+			}
+			if at := wordIndex(line, nick); at >= 0 {
+				lines[i] = line[:at+len(nick)] + tag + line[at+len(nick):]
+				break
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// wordIndex — байтовая позиция первого вхождения word в s как целого слова, иначе −1.
+func wordIndex(s, word string) int {
+	from := 0
+	for {
+		i := strings.Index(s[from:], word)
+		if i < 0 {
+			return -1
+		}
+		at := from + i
+		end := at + len(word)
+		before, _ := utf8.DecodeLastRuneInString(s[:at])
+		after, _ := utf8.DecodeRuneInString(s[end:])
+		if !isWordRune(before) && !isWordRune(after) {
+			return at
+		}
+		from = end
+	}
+}
+
+func isWordRune(r rune) bool {
+	return r != utf8.RuneError && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
 }

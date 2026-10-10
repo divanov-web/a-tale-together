@@ -111,11 +111,19 @@ func (s *RoundSnapshot) LocationByName(name string) (*SnapshotLocation, bool) {
 }
 
 // SnapshotCharacter — персонаж в снимке раунда.
+// Отметки входа персонажа в историю (B1): рассказчик вводит нового персонажа в сцену и возвращает отсутствовавшего.
+const (
+	EntryNew      = "new"      // первый замороженный раунд персонажа
+	EntryReturned = "returned" // заявка после статуса `inactive`
+)
+
+// SnapshotCharacter — персонаж в снимке раунда.
 type SnapshotCharacter struct {
 	ID              CharacterID     `json:"id"`
 	UserID          UserID          `json:"user_id"`
 	Nickname        string          `json:"nickname"`
 	Status          CharacterStatus `json:"status"`
+	Entry           string          `json:"entry,omitempty"` // вход в историю в этом раунде: EntryNew, EntryReturned или пусто
 	MissedRounds    int             `json:"missed_rounds"`
 	DeathRoundsLeft int             `json:"death_rounds_left,omitempty"`
 	HP              int             `json:"hp"`

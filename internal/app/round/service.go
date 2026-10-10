@@ -589,8 +589,18 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 	if inactiveAfter < 1 {
 		inactiveAfter = model.DefaultGameSettings().InactiveAfterRounds
 	}
+	seen, err := s.seenCharacters(ctx, g.ID, r.RoundNo)
+	if err != nil {
+		return err
+	}
+	entries := map[model.CharacterID]string{}
 	for i := range chars {
 		c := &chars[i]
+		if !seen[c.ID] {
+			entries[c.ID] = model.EntryNew
+		} else if c.Status == model.CharacterInactive && acted[c.ID] {
+			entries[c.ID] = model.EntryReturned
+		}
 		if c.Status == model.CharacterDead {
 			// Ненастоящая смерть: счётчик возврата уменьшается каждым замороженным раундом; возврат — событие движка.
 			if c.DeathRoundsLeft > 0 {
@@ -622,6 +632,9 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 		return err
 	}
 	snap := snapshot(g, chars, locations, subs, cm.Definition)
+	for i := range snap.Characters {
+		snap.Characters[i].Entry = entries[snap.Characters[i].ID]
+	}
 	r.Status = model.RoundFrozen
 	r.Seed = s.seed()
 	r.Snapshot = &snap
@@ -632,7 +645,7 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 		return err
 	}
 	s.logger.Info("round frozen", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("submissions", len(subs)))
-	s.journal(ctx, g, chat.TelegramChatID, r, "frozen", frozenData(r, chars, subs))
+	s.journal(ctx, g, chat.TelegramChatID, r, "frozen", frozenData(r, snap.Characters, subs))
 	m := &model.RoundMetrics{Attempt: r.Attempts + 1, Submissions: len(subs), FreezeMS: s.clock.Now().Sub(started).Milliseconds()}
 	if err := s.resolve(ctx, g, chat, r, genre, cm.Definition, chars, now, m); err != nil {
 		return err
@@ -643,13 +656,36 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 	return nil
 }
 
-// frozenData — содержимое записи журнала о заморозке: seed, заявки с никнеймами и статусы персонажей.
-func frozenData(r model.Round, chars []model.Character, subs []model.Submission) map[string]any {
+// seenCharacters — персонажи, уже бывшие в снимке какого-либо раунда до roundNo; остальные входят в историю впервые
+// (B1). Пропущенные раунды снимка не имеют, поэтому ищется последний замороженный.
+func (s *Service) seenCharacters(ctx context.Context, game model.GameID, roundNo int) (map[model.CharacterID]bool, error) {
+	seen := map[model.CharacterID]bool{}
+	for no := roundNo - 1; no >= 1; no-- {
+		prev, err := s.store.RoundByNo(ctx, game, no)
+		if errors.Is(err, model.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if prev.Snapshot == nil {
+			continue
+		}
+		for _, c := range prev.Snapshot.Characters {
+			seen[c.ID] = true
+		}
+		return seen, nil
+	}
+	return seen, nil
+}
+
+// frozenData — содержимое записи журнала о заморозке: seed, заявки с никнеймами, статусы и отметки входа персонажей.
+func frozenData(r model.Round, chars []model.SnapshotCharacter, subs []model.Submission) map[string]any {
 	names := map[model.CharacterID]string{}
 	statuses := make([]map[string]any, 0, len(chars))
 	for _, c := range chars {
 		names[c.ID] = c.Nickname
-		statuses = append(statuses, map[string]any{"character_id": c.ID, "character": c.Nickname, "status": c.Status, "missed": c.MissedRounds, "location_id": c.LocationID})
+		statuses = append(statuses, map[string]any{"character_id": c.ID, "character": c.Nickname, "status": c.Status, "entry": c.Entry, "missed": c.MissedRounds, "location_id": c.LocationID})
 	}
 	list := make([]map[string]any, 0, len(subs))
 	for _, sub := range subs {
