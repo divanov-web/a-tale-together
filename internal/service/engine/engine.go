@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
+	"slices"
 	"sort"
 	"strings"
 
@@ -353,6 +354,62 @@ func (r *resolver) applyApproach(res *model.ActionResult, c *model.SnapshotChara
 			}
 		}
 	}
+}
+
+// ApproachDone сообщает, исчерпан ли подход объекта для присутствующих персонажей (B8, docs/game/checks.md):
+// подход со сменой состояния или раскрытием — когда объект уже в целевом состоянии или раскрыт; подход только с
+// фактом (явным из on_success или описанием объекта, как в applyApproach) — когда факт уже известен каждому
+// присутствующему; подход с переходом (`move`) не исчерпывается. Без персонажей — false.
+func ApproachDone(loc model.SnapshotLocation, objIdx int, ap model.Approach, chars []model.SnapshotCharacter) bool {
+	if objIdx < 0 || objIdx >= len(loc.Objects) || len(chars) == 0 {
+		return false
+	}
+	var e struct {
+		State  string `json:"state"`
+		Object string `json:"object"`
+		Reveal string `json:"reveal"`
+		Fact   string `json:"fact"`
+		Move   string `json:"move"`
+	}
+	if len(ap.OnSuccess) > 0 {
+		_ = json.Unmarshal(ap.OnSuccess, &e)
+	}
+	if e.Move != "" {
+		return false
+	}
+	if e.State != "" || e.Reveal != "" {
+		if e.State != "" {
+			target := loc.Objects[objIdx]
+			if e.Object != "" {
+				o, _, ok := loc.Object(e.Object)
+				if !ok {
+					return false
+				}
+				target = o
+			}
+			if target.State != e.State {
+				return false
+			}
+		}
+		if e.Reveal != "" {
+			o, _, ok := loc.Object(e.Reveal)
+			if !ok || !o.Revealed {
+				return false
+			}
+		}
+		return true
+	}
+	fact := e.Fact
+	if fact == "" {
+		obj := loc.Objects[objIdx]
+		fact = fmt.Sprintf("%s: %s", obj.Title, describeObject(obj))
+	}
+	for _, c := range chars {
+		if !slices.Contains(c.Knowledge, fact) {
+			return false
+		}
+	}
+	return true
 }
 
 // applyFail выполняет on_fail: состояние, урон в пределах режима, факт.

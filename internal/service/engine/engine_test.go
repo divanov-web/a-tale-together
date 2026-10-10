@@ -341,3 +341,51 @@ func TestFreeCheck_MoveGateAndSafeFallback(t *testing.T) {
 		t.Fatalf("gate branches: stayed %v, moved %v", stayed, moved)
 	}
 }
+
+// TestApproachDone: подход со сменой состояния исчерпан, когда объект уже в целевом состоянии; подход с фактом —
+// когда факт известен каждому присутствующему; подход с переходом и подход без персонажей не исчерпываются.
+func TestApproachDone(t *testing.T) {
+	t.Parallel()
+	loc := model.SnapshotLocation{ID: 2, Name: "Трактир", Objects: []model.LocationObject{
+		{Key: "regulars", Title: "завсегдатаи", Description: "Трое стариков.", Approaches: []model.Approach{
+			{Action: model.ActionExplore, Title: "послушать", Attribute: "wits", OnSuccess: json.RawMessage(`{"fact":"свет после полуночи"}`)},
+			{Action: model.ActionExplore, Title: "осмотреть", Attribute: "wits"},
+		}},
+		{Key: "hatch", Title: "люк", State: "closed", Approaches: []model.Approach{
+			{Action: model.ActionInteract, Title: "отодвинуть", Attribute: "strength", OnSuccess: json.RawMessage(`{"state":"open","fact":"в погребе бочки"}`)},
+		}},
+		{Key: "lever", Title: "рычаг", HiddenUntil: true, Approaches: []model.Approach{
+			{Action: model.ActionInteract, Title: "дёрнуть", OnSuccess: json.RawMessage(`{"object":"hatch","state":"open"}`)},
+		}},
+		{Key: "wall", Title: "стена", Approaches: []model.Approach{
+			{Action: model.ActionExplore, Title: "найти рычаг", Attribute: "wits", OnSuccess: json.RawMessage(`{"reveal":"lever"}`)},
+			{Action: model.ActionInteract, Title: "перелезть", Attribute: "agility", OnSuccess: json.RawMessage(`{"move":"на площадь"}`)},
+		}},
+	}}
+	knows := model.SnapshotCharacter{ID: 1, Nickname: "Леголас", Knowledge: []string{"свет после полуночи", "завсегдатаи: Трое стариков."}}
+	fresh := model.SnapshotCharacter{ID: 2, Nickname: "Дэн"}
+	one, two := []model.SnapshotCharacter{knows}, []model.SnapshotCharacter{knows, fresh}
+	if !ApproachDone(loc, 0, loc.Objects[0].Approaches[0], one) || ApproachDone(loc, 0, loc.Objects[0].Approaches[0], two) {
+		t.Error("explicit fact: done for one who knows, not done when a newcomer is present")
+	}
+	if !ApproachDone(loc, 0, loc.Objects[0].Approaches[1], one) || ApproachDone(loc, 0, loc.Objects[0].Approaches[1], two) {
+		t.Error("derived fact (object description) counts as knowledge")
+	}
+	if ApproachDone(loc, 1, loc.Objects[1].Approaches[0], one) {
+		t.Error("closed hatch: approach to open it is not done")
+	}
+	loc.Objects[1].State = "open"
+	if !ApproachDone(loc, 1, loc.Objects[1].Approaches[0], two) || !ApproachDone(loc, 2, loc.Objects[2].Approaches[0], two) {
+		t.Error("open hatch: direct and cross-object state approaches are done regardless of knowledge")
+	}
+	if ApproachDone(loc, 3, loc.Objects[3].Approaches[0], two) {
+		t.Error("reveal: not done while the lever is hidden")
+	}
+	loc.Objects[2].Revealed = true
+	if !ApproachDone(loc, 3, loc.Objects[3].Approaches[0], two) {
+		t.Error("reveal: done once the lever is revealed")
+	}
+	if ApproachDone(loc, 3, loc.Objects[3].Approaches[1], two) || ApproachDone(loc, 0, loc.Objects[0].Approaches[0], nil) || ApproachDone(loc, 9, loc.Objects[0].Approaches[0], one) {
+		t.Error("move approach, no characters and bad index are never done")
+	}
+}

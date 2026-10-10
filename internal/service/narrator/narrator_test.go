@@ -258,4 +258,12 @@ func TestOptions(t *testing.T) {
 	if OptionsText(nil, model.ModeBalanced) != "" {
 		t.Error("empty options text")
 	}
+	// B8: исчерпанные подходы не предлагаются — «отпереть» ведёт к состоянию open, дверь уже открыта;
+	// «осмотреть статую» даёт факт, который Маг уже знает.
+	st.Locations[1].Objects[0].Approaches[1].OnSuccess = json.RawMessage(`{"state":"open"}`)
+	st.Characters[2].Knowledge = []string{"статуя: ничего примечательного"}
+	o := Options(&st, def(), model.ModeBalanced)
+	if len(o) != 2 || o[0].Title != "выбить" || o[1].Title != "дёрнуть" {
+		t.Errorf("exhausted options = %+v", o)
+	}
 }

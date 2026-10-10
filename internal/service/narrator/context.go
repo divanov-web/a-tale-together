@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"taletogether/internal/model"
+	"taletogether/internal/service/engine"
 	"taletogether/internal/service/rules"
 )
 
@@ -236,7 +237,8 @@ type Chance struct {
 }
 
 // Options считает подходы видимых объектов каждой сцены для следующего раунда (шаг 8 в docs/llm/round-calls.md):
-// сложность по пресету режима плюс сложность локации, шанс по пулу каждого присутствующего персонажа.
+// сложность по пресету режима плюс сложность локации, шанс по пулу каждого присутствующего персонажа. Исчерпанные
+// подходы (`engine.ApproachDone`: объект уже в целевом состоянии, факт известен всем присутствующим; B8) не предлагаются.
 func Options(state *model.RoundSnapshot, def model.CharacterModelDef, mode model.GameMode) []Option {
 	var out []Option
 	if state == nil {
@@ -253,11 +255,14 @@ func Options(state *model.RoundSnapshot, def model.CharacterModelDef, mode model
 		if len(chars) == 0 {
 			continue
 		}
-		for _, o := range l.Objects {
+		for objIdx, o := range l.Objects {
 			if o.HiddenUntil && !o.Revealed {
 				continue
 			}
 			for i, ap := range o.Approaches {
+				if engine.ApproachDone(l, objIdx, ap, chars) {
+					continue
+				}
 				opt := Option{LocationID: l.ID, Object: o.Key, ObjectTitle: o.Title, Idx: i, Title: ap.Title}
 				if opt.Title == "" {
 					opt.Title = string(ap.Action) + " " + o.Title
