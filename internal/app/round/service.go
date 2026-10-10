@@ -23,6 +23,16 @@ type Store interface {
 	ActiveSeason(ctx context.Context, game model.GameID) (model.Season, error)
 	GetChat(ctx context.Context, id model.ChatID) (model.Chat, error)
 	GetGenre(ctx context.Context, id model.GenreID) (model.Genre, error)
+	GetCharacterModel(ctx context.Context, id model.CharacterModelID) (model.CharacterModel, error)
+	GetUser(ctx context.Context, id model.UserID) (model.User, error)
+	ListLocations(ctx context.Context, game model.GameID) ([]model.Location, error)
+	UpdateLocationObjects(ctx context.Context, game model.GameID, id model.LocationID, objects []model.LocationObject) error
+	SaveCharacterState(ctx context.Context, game model.GameID, c model.Character) error
+	NextEventSeq(ctx context.Context, game model.GameID) (int64, error)
+	AppendEvents(ctx context.Context, events []model.Event) error
+	ListEvents(ctx context.Context, game model.GameID, round model.RoundID) ([]model.Event, error)
+	CreateResolvedActions(ctx context.Context, game model.GameID, round model.RoundID, results []model.ActionResult) error
+	ListResolvedActions(ctx context.Context, game model.GameID, round model.RoundID) ([]model.ActionResult, error)
 	ListFactions(ctx context.Context, game model.GameID) ([]model.Faction, error)
 	ListCharacters(ctx context.Context, game model.GameID, season model.SeasonID) ([]model.Character, error)
 	UpdateCharacterActivity(ctx context.Context, game model.GameID, id model.CharacterID, status model.CharacterStatus, missed int) error
@@ -61,6 +71,9 @@ var (
 	ErrEmpty          = errors.New("текст заявки пуст")
 	ErrTooLong        = fmt.Errorf("заявка до %d символов", model.SubmissionMaxLen)
 	ErrTooFrequent    = errors.New("заменить заявку можно не чаще раза в минуту")
+	ErrDead           = errors.New("персонаж выбыл из игры до возвращения; заявки не принимаются")
+	ErrNoRound        = errors.New("раунда с таким номером нет")
+	ErrNotResolved    = errors.New("раунд ещё не разрешён")
 	ErrAlreadyActed   = errors.New("заявка на этот раунд уже принята, изменить её нельзя")
 )
 
@@ -267,6 +280,9 @@ func (s *Service) Submit(ctx context.Context, game model.Game, c model.Character
 	if game.Status != model.GameActive {
 		return model.Round{}, model.Submission{}, statusError(game.Status)
 	}
+	if c.Status == model.CharacterDead {
+		return model.Round{}, model.Submission{}, fmt.Errorf("%w (ещё %d раундов)", ErrDead, c.DeathRoundsLeft)
+	}
 	now := s.clock.Now()
 	r, err := s.store.OpenRound(ctx, game.ID)
 	if errors.Is(err, model.ErrNotFound) || (err == nil && !r.DeadlineAt.After(now)) {
@@ -414,35 +430,50 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 	if err != nil {
 		return err
 	}
-	snapshot := model.RoundSnapshot{SchemaVersion: 1, Characters: []model.SnapshotCharacter{}, Submissions: []model.SnapshotSubmission{}}
 	acted := map[model.CharacterID]bool{}
 	for _, sub := range subs {
 		acted[sub.CharacterID] = true
-		snapshot.Submissions = append(snapshot.Submissions, model.SnapshotSubmission{SubmissionID: sub.ID, CharacterID: sub.CharacterID, Text: sub.RawText, SubmittedAt: sub.SubmittedAt})
 	}
 	inactiveAfter := g.Settings.InactiveAfterRounds
 	if inactiveAfter < 1 {
 		inactiveAfter = model.DefaultGameSettings().InactiveAfterRounds
 	}
-	for _, c := range chars {
-		status, missed := activity(c, acted[c.ID], inactiveAfter)
+	for i := range chars {
+		c := &chars[i]
+		if c.Status == model.CharacterDead {
+			// Ненастоящая смерть: счётчик возврата уменьшается каждым замороженным раундом; возврат — событие движка.
+			if c.DeathRoundsLeft > 0 {
+				c.DeathRoundsLeft--
+				if err := s.store.SaveCharacterState(ctx, g.ID, *c); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		status, missed := activity(*c, acted[c.ID], inactiveAfter)
 		if status != c.Status || missed != c.MissedRounds {
+			c.Status, c.MissedRounds = status, missed
 			if err := s.store.UpdateCharacterActivity(ctx, g.ID, c.ID, status, missed); err != nil {
 				return err
 			}
 		}
-		conditions := c.Conditions
-		if conditions == nil {
-			conditions = []string{}
-		}
-		snapshot.Characters = append(snapshot.Characters, model.SnapshotCharacter{
-			ID: c.ID, Nickname: c.Nickname, Status: status, MissedRounds: missed, HP: c.HP, FactionID: c.FactionID,
-			PartyID: c.PartyID, LocationID: c.LocationID, Conditions: conditions,
-		})
 	}
+	locations, err := s.store.ListLocations(ctx, g.ID)
+	if err != nil {
+		return err
+	}
+	genre, err := s.store.GetGenre(ctx, g.GenreID)
+	if err != nil {
+		return err
+	}
+	cm, err := s.store.GetCharacterModel(ctx, genre.CharacterModelID)
+	if err != nil {
+		return err
+	}
+	snap := snapshot(g, chars, locations, subs, cm.Definition)
 	r.Status = model.RoundFrozen
 	r.Seed = s.seed()
-	r.Snapshot = &snapshot
+	r.Snapshot = &snap
 	if err := s.store.UpdateRound(ctx, r); err != nil {
 		return err
 	}
@@ -450,7 +481,7 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 		return err
 	}
 	s.logger.Info("round frozen", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("submissions", len(subs)))
-	return s.enqueue(ctx, g, chat, &r.ID, model.OutboxRoundClosed, roundFrozenText(g, r, len(subs)))
+	return s.resolve(ctx, g, chat, r, now)
 }
 
 // activity — статус персонажа после раунда: заявка возвращает в `active`, пропуски ведут в `waiting`, затем `inactive`
@@ -535,7 +566,7 @@ func statusError(st model.GameStatus) error {
 
 // wrap добавляет префикс только к неожиданным ошибкам; ошибки сценария возвращаются как есть.
 func wrap(op string, err error) error {
-	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound, ErrAlreadyActed} {
+	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound, ErrAlreadyActed, ErrNoRound, ErrNotResolved} {
 		if errors.Is(err, ue) {
 			return err
 		}

@@ -1,6 +1,10 @@
 package fake
 
-import "taletogether/internal/model"
+import (
+	"encoding/json"
+
+	"taletogether/internal/model"
+)
 
 // BasicFantasy — модель персонажа basic_fantasy, как в миграции 00003.
 func BasicFantasy() model.CharacterModelDef {
@@ -45,12 +49,22 @@ func FantasyTemplate() model.GenreTemplate {
 			{Code: model.FactionGood, Title: "Орден Рассвета", Description: "Хранители города, верят в закон и свет.", Tone: "строгие, не безгрешные", Relations: map[string]string{"evil": "hostile"}},
 			{Code: model.FactionEvil, Title: "Гильдия теней", Description: "Контрабандисты и шпионы; хотят свободы от Ордена.", Tone: "сторона конфликта, не злодеи", Relations: map[string]string{"good": "hostile"}},
 		},
+		Locations: []model.LocationTemplate{
+			{Name: "Рыночная площадь", Description: "Сердце города.", Start: true, Links: []model.LocationLink{{To: "Зал Серой башни", Title: "к башне"}},
+				Objects: []model.LocationObject{{Key: "notice_board", Title: "доска объявлений", Description: "Объявление о награде.", Approaches: []model.Approach{{Action: model.ActionExplore, Title: "прочитать", Attribute: "wits", Skill: "awareness", Difficulty: 1, OnSuccess: json.RawMessage(`{"fact":"Гонца видели у башни."}`)}}}}},
+			{Name: "Зал Серой башни", Description: "Пыльный зал.", Links: []model.LocationLink{{To: "Рыночная площадь", Title: "на площадь"}, {To: "Подвал башни", Title: "вниз в подвал"}}},
+			{Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, Links: []model.LocationLink{{To: "Зал Серой башни", Title: "наверх в зал"}},
+				Objects: []model.LocationObject{{Key: "cellar_door", Title: "запертая дверь", State: "locked", Approaches: []model.Approach{
+					{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Difficulty: 2, OnSuccess: json.RawMessage(`{"state":"broken"}`), OnFail: json.RawMessage(`{"condition":"exhausted"}`)},
+					{Action: model.ActionInteract, Title: "отпереть", Attribute: "agility", Skill: "thievery", Difficulty: 1, OnSuccess: json.RawMessage(`{"state":"open"}`)},
+				}}}},
+		},
 		OpeningScene: "В {{world_title}} наступает осень.",
 		Items: []model.ItemTemplate{
-			{Key: "sword", Title: "Меч", Tags: []string{"weapon", "melee"}},
+			{Key: "sword", Title: "Меч", Tags: []string{"weapon", "melee"}, Bonus: &model.ItemBonus{Skill: "melee", Dice: 1}},
 			{Key: "shield", Title: "Щит", Tags: []string{"armor"}},
 			{Key: "dagger", Title: "Кинжал", Tags: []string{"weapon", "melee"}},
-			{Key: "lockpicks", Title: "Отмычки", Tags: []string{"tool"}},
+			{Key: "lockpicks", Title: "Отмычки", Tags: []string{"tool"}, Bonus: &model.ItemBonus{Skill: "thievery", Dice: 1}},
 			{Key: "staff", Title: "Посох", Tags: []string{"weapon", "focus"}},
 			{Key: "tome", Title: "Фолиант", Tags: []string{"book"}},
 			{Key: "seal", Title: "Печать гильдии", Tags: []string{"token"}},

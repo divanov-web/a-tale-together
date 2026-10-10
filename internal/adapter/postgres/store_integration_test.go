@@ -4,6 +4,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -30,7 +31,7 @@ func newTestStore(t *testing.T) *Store {
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	if _, err := s.pool.Exec(ctx, `TRUNCATE telegram_updates, users, chats, chat_moderators, dialogs, games, seasons, factions, game_members, characters, character_stats, rounds, action_submissions, messages_outbox, llm_runs CASCADE`); err != nil {
+	if _, err := s.pool.Exec(ctx, `TRUNCATE telegram_updates, users, chats, chat_moderators, dialogs, games, seasons, factions, game_members, characters, character_stats, rounds, action_submissions, messages_outbox, llm_runs, locations, world_events, resolved_actions CASCADE`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 	if _, err := s.pool.Exec(ctx, `DELETE FROM llm_profiles WHERE name <> 'local-claude'`); err != nil {
@@ -454,5 +455,68 @@ func TestGameFlow(t *testing.T) {
 	runs, err := s.ListLLMRuns(ctx, 10)
 	if err != nil || len(runs) != 2 || runs[0].Error != "boom" || runs[0].GameID != nil || runs[1].CostUSD != 0.001234 || runs[1].RoundID == nil || *runs[1].RoundID != r2.ID {
 		t.Fatalf("ListLLMRuns = %+v, %v", runs, err)
+	}
+
+	// Пункт 07: локации, события, итоги заявок, состояние персонажа.
+	if len(genre.Template.Locations) != 4 || !genre.Template.Locations[0].Start || genre.Template.Locations[3].Objects[1].HiddenUntil {
+		t.Fatalf("genre locations = %+v", genre.Template.Locations)
+	}
+	loc, err := s.CreateLocation(ctx, model.Location{GameID: game.ID, Name: "Подвал", Difficulty: 1, Links: []model.LocationLink{{To: "Зал", Title: "наверх"}},
+		Objects: []model.LocationObject{{Key: "door", Title: "дверь", State: "locked", Approaches: []model.Approach{{Action: model.ActionInteract, Attribute: "strength", Difficulty: 2, OnSuccess: json.RawMessage(`{"state":"broken"}`)}}}}, Active: true, Start: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateLocation(ctx, model.Location{GameID: game.ID, Name: "Подвал"}); err == nil {
+		t.Fatal("duplicate location accepted")
+	}
+	locs, err := s.ListLocations(ctx, game.ID)
+	if err != nil || len(locs) != 1 || locs[0].Objects[0].Approaches[0].Difficulty != 2 || locs[0].Links[0].To != "Зал" {
+		t.Fatalf("ListLocations = %+v, %v", locs, err)
+	}
+	locs[0].Objects[0].State = "broken"
+	if err := s.UpdateLocationObjects(ctx, game.ID, loc.ID, locs[0].Objects); err != nil {
+		t.Fatal(err)
+	}
+	if locs, _ = s.ListLocations(ctx, game.ID); locs[0].Objects[0].State != "broken" {
+		t.Fatalf("objects not updated: %+v", locs[0].Objects)
+	}
+	if seq, _ := s.NextEventSeq(ctx, game.ID); seq != 1 {
+		t.Fatalf("NextEventSeq = %d", seq)
+	}
+	cid := created.ID
+	events := []model.Event{
+		{GameID: game.ID, RoundID: r2.ID, Seq: 1, Type: model.EventCharacterMoved, Payload: json.RawMessage(`{"character_id":1,"to":2}`), Visibility: model.VisibilityLocation, LocationID: &loc.ID, CharacterID: &cid},
+		{GameID: game.ID, RoundID: r2.ID, Seq: 2, Type: model.EventFactLearned, Payload: json.RawMessage(`{"fact":"x"}`), Visibility: model.VisibilityPrivate, VisibleTo: []model.CharacterID{cid}},
+	}
+	if err := s.AppendEvents(ctx, events); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AppendEvents(ctx, events[:1]); err == nil {
+		t.Fatal("duplicate seq accepted")
+	}
+	got, err := s.ListEvents(ctx, game.ID, r2.ID)
+	if err != nil || len(got) != 2 || got[1].VisibleTo[0] != cid || got[0].LocationID == nil || *got[0].LocationID != loc.ID || got[0].VisibleTo != nil {
+		t.Fatalf("ListEvents = %+v, %v", got, err)
+	}
+	if seq, _ := s.NextEventSeq(ctx, game.ID); seq != 3 {
+		t.Fatalf("NextEventSeq after append = %d", seq)
+	}
+	results := []model.ActionResult{{SubmissionID: sub.ID, CharacterID: cid, Intent: model.Intent{SubmissionID: sub.ID, CharacterID: cid, ActionType: model.ActionMove, Target: "зал"},
+		Status: model.ResultResolved, Summary: "переходит", Check: &model.CheckInfo{Pool: 3, Dice: []int{6, 1, 2}, Successes: 1, Difficulty: 1, Outcome: model.OutcomeSuccess}, EventSeqs: []int64{1, 2}}}
+	for i := 0; i < 2; i++ {
+		if err := s.CreateResolvedActions(ctx, game.ID, r2.ID, results); err != nil {
+			t.Fatal(err)
+		}
+	}
+	acts, err := s.ListResolvedActions(ctx, game.ID, r2.ID)
+	if err != nil || len(acts) != 1 || acts[0].Intent.Target != "зал" || acts[0].Check.Pool != 3 || len(acts[0].EventSeqs) != 2 {
+		t.Fatalf("ListResolvedActions = %+v, %v", acts, err)
+	}
+	diedAt := now
+	if err := s.SaveCharacterState(ctx, game.ID, model.Character{ID: cid, LocationID: &loc.ID, HP: 0, Conditions: []string{"wounded"}, Knowledge: []string{"x"}, Status: model.CharacterDead, DeathRoundsLeft: 96, DiedAt: &diedAt}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetCharacter(ctx, game.ID, season.ID, player.ID); got.Status != model.CharacterDead || got.DeathRoundsLeft != 96 || got.DiedAt == nil || got.LocationID == nil || got.Knowledge[0] != "x" || got.Conditions[0] != "wounded" || got.Inventory[0].Title != "Меч" {
+		t.Fatalf("character state = %+v", got)
 	}
 }

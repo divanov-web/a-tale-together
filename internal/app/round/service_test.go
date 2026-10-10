@@ -210,7 +210,7 @@ func TestTick_FreezeSnapshotAndActivity(t *testing.T) {
 		}
 	}
 	msgs := w.outbox(t)
-	wantKinds := []model.OutboxKind{model.OutboxScene, model.OutboxRoundOpen, model.OutboxRoundClosed, model.OutboxRoundOpen, model.OutboxRoundClosed, model.OutboxRoundOpen, model.OutboxRoundClosed, model.OutboxRoundOpen}
+	wantKinds := []model.OutboxKind{model.OutboxScene, model.OutboxRoundOpen, model.OutboxChronicle, model.OutboxRoundOpen, model.OutboxChronicle, model.OutboxRoundOpen, model.OutboxChronicle, model.OutboxRoundOpen}
 	if len(msgs) != len(wantKinds) {
 		t.Fatalf("outbox len = %d: %+v", len(msgs), msgs)
 	}
@@ -219,7 +219,7 @@ func TestTick_FreezeSnapshotAndActivity(t *testing.T) {
 			t.Fatalf("outbox[%d] kind = %s; want %s", i, msgs[i].Kind, k)
 		}
 	}
-	if msgs[2].Text != "«Мир» — раунд 1 закрыт, заявок: 2. Разрешение раундов ещё в разработке." {
+	if msgs[2].Text != "«Мир» — раунд 1 — итоги\n• тихий раунд: никто ничего заметного не сделал" {
 		t.Fatalf("closed text = %q", msgs[2].Text)
 	}
 	// Статусы: Элис active (0 пропусков), Боб waiting (2 пропуска), Кэт inactive (3 пропуска).
@@ -243,7 +243,7 @@ func TestTick_FreezeSnapshotAndActivity(t *testing.T) {
 		t.Fatalf("returned character = %+v", got)
 	}
 	info, _ := w.svc.Info(ctx, w.game)
-	if info.Last == nil || info.Last.Status != model.RoundFrozen || info.Last.Seed != 42 || info.Last.Snapshot == nil ||
+	if info.Last == nil || info.Last.Status != model.RoundPublished || info.Last.Seed != 42 || info.Last.Snapshot == nil ||
 		len(info.Last.Snapshot.Characters) != 3 || len(info.Last.Snapshot.Submissions) != 1 || info.Last.Snapshot.Submissions[0].Text != "вернулась" {
 		t.Fatalf("frozen round = %+v", info.Last)
 	}
@@ -352,6 +352,7 @@ func TestPause_And_Next(t *testing.T) {
 		kinds = append(kinds, m.Kind)
 	}
 	if len(kinds) != 6 || kinds[2] != model.OutboxSystem || kinds[3] != model.OutboxSystem || kinds[4] != model.OutboxRoundClosed || kinds[5] != model.OutboxRoundOpen {
+		// раунд 1 без заявок пропущен: round_closed с сообщением о пропуске
 		t.Fatalf("outbox kinds = %v", kinds)
 	}
 }

@@ -76,7 +76,8 @@ func (s *Service) registry() []command {
 		{name: "llm", contexts: ctxPrivate, description: "профили LLM (владелец бота): use|add|test", run: s.llmCommand},
 	}
 	if s.settings.Env == "dev" {
-		cmds = append(cmds, command{name: "next", contexts: ctxGroup, description: "закрыть раунд и открыть следующий (только dev)", run: s.roundNext, needsChat: true})
+		cmds = append(cmds, command{name: "next", contexts: ctxGroup, description: "закрыть раунд и открыть следующий (только dev)", run: s.roundNext, needsChat: true},
+			command{name: "replay", contexts: ctxGroup, description: "<номер> — воспроизвести раунд по снимку и seed (только dev)", run: s.roundReplay, needsChat: true})
 	}
 	return cmds
 }

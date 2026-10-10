@@ -144,13 +144,27 @@ func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user mod
 		if !ok {
 			it = model.ItemTemplate{Key: key, Title: key}
 		}
-		inventory = append(inventory, model.Item{Key: it.Key, Title: it.Title, Tags: it.Tags})
+		inventory = append(inventory, model.Item{Key: it.Key, Title: it.Title, Tags: it.Tags, Bonus: it.Bonus})
+	}
+	locations, err := s.store.ListLocations(ctx, game.ID)
+	if err != nil {
+		return model.Character{}, fmt.Errorf("game.CreateCharacter: %w", err)
+	}
+	var start *model.LocationID
+	for _, l := range locations {
+		if l.Start || start == nil {
+			id := l.ID
+			start = &id
+		}
+		if l.Start {
+			break
+		}
 	}
 	c := model.Character{
 		GameID: game.ID, SeasonID: season.ID, UserID: user.ID, ModelID: cm.ID,
 		Nickname: strings.TrimSpace(d.Nickname), Archetype: d.Archetype,
 		PublicBio: strings.TrimSpace(d.PublicBio), SecretBio: strings.TrimSpace(d.SecretBio),
-		Status: model.CharacterActive, FactionID: faction.ID, HP: hp, Conditions: []string{}, Inventory: inventory,
+		Status: model.CharacterActive, FactionID: faction.ID, HP: hp, Conditions: []string{}, Inventory: inventory, LocationID: start, Knowledge: []string{},
 		Attributes: d.Attributes, Skills: d.Skills,
 	}
 	var created model.Character

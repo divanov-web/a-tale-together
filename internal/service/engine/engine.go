@@ -1,0 +1,533 @@
+// Package engine — детерминированное разрешение раунда (пункт 07): снимок + намерения + seed → события и итоги заявок.
+// Чистые функции без I/O; каждая заявка получает ровно один статус; состояние меняется только применением событий (apply.go).
+package engine
+
+import (
+	"encoding/json"
+	"fmt"
+	"math/rand/v2"
+	"sort"
+	"strings"
+
+	"taletogether/internal/model"
+	"taletogether/internal/service/rules"
+)
+
+// Result — выход движка: события в порядке возникновения и итог каждой заявки.
+type Result struct {
+	Events  []model.Event
+	Results []model.ActionResult
+}
+
+// Resolve разрешает раунд. Фазы (docs/game/round.md): подготовка (help, wait) → перемещение → взаимодействие
+// (explore, interact) → итоги (возврат после ненастоящей смерти). Броски из rand.New(rand.NewPCG(seed, 0)).
+func Resolve(snap model.RoundSnapshot, intents []model.Intent, seed int64) Result {
+	r := &resolver{snap: Clone(snap), rng: rand.New(rand.NewPCG(uint64(seed), uint64(seed)>>1)), preset: rules.Preset(snap.Mode), helpers: map[model.CharacterID]int{}}
+	ordered := append([]model.Intent(nil), intents...)
+	sort.SliceStable(ordered, func(i, j int) bool { return phase(ordered[i].ActionType) < phase(ordered[j].ActionType) })
+	for _, in := range ordered {
+		r.resolveOne(in)
+	}
+	r.returns()
+	return Result{Events: r.events, Results: r.results}
+}
+
+// Clone — глубокая копия снимка: движок и свёртка не трогают исходные данные.
+func Clone(snap model.RoundSnapshot) model.RoundSnapshot {
+	b, err := json.Marshal(snap)
+	if err != nil {
+		panic("engine.Clone: " + err.Error())
+	}
+	var out model.RoundSnapshot
+	if err := json.Unmarshal(b, &out); err != nil {
+		panic("engine.Clone: " + err.Error())
+	}
+	return out
+}
+
+// phase — порядок разрешения по типу действия.
+func phase(t model.ActionType) int {
+	switch t {
+	case model.ActionHelp, model.ActionWait, model.ActionSneak:
+		return 1
+	case model.ActionMove:
+		return 2
+	case model.ActionExplore, model.ActionInteract, model.ActionPersuade, model.ActionTrade:
+		return 3
+	case model.ActionAttack:
+		return 4
+	}
+	return 5
+}
+
+type resolver struct {
+	snap    model.RoundSnapshot
+	rng     *rand.Rand
+	preset  rules.ModePreset
+	events  []model.Event
+	results []model.ActionResult
+	helpers map[model.CharacterID]int
+}
+
+func (r *resolver) resolveOne(in model.Intent) {
+	res := model.ActionResult{SubmissionID: in.SubmissionID, CharacterID: in.CharacterID, Intent: in, EventSeqs: []int64{}}
+	c, ok := r.snap.Character(in.CharacterID)
+	switch {
+	case !ok:
+		res.Status, res.Reason = model.ResultRejected, "персонажа нет в снимке раунда"
+	case c.Status == model.CharacterDead:
+		res.Status, res.Reason = model.ResultRejected, "персонаж выбыл из игры до возвращения"
+	case len(in.Ambiguities) > 0:
+		res.Status, res.Reason = model.ResultAmbiguous, strings.Join(in.Ambiguities, "; ")
+	default:
+		entry, known := rules.Entry(in.ActionType)
+		switch {
+		case !known:
+			res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("неизвестное действие %q", in.ActionType)
+		case !entry.Supported:
+			res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("действие «%s» появится в пункте плана %s", entry.Title, entry.Later)
+		default:
+			r.resolveSupported(c, in, &res)
+		}
+	}
+	if res.Status != model.ResultResolved && res.Summary == "" {
+		res.Summary = res.Reason
+		r.emit(&res, model.EventActionRejected, model.VisibilityPrivate, []model.CharacterID{in.CharacterID}, c, map[string]any{"status": res.Status, "reason": res.Reason, "action_type": in.ActionType})
+	}
+	r.results = append(r.results, res)
+}
+
+func (r *resolver) resolveSupported(c *model.SnapshotCharacter, in model.Intent, res *model.ActionResult) {
+	loc, _ := r.locationOf(c)
+	switch in.ActionType {
+	case model.ActionWait:
+		res.Status, res.Summary = model.ResultResolved, "ждёт и держится настороже"
+		r.emit(res, model.EventCharacterWaited, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID})
+	case model.ActionHelp:
+		target := r.characterByNickname(in.Target)
+		switch {
+		case target == nil:
+			res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("персонаж «%s» не найден", in.Target)
+		case target.ID == c.ID:
+			res.Status, res.Reason = model.ResultRejected, "помочь самому себе нельзя"
+		case !sameLocation(c, target):
+			res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("%s не рядом", target.Nickname)
+		default:
+			r.helpers[target.ID]++
+			res.Status, res.Summary = model.ResultResolved, "помогает: "+target.Nickname
+			r.emit(res, model.EventHelpGiven, model.VisibilityPrivate, []model.CharacterID{c.ID, target.ID}, c, map[string]any{"helper_id": c.ID, "target_id": target.ID})
+		}
+	case model.ActionMove:
+		r.move(c, loc, in, res)
+	case model.ActionExplore:
+		r.explore(c, loc, in, res)
+	case model.ActionInteract:
+		r.interact(c, loc, in, res)
+	}
+}
+
+func (r *resolver) move(c *model.SnapshotCharacter, loc *model.SnapshotLocation, in model.Intent, res *model.ActionResult) {
+	if loc == nil {
+		res.Status, res.Reason = model.ResultRejected, "персонаж вне локаций"
+		return
+	}
+	var dest *model.SnapshotLocation
+	for _, l := range loc.Links {
+		if l.Hidden {
+			continue
+		}
+		if strings.EqualFold(l.To, in.Target) || strings.EqualFold(l.Title, in.Target) || matches(in.Target, l.Title+" "+l.To) {
+			dest, _ = r.snap.LocationByName(l.To)
+			break
+		}
+	}
+	if dest == nil {
+		if d, ok := r.snap.LocationByName(in.Target); ok && hasLink(loc, d.Name) {
+			dest = d
+		}
+	}
+	if dest == nil {
+		res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("из «%s» нет выхода «%s»; выходы: %s", loc.Name, in.Target, exits(loc))
+		return
+	}
+	from := loc.ID
+	res.Status, res.Summary = model.ResultResolved, fmt.Sprintf("переходит: %s → %s", loc.Name, dest.Name)
+	r.emit(res, model.EventCharacterMoved, model.VisibilityLocation, nil, c, map[string]any{"character_id": c.ID, "from": from, "to": dest.ID, "from_name": loc.Name, "to_name": dest.Name})
+	// Событие видно и в локации назначения: второе событие с той же сутью, адресованное новой локации.
+	ev := r.events[len(r.events)-1]
+	ev2 := ev
+	ev2.LocationID = &dest.ID
+	ev2.Seq = int64(len(r.events) + 1)
+	r.events = append(r.events, ev2)
+	res.EventSeqs = append(res.EventSeqs, ev2.Seq)
+	c.LocationID = &dest.ID
+}
+
+func (r *resolver) explore(c *model.SnapshotCharacter, loc *model.SnapshotLocation, in model.Intent, res *model.ActionResult) {
+	if loc == nil {
+		res.Status, res.Reason = model.ResultRejected, "персонаж вне локаций"
+		return
+	}
+	if in.Target == "" || strings.EqualFold(in.Target, loc.Name) || in.Target == "вокруг" || in.Target == "around" {
+		fact := fmt.Sprintf("%s: %s Выходы: %s. Объекты: %s.", loc.Name, loc.Description, exits(loc), objects(loc))
+		res.Status, res.Summary = model.ResultResolved, "осматривается в локации «"+loc.Name+"»"
+		r.learn(res, c, loc, fact)
+		return
+	}
+	obj, idx, ok := r.findObject(loc, in.Target)
+	if !ok {
+		res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("в «%s» нет объекта «%s»; объекты: %s", loc.Name, in.Target, objects(loc))
+		return
+	}
+	ap, apIdx := pickApproach(obj, model.ActionExplore, in.ApproachIdx)
+	if apIdx < 0 {
+		fact := fmt.Sprintf("%s: %s", obj.Title, describeObject(obj))
+		res.Status, res.Summary = model.ResultResolved, "осматривает: "+obj.Title
+		r.learn(res, c, loc, fact)
+		return
+	}
+	r.check(c, loc, in, res, ap, obj, idx, "осматривает: "+obj.Title)
+}
+
+func (r *resolver) interact(c *model.SnapshotCharacter, loc *model.SnapshotLocation, in model.Intent, res *model.ActionResult) {
+	if loc == nil {
+		res.Status, res.Reason = model.ResultRejected, "персонаж вне локаций"
+		return
+	}
+	obj, idx, ok := r.findObject(loc, in.Target)
+	if !ok {
+		res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("в «%s» нет объекта «%s»; объекты: %s", loc.Name, in.Target, objects(loc))
+		return
+	}
+	ap, apIdx := pickApproach(obj, model.ActionInteract, in.ApproachIdx)
+	if apIdx < 0 {
+		res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("с объектом «%s» нечего делать", obj.Title)
+		return
+	}
+	r.check(c, loc, in, res, ap, obj, idx, "взаимодействует: "+obj.Title)
+}
+
+// check выполняет проверку по подходу и применяет on_success / on_fail через события.
+func (r *resolver) check(c *model.SnapshotCharacter, loc *model.SnapshotLocation, in model.Intent, res *model.ActionResult, ap model.Approach, obj model.LocationObject, objIdx int, summary string) {
+	if ap.Difficulty == 0 && ap.Attribute == "" {
+		res.Status, res.Summary = model.ResultResolved, summary
+		r.applyApproach(res, c, loc, obj, objIdx, ap.OnSuccess)
+		return
+	}
+	pool := rules.Pool(*c, ap.Attribute, ap.Skill, r.helpers[c.ID])
+	difficulty := rules.Difficulty(r.preset, ap.Difficulty, loc.Difficulty)
+	info := model.CheckInfo{Attribute: ap.Attribute, Skill: ap.Skill, Pool: pool, Difficulty: difficulty, ChancePct: rules.ChancePct(pool, difficulty)}
+	info.Dice = r.roll(pool)
+	info.Successes = count6(info.Dice)
+	if info.Successes < difficulty && (in.Push || r.preset.AutoPush) {
+		info.Pushed = true
+		info.PushDice = make([]int, len(info.Dice))
+		for i, d := range info.Dice {
+			if d == 6 {
+				info.PushDice[i] = 6
+			} else {
+				info.PushDice[i] = r.roll(1)[0]
+			}
+		}
+		info.Successes = count6(info.PushDice)
+		if r.preset.PushCost && !c.HasCondition(model.ConditionExhausted) {
+			c.Conditions = append(c.Conditions, model.ConditionExhausted)
+			r.emit(res, model.EventConditionAdded, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "condition": model.ConditionExhausted})
+		}
+	}
+	switch {
+	case info.Successes >= difficulty && info.Pushed:
+		info.Outcome = model.OutcomeCostlySuccess
+	case info.Successes >= difficulty:
+		info.Outcome = model.OutcomeSuccess
+	case r.preset.FailAsCostly && !ap.Deadly:
+		info.Outcome = model.OutcomeCostlySuccess
+	default:
+		info.Outcome = model.OutcomeFailure
+	}
+	res.Status, res.Check, res.Outcome = model.ResultResolved, &info, info.Outcome
+	res.Summary = summary + " — " + outcomeWords(info.Outcome)
+	r.emit(res, model.EventCheckRolled, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "object": obj.Key, "check": info})
+	if info.Outcome == model.OutcomeFailure {
+		r.applyFail(res, c, ap.OnFail)
+		return
+	}
+	r.applyApproach(res, c, loc, obj, objIdx, ap.OnSuccess)
+}
+
+// applyApproach выполняет on_success подхода: смена состояния объекта, раскрытие скрытого объекта, факт.
+func (r *resolver) applyApproach(res *model.ActionResult, c *model.SnapshotCharacter, loc *model.SnapshotLocation, obj model.LocationObject, objIdx int, effect json.RawMessage) {
+	var e struct {
+		State  string `json:"state"`
+		Object string `json:"object"`
+		Reveal string `json:"reveal"`
+		Fact   string `json:"fact"`
+	}
+	if len(effect) > 0 {
+		_ = json.Unmarshal(effect, &e)
+	}
+	if e.State != "" {
+		targetKey, targetIdx := obj.Key, objIdx
+		if e.Object != "" {
+			if _, i, ok := loc.Object(e.Object); ok {
+				targetKey, targetIdx = e.Object, i
+			}
+		}
+		prev := loc.Objects[targetIdx].State
+		loc.Objects[targetIdx].State = e.State
+		r.emit(res, model.EventObjectChanged, model.VisibilityLocation, nil, c, map[string]any{"character_id": c.ID, "location_id": loc.ID, "object": targetKey, "title": loc.Objects[targetIdx].Title, "from": prev, "to": e.State})
+	}
+	if e.Reveal != "" {
+		if _, i, ok := loc.Object(e.Reveal); ok && !loc.Objects[i].Revealed {
+			loc.Objects[i].Revealed = true
+			r.emit(res, model.EventObjectChanged, model.VisibilityLocation, nil, c, map[string]any{"character_id": c.ID, "location_id": loc.ID, "object": e.Reveal, "title": loc.Objects[i].Title, "revealed": true})
+		}
+	}
+	fact := e.Fact
+	if fact == "" {
+		fact = fmt.Sprintf("%s: %s", obj.Title, describeObject(loc.Objects[objIdx]))
+	}
+	r.learn(res, c, loc, fact)
+}
+
+func (r *resolver) applyFail(res *model.ActionResult, c *model.SnapshotCharacter, effect json.RawMessage) {
+	var e struct {
+		Condition string `json:"condition"`
+		Damage    int    `json:"damage"`
+	}
+	if len(effect) > 0 {
+		_ = json.Unmarshal(effect, &e)
+	}
+	if e.Condition != "" && !c.HasCondition(e.Condition) {
+		c.Conditions = append(c.Conditions, e.Condition)
+		r.emit(res, model.EventConditionAdded, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "condition": e.Condition})
+	}
+	if e.Damage > 0 && r.preset.TrackHP {
+		r.damage(res, c, e.Damage)
+	}
+}
+
+// damage снимает HP; при 0 — ненастоящая смерть по режиму (docs/game/death.md).
+func (r *resolver) damage(res *model.ActionResult, c *model.SnapshotCharacter, dmg int) {
+	from := c.HP
+	c.HP = max(c.HP-dmg, 0)
+	r.emit(res, model.EventHPChanged, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "from": from, "to": c.HP})
+	if c.HP == 0 && c.Status != model.CharacterDead {
+		c.Status = model.CharacterDead
+		r.emit(res, model.EventCharacterDied, model.VisibilityPublic, nil, c, map[string]any{"character_id": c.ID, "nickname": c.Nickname})
+	}
+}
+
+// returns возвращает персонажей, у которых истёк счётчик ненастоящей смерти.
+func (r *resolver) returns() {
+	for i := range r.snap.Characters {
+		c := &r.snap.Characters[i]
+		if c.Status == model.CharacterDead && c.DeathRoundsLeft <= 0 {
+			c.Status, c.HP, c.Conditions = model.CharacterActive, c.MaxHP, []string{}
+			r.emit(nil, model.EventCharacterReturned, model.VisibilityPublic, nil, c, map[string]any{"character_id": c.ID, "nickname": c.Nickname, "hp": c.HP})
+		}
+	}
+}
+
+func (r *resolver) learn(res *model.ActionResult, c *model.SnapshotCharacter, loc *model.SnapshotLocation, fact string) {
+	c.Knowledge = appendUnique(c.Knowledge, fact)
+	r.emit(res, model.EventFactLearned, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "location_id": loc.ID, "fact": fact})
+}
+
+// emit добавляет событие с номером внутри раунда и привязывает к итогу заявки.
+func (r *resolver) emit(res *model.ActionResult, t model.EventType, vis model.Visibility, to []model.CharacterID, c *model.SnapshotCharacter, payload map[string]any) {
+	b, err := json.Marshal(payload)
+	if err != nil {
+		panic("engine: marshal payload: " + err.Error())
+	}
+	ev := model.Event{Seq: int64(len(r.events) + 1), Type: t, Payload: b, Visibility: vis, VisibleTo: to}
+	if c != nil {
+		id := c.ID
+		ev.CharacterID = &id
+		ev.LocationID = c.LocationID
+	}
+	if vis != model.VisibilityPrivate {
+		ev.VisibleTo = nil
+	}
+	r.events = append(r.events, ev)
+	if res != nil {
+		res.EventSeqs = append(res.EventSeqs, ev.Seq)
+	}
+}
+
+func (r *resolver) roll(n int) []int {
+	out := make([]int, n)
+	for i := range out {
+		out[i] = r.rng.IntN(6) + 1
+	}
+	return out
+}
+
+func (r *resolver) locationOf(c *model.SnapshotCharacter) (*model.SnapshotLocation, bool) {
+	if c.LocationID == nil {
+		return nil, false
+	}
+	return r.snap.Location(*c.LocationID)
+}
+
+func (r *resolver) characterByNickname(name string) *model.SnapshotCharacter {
+	for i := range r.snap.Characters {
+		if strings.EqualFold(r.snap.Characters[i].Nickname, strings.TrimPrefix(name, "@")) {
+			return &r.snap.Characters[i]
+		}
+	}
+	return nil
+}
+
+// findObject ищет видимый объект по ключу или названию (подстрока без учёта регистра).
+func (r *resolver) findObject(loc *model.SnapshotLocation, target string) (model.LocationObject, int, bool) {
+	t := strings.ToLower(strings.TrimSpace(target))
+	for i, o := range loc.Objects {
+		if o.HiddenUntil && !o.Revealed {
+			continue
+		}
+		if strings.EqualFold(o.Key, t) || strings.EqualFold(o.Title, t) || matches(t, o.Title) {
+			return o, i, true
+		}
+	}
+	return model.LocationObject{}, -1, false
+}
+
+// pickApproach — подход по индексу или первый подход с нужным типом действия.
+func pickApproach(obj model.LocationObject, t model.ActionType, idx *int) (model.Approach, int) {
+	if idx != nil && *idx >= 0 && *idx < len(obj.Approaches) {
+		return obj.Approaches[*idx], *idx
+	}
+	for i, a := range obj.Approaches {
+		if a.Action == t {
+			return a, i
+		}
+	}
+	return model.Approach{}, -1
+}
+
+// matches — грубое сравнение цели игрока с названием: каждое слово цели (от 3 букв) по основе
+// (первые 4 буквы или слово без последней) должно начинать какое-то слово названия: «доску» ≈ «доска объявлений».
+// Временная замена интерпретатора (пункт 08) для типовых команд.
+func matches(target, title string) bool {
+	words := strings.Fields(strings.ToLower(target))
+	titleWords := strings.Fields(strings.ToLower(title))
+	checked := 0
+	for _, w := range words {
+		w = strings.Trim(w, "«»\"'.,!?()")
+		rw := []rune(w)
+		if len(rw) < 3 {
+			continue
+		}
+		checked++
+		stem := string(rw[:min(len(rw), max(4, len(rw)-1))])
+		found := false
+		for _, tw := range titleWords {
+			if strings.HasPrefix(strings.Trim(tw, "«»\"'.,!?()"), stem) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return checked > 0
+}
+
+func sameLocation(a, b *model.SnapshotCharacter) bool {
+	return a.LocationID != nil && b.LocationID != nil && *a.LocationID == *b.LocationID
+}
+
+func hasLink(loc *model.SnapshotLocation, name string) bool {
+	for _, l := range loc.Links {
+		if !l.Hidden && strings.EqualFold(l.To, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func exits(loc *model.SnapshotLocation) string {
+	var out []string
+	for _, l := range loc.Links {
+		if !l.Hidden {
+			out = append(out, fmt.Sprintf("%s (%s)", l.Title, l.To))
+		}
+	}
+	if len(out) == 0 {
+		return "нет"
+	}
+	return strings.Join(out, ", ")
+}
+
+func objects(loc *model.SnapshotLocation) string {
+	var out []string
+	for _, o := range loc.Objects {
+		if o.HiddenUntil && !o.Revealed {
+			continue
+		}
+		out = append(out, o.Title)
+	}
+	if len(out) == 0 {
+		return "нет"
+	}
+	return strings.Join(out, ", ")
+}
+
+func describeObject(o model.LocationObject) string {
+	parts := []string{}
+	if o.Description != "" {
+		parts = append(parts, o.Description)
+	}
+	if o.State != "" {
+		parts = append(parts, "состояние: "+stateWords(o.State))
+	}
+	if len(parts) == 0 {
+		return "ничего примечательного"
+	}
+	return strings.Join(parts, "; ")
+}
+
+func stateWords(state string) string {
+	switch state {
+	case "locked":
+		return "заперто"
+	case "open":
+		return "открыто"
+	case "broken":
+		return "сломано"
+	case "closed":
+		return "закрыто"
+	}
+	return state
+}
+
+func outcomeWords(outcome string) string {
+	switch outcome {
+	case model.OutcomeSuccess:
+		return "успех"
+	case model.OutcomeCostlySuccess:
+		return "успех с ценой"
+	}
+	return "провал"
+}
+
+func count6(dice []int) int {
+	n := 0
+	for _, d := range dice {
+		if d == 6 {
+			n++
+		}
+	}
+	return n
+}
+
+func appendUnique(list []string, v string) []string {
+	for _, it := range list {
+		if it == v {
+			return list
+		}
+	}
+	return append(list, v)
+}

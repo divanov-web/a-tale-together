@@ -80,43 +80,54 @@ type CharacterModel struct {
 // CharacterStatus — статус персонажа по активности (docs/game/character.md).
 type CharacterStatus string
 
-// Статусы персонажа.
+// Статусы персонажа; dead — выбыл по режиму смерти до возврата (docs/game/death.md).
 const (
 	CharacterActive   CharacterStatus = "active"
 	CharacterWaiting  CharacterStatus = "waiting"
 	CharacterInactive CharacterStatus = "inactive"
+	CharacterDead     CharacterStatus = "dead"
 )
+
+// ItemBonus — бонус предмета к навыку: кубики к пулу проверки.
+type ItemBonus struct {
+	Skill string `json:"skill"`
+	Dice  int    `json:"dice"`
+}
 
 // Item — предмет инвентаря персонажа; запись каталога, не свободный текст.
 type Item struct {
-	Key   string   `json:"key"`
-	Title string   `json:"title"`
-	Tags  []string `json:"tags,omitempty"`
+	Key   string     `json:"key"`
+	Title string     `json:"title"`
+	Tags  []string   `json:"tags,omitempty"`
+	Bonus *ItemBonus `json:"bonus,omitempty"`
 }
 
 // Character — персонаж пользователя в сезоне игры.
 type Character struct {
-	ID           CharacterID
-	GameID       GameID
-	SeasonID     SeasonID
-	UserID       UserID
-	ModelID      CharacterModelID
-	Nickname     string
-	Archetype    string
-	PublicBio    string
-	SecretBio    string
-	Status       CharacterStatus
-	MissedRounds int
-	FactionID    FactionID
-	PartyID      *PartyID
-	HP           int
-	Conditions   []string
-	Inventory    []Item
-	LocationID   *LocationID
-	XP           int
-	Attributes   map[string]int // значения по ключам модели (character_stats kind=attribute)
-	Skills       map[string]int // значения по ключам модели (character_stats kind=skill)
-	CreatedAt    time.Time
+	ID              CharacterID
+	GameID          GameID
+	SeasonID        SeasonID
+	UserID          UserID
+	ModelID         CharacterModelID
+	Nickname        string
+	Archetype       string
+	PublicBio       string
+	SecretBio       string
+	Status          CharacterStatus
+	MissedRounds    int
+	DeathRoundsLeft int // раундов до возврата после ненастоящей смерти
+	DiedAt          *time.Time
+	FactionID       FactionID
+	PartyID         *PartyID
+	HP              int
+	Conditions      []string
+	Inventory       []Item
+	LocationID      *LocationID
+	Knowledge       []string // факты, известные персонажу (события fact_learned)
+	XP              int
+	Attributes      map[string]int // значения по ключам модели (character_stats kind=attribute)
+	Skills          map[string]int // значения по ключам модели (character_stats kind=skill)
+	CreatedAt       time.Time
 }
 
 // CharacterDraft — данные для создания персонажа после диалога в личке.

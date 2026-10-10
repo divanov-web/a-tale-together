@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // RoundStatus — статус раунда (docs/game/round.md, docs/architecture/round-pipeline.md).
 type RoundStatus string
@@ -33,24 +36,75 @@ type Round struct {
 	UpdatedAt  time.Time
 }
 
-// RoundSnapshot — состояние на дедлайн: персонажи и заявки; воспроизведение движка по снимку и seed.
+// RoundSnapshot — состояние на дедлайн: персонажи, локации и заявки; воспроизведение движка по снимку и seed.
+// SchemaVersion 2 (пункт 07): характеристики, инвентарь, знания, локации с объектами.
 type RoundSnapshot struct {
 	SchemaVersion int                  `json:"schema_version"`
+	Mode          GameMode             `json:"mode,omitempty"`
+	RulesVersion  int                  `json:"rules_version"`
 	Characters    []SnapshotCharacter  `json:"characters"`
+	Locations     []SnapshotLocation   `json:"locations,omitempty"`
 	Submissions   []SnapshotSubmission `json:"submissions"`
+}
+
+// Character возвращает персонажа снимка по id.
+func (s *RoundSnapshot) Character(id CharacterID) (*SnapshotCharacter, bool) {
+	for i := range s.Characters {
+		if s.Characters[i].ID == id {
+			return &s.Characters[i], true
+		}
+	}
+	return nil, false
+}
+
+// Location возвращает локацию снимка по id.
+func (s *RoundSnapshot) Location(id LocationID) (*SnapshotLocation, bool) {
+	for i := range s.Locations {
+		if s.Locations[i].ID == id {
+			return &s.Locations[i], true
+		}
+	}
+	return nil, false
+}
+
+// LocationByName возвращает локацию снимка по имени без учёта регистра.
+func (s *RoundSnapshot) LocationByName(name string) (*SnapshotLocation, bool) {
+	for i := range s.Locations {
+		if strings.EqualFold(s.Locations[i].Name, name) {
+			return &s.Locations[i], true
+		}
+	}
+	return nil, false
 }
 
 // SnapshotCharacter — персонаж в снимке раунда.
 type SnapshotCharacter struct {
-	ID           CharacterID     `json:"id"`
-	Nickname     string          `json:"nickname"`
-	Status       CharacterStatus `json:"status"`
-	MissedRounds int             `json:"missed_rounds"`
-	HP           int             `json:"hp"`
-	FactionID    FactionID       `json:"faction_id"`
-	PartyID      *PartyID        `json:"party_id,omitempty"`
-	LocationID   *LocationID     `json:"location_id,omitempty"`
-	Conditions   []string        `json:"conditions"`
+	ID              CharacterID     `json:"id"`
+	UserID          UserID          `json:"user_id"`
+	Nickname        string          `json:"nickname"`
+	Status          CharacterStatus `json:"status"`
+	MissedRounds    int             `json:"missed_rounds"`
+	DeathRoundsLeft int             `json:"death_rounds_left,omitempty"`
+	HP              int             `json:"hp"`
+	MaxHP           int             `json:"max_hp"`
+	FactionID       FactionID       `json:"faction_id"`
+	PartyID         *PartyID        `json:"party_id,omitempty"`
+	LocationID      *LocationID     `json:"location_id,omitempty"`
+	Conditions      []string        `json:"conditions"`
+	Attributes      map[string]int  `json:"attributes,omitempty"`
+	Skills          map[string]int  `json:"skills,omitempty"`
+	Inventory       []Item          `json:"inventory,omitempty"`
+	Knowledge       []string        `json:"knowledge,omitempty"`
+}
+
+// HasCondition сообщает, есть ли у персонажа состояние.
+func (c SnapshotCharacter) HasCondition(name string) bool {
+	for _, v := range c.Conditions {
+		if v == name {
+			return true
+		}
+	}
+	return false
 }
 
 // SnapshotSubmission — заявка в снимке раунда.
@@ -97,6 +151,8 @@ const (
 	OutboxRoundOpen   OutboxKind = "round_open"   // анонс открытия раунда
 	OutboxRoundClosed OutboxKind = "round_closed" // раунд закрыт или пропущен
 	OutboxSystem      OutboxKind = "system"       // пауза, возобновление, служебные уведомления игры
+	OutboxChronicle   OutboxKind = "chronicle"    // хроника раунда в группу
+	OutboxPrivate     OutboxKind = "private"      // приватный итог игроку
 )
 
 // OutboxStatus — статус доставки сообщения.

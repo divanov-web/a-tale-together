@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"taletogether/internal/app/round"
@@ -48,6 +49,27 @@ func (s *Service) roundNext(ctx context.Context, req *request) error {
 		return err
 	}
 	return s.reply(ctx, req.in, "Раунд закрыт, следующий открыт.")
+}
+
+// roundReplay — /replay <номер> в группе (только dev): воспроизведение раунда по снимку и seed (S06).
+func (s *Service) roundReplay(ctx context.Context, req *request) error {
+	arg, _ := splitArgs(req.in.Args)
+	no, err := strconv.Atoi(arg)
+	if err != nil || no < 1 {
+		return s.reply(ctx, req.in, "Формат: /replay <номер раунда>")
+	}
+	g, err := s.games.OfChat(ctx, req.chat.ID)
+	if err != nil {
+		return err
+	}
+	n, same, err := s.rounds.Replay(ctx, g, req.user.ID, no)
+	if err != nil {
+		return err
+	}
+	if same {
+		return s.reply(ctx, req.in, fmt.Sprintf("Раунд %d воспроизведён: %d событий совпадают с журналом.", no, n))
+	}
+	return s.reply(ctx, req.in, fmt.Sprintf("Раунд %d: воспроизведение расходится с журналом (%d событий записано).", no, n))
 }
 
 // act — /act <текст> в личке: заявка персонажа на открытый раунд текущей игры.
@@ -96,12 +118,16 @@ func (s *Service) roundLines(ctx context.Context, g model.Game) (current, last, 
 		switch info.Last.Status {
 		case model.RoundSkipped:
 			last = fmt.Sprintf("%d пропущен: %s", info.Last.RoundNo, info.Last.SkipReason)
-		case model.RoundFrozen:
+		case model.RoundFrozen, model.RoundResolving, model.RoundResolved, model.RoundPublished:
 			n := 0
 			if info.Last.Snapshot != nil {
 				n = len(info.Last.Snapshot.Submissions)
 			}
-			last = fmt.Sprintf("%d закрыт, заявок %d", info.Last.RoundNo, n)
+			word := "разрешён"
+			if info.Last.Status == model.RoundFrozen || info.Last.Status == model.RoundResolving {
+				word = "разрешается"
+			}
+			last = fmt.Sprintf("%d %s, заявок %d", info.Last.RoundNo, word, n)
 		default:
 			last = fmt.Sprintf("%d — %s", info.Last.RoundNo, info.Last.Status)
 		}

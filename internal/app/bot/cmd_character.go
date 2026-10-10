@@ -66,7 +66,26 @@ func (s *Service) renderCharacter(ctx context.Context, g model.Game, c model.Cha
 	if len(skills) == 0 {
 		skills = []string{"нет"}
 	}
+	location := "нигде"
+	if c.LocationID != nil {
+		if locs, err := s.games.Locations(ctx, g.ID); err == nil {
+			for _, l := range locs {
+				if l.ID == *c.LocationID {
+					location = l.Name
+				}
+			}
+		}
+	}
+	knowledge := c.Knowledge
+	if len(knowledge) > 5 {
+		knowledge = knowledge[len(knowledge)-5:]
+	}
+	death := ""
+	if c.Status == model.CharacterDead {
+		death = fmt.Sprintf("выбыл, до возвращения раундов: %d", c.DeathRoundsLeft)
+	}
 	return templates.Render("character", map[string]any{
+		"Location": location, "Knowledge": knowledge, "Death": death,
 		"Nickname": c.Nickname, "Archetype": archetype, "Faction": faction, "Status": string(c.Status), "Game": g.Title,
 		"HP": c.HP, "Conditions": strings.Join(c.Conditions, ", "), "Attributes": strings.Join(attrs, ", "),
 		"Skills": strings.Join(skills, ", "), "Inventory": strings.Join(items, ", "), "PublicBio": c.PublicBio, "SecretBio": c.SecretBio,

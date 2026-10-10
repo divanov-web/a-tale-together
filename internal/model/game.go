@@ -46,6 +46,8 @@ type GameSettings struct {
 	InactiveAfterRounds int        `json:"inactive_after_rounds"` // пропусков подряд до статуса inactive
 	MinRoundAnswers     int        `json:"min_round_answers"`     // кворум: меньше заявок — раунд пропускается
 	AllowResubmit       bool       `json:"allow_resubmit"`        // разрешить менять заявку до дедлайна (не чаще раза в минуту); по умолчанию запрещено (решение руководителя 2026-10-10); настройка разработчика
+	DeathMode           DeathMode  `json:"death_mode,omitempty"`  // режим смерти (docs/game/death.md); реализуется только fake; настройка разработчика
+	DeathDays           int        `json:"death_days,omitempty"`  // срок выбытия при ненастоящей смерти, дней; настройка разработчика
 }
 
 // Кворум раунда по умолчанию и в режиме разработки.
@@ -67,6 +69,8 @@ func DefaultGameSettings() GameSettings {
 		GoalCooldownRounds:  3,
 		InactiveAfterRounds: 3,
 		MinRoundAnswers:     MinRoundAnswersDefault,
+		DeathMode:           DeathFake,
+		DeathDays:           DeathDaysDefault,
 	}
 }
 
@@ -176,23 +180,21 @@ type FactionTemplate struct {
 
 // ItemTemplate — предмет каталога жанра.
 type ItemTemplate struct {
-	Key   string   `json:"key"`
-	Title string   `json:"title"`
-	Tags  []string `json:"tags"`
-	Bonus *struct {
-		Skill string `json:"skill"`
-		Dice  int    `json:"dice"`
-	} `json:"bonus,omitempty"`
+	Key   string     `json:"key"`
+	Title string     `json:"title"`
+	Tags  []string   `json:"tags"`
+	Bonus *ItemBonus `json:"bonus,omitempty"`
 }
 
 // GenreTemplate — шаблон мира жанра (docs/game/models/genre.md).
 type GenreTemplate struct {
-	SchemaVersion  int               `json:"schema_version"`
-	CharacterModel string            `json:"character_model"`
-	Tone           string            `json:"tone"`
-	Factions       []FactionTemplate `json:"factions"`
-	OpeningScene   string            `json:"opening_scene"`
-	Items          []ItemTemplate    `json:"items"`
+	SchemaVersion  int                `json:"schema_version"`
+	CharacterModel string             `json:"character_model"`
+	Tone           string             `json:"tone"`
+	Factions       []FactionTemplate  `json:"factions"`
+	Locations      []LocationTemplate `json:"locations,omitempty"`
+	OpeningScene   string             `json:"opening_scene"`
+	Items          []ItemTemplate     `json:"items"`
 }
 
 // Genre — запись справочника жанров.

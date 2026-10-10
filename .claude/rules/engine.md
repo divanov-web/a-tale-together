@@ -16,4 +16,5 @@ paths:
 - Сложность назначает код: подход объекта или таблица риска (`normal / hard / extreme` → 1 / 2 / 3) плюс `locations.difficulty`; LLM только классифицирует риск. Шанс считается из пула и показывается игроку.
 - Каталог действий и таблицы проверок — данные (`docs/game/actions.md`, `checks.md`, `character.md`); у игры есть `rules_version`.
 - У каждого события видимость: `public | location | private(character_ids)`; рассказчик получает только отфильтрованные события.
+- HP 0 — «выведен из строя»; дальнейшее по `settings.death_mode` (`docs/game/death.md`): реализуется только `fake` — статус `dead`, счётчик `death_rounds_left`, события `character_died` / `character_returned`; движок персонажа не удаляет.
 - Новое правило: сначала сценарий в `docs/game/scenarios.md`, затем тест, затем код.

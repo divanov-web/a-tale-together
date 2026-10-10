@@ -175,6 +175,19 @@ func (s *Store) SetSubmissionsStatus(_ context.Context, game model.GameID, round
 	return nil
 }
 
+// SaveCharacterState — см. postgres.Store.
+func (s *Store) SaveCharacterState(_ context.Context, game model.GameID, c model.Character) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ex, ok := s.chars[c.ID]
+	if !ok || ex.GameID != game {
+		return model.ErrNotFound
+	}
+	ex.LocationID, ex.HP, ex.Conditions, ex.Knowledge, ex.Status, ex.MissedRounds, ex.DeathRoundsLeft, ex.DiedAt = c.LocationID, c.HP, c.Conditions, c.Knowledge, c.Status, c.MissedRounds, c.DeathRoundsLeft, c.DiedAt
+	s.chars[c.ID] = ex
+	return nil
+}
+
 // UpdateCharacterActivity — см. postgres.Store.
 func (s *Store) UpdateCharacterActivity(_ context.Context, game model.GameID, id model.CharacterID, status model.CharacterStatus, missed int) error {
 	s.mu.Lock()

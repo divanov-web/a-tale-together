@@ -30,12 +30,12 @@ cmd/bot ──────────────► internal/app ──► int
 | `app/bot` | `New(...)`, `Service.Handle`, `Service.HandleChatMember`, `Service.RegisterMenu` | реестр команд с контекстами, лимит частоты, диалоги в личке (`dialogs`), вызов `app/chat` и `app/game`; ответы шаблонами `app/bot/templates` |
 | `app/chat` | `BotStatusChanged`, `Ensure`, `SetOwner`, `AddModerator`, `RemoveModerator`, `CanManage`, `Info` | чаты с ботом, владелец и модераторы, проверка прав (ADR-0007) |
 | `app/game` | `Create`, `Set`, `Join`, `Current`, `Status`, `CreateCharacter`, `SetBio`; позже `SubmitAction`, `Pause` | сценарии управления игрой, участниками и персонажами; права через `app/chat` |
-| `app/round` | `Begin`, `Pause`, `Next`, `Submit`, `Info`, `Tick(ctx, now)` | жизненный цикл раунда (ADR-0009): открытие по окну, заявки, заморозка со снимком и seed или пропуск без кворума, статусы персонажей по пропускам, анонсы в outbox; позже интерпретация → разрешение → фиксация → описание |
+| `app/round` | `Begin`, `Pause`, `Next`, `Submit`, `Info`, `Replay`, `Tick(ctx, now)` | жизненный цикл раунда (ADR-0009): открытие по окну, заявки, заморозка со снимком v2 и seed или пропуск без кворума; разрешение (`resolve.go`): типовые команды → `engine.Resolve` → `world_events`, `resolved_actions`, свёртка состояния, хроника и приватные итоги шаблоном в outbox; счётчик ненастоящей смерти |
 | `app/scheduler` | `Run(ctx)` | тик по интервалу: `round.Tick` для игр с `next_round_at <= now`, каждая под блокировкой строки |
 | `app/delivery` | `Run(ctx)`, `Deliver(ctx)` | воркер outbox → `telegram.Send` → `telegram_message_id`, повторы с паузой, `unknown` при неопределённом исходе |
-| `service/rules` | `ValidateDraft`, `AutoDistribute`, `HP`, `Parse*`; позже `Catalog`, `Difficulty` | правила как данные: модель персонажа, каталог действий, сложности, формулы |
-| `service/engine` | `Resolve(snapshot, intents, rng) Result` | конфликтные группы, фазы, проверки, события; чистая функция |
-| `service/visibility` | `Filter(events, viewer)` | события, доступные адресату |
+| `service/rules` | `ValidateDraft`, `AutoDistribute`, `HP`, `Parse*`, `Catalog`, `Pool`, `ChancePct`, `Difficulty`, `Preset`, `ParseTyped`, `DeathRounds` | правила как данные: модель персонажа, каталог действий, пул и шансы, таблица риска, пресеты режимов, типовые команды |
+| `service/engine` | `Resolve(snapshot, intents, seed) Result`, `Apply(snapshot, events)`, `Clone` | фазы, проверки с seed, события, ровно один статус на заявку; свёртка событий в состояние; чистые функции (конфликтные группы — пункт 12) |
+| `service/visibility` | `Filter(events, viewer)`, `Public(events)` | события, доступные адресату; события для хроники |
 | `service/interpreter` | `Parse(ctx, scene, submissions) []Intent` | контекст сцены → вызов `LLM` → валидация по каталогу |
 | `service/narrator` | `Chronicle(ctx, ...)`, `Private(ctx, ...)` | тексты из разрешённых событий; шаблоны для стандартных исходов |
 | `adapter/postgres` | `Store`, `InTx` | репозитории по сущностям, миграции goose; `fake` — хранилище в памяти для тестов |

@@ -385,7 +385,9 @@ func (h *harness) outboxTexts() []string {
 	}
 	var out []string
 	for _, m := range msgs {
-		out = append(out, m.Text)
+		if m.TelegramChatID == groupChat {
+			out = append(out, m.Text)
+		}
 	}
 	return out
 }
@@ -437,9 +439,9 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 	mustContain(t, h.send(bob, private(bob), "/act слежу за гонцом"), "раунд 2")
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
 	texts = h.outboxTexts()
-	mustContain(t, texts[4], "раунд 2 закрыт, заявок: 2")
+	mustContain(t, texts[4], "раунд 2 — итоги")
 	mustContain(t, texts[5], "раунд 3 открыт")
-	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 3", "Предыдущий раунд: 2 закрыт, заявок 2")
+	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 3", "Предыдущий раунд: 2 разрешён, заявок 2")
 
 	// Пауза и возобновление: открытый раунд получает новый дедлайн.
 	mustContain(t, h.send(owner, groupChat, "/pause"), "на паузе")
@@ -499,7 +501,7 @@ func TestRound_StatusTransitionsAndWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustContain(t, h.send(bob, private(bob), "/character"), "active")
-	mustContain(t, h.send(alice, groupChat, "/status"), "Предыдущий раунд: 4 закрыт, заявок 2", "Следующий раунд: в 11.10 13:00")
+	mustContain(t, h.send(alice, groupChat, "/status"), "Предыдущий раунд: 4 разрешён, заявок 2", "Следующий раунд: в 11.10 13:00")
 }
 
 func TestLLM_OwnerCommands(t *testing.T) {
@@ -528,4 +530,58 @@ func TestLLM_OwnerCommands(t *testing.T) {
 	if len(runs) != 2 || runs[0].Error != "cli down" || runs[1].Role != model.RoleTest {
 		t.Fatalf("runs = %+v", runs)
 	}
+}
+
+// TestRound_ResolveTypedCommands: типовые команды разрешаются движком, хроника в группу, приватные итоги в личку, /replay совпадает.
+func TestRound_ResolveTypedCommands(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
+	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
+	h.joinAndCreate(alice, code, "1", "Элис", "1", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "2", "1", "-", "-")
+	mustContain(t, h.send(alice, private(alice), "/character"), "локация: Рыночная площадь", "Знания: пока нет")
+	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята: раунд 1")
+	mustContain(t, h.send(bob, private(bob), "/act осмотреть доску"), "Заявка принята: раунд 1")
+	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
+
+	texts := h.outboxTexts()
+	mustContain(t, texts[2], "«Песочница» — раунд 1 — итоги", "• Элис уходит из «Рыночная площадь» в «Зал Серой башни»")
+	privates := map[model.TelegramChatID][]string{}
+	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
+	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
+	msgs, _ := h.store.ListOutbox(context.Background(), g.ID)
+	for _, m := range msgs {
+		if m.Kind == model.OutboxPrivate {
+			privates[m.TelegramChatID] = append(privates[m.TelegramChatID], m.Text)
+		}
+	}
+	if len(privates[private(alice)]) != 1 || len(privates[private(bob)]) != 1 {
+		t.Fatalf("private results = %+v", privates)
+	}
+	mustContain(t, privates[private(alice)][0], "раунд 1 — ваш итог", "Заявка «идти к башне»: переходит: Рыночная площадь → Зал Серой башни")
+	mustContain(t, privates[private(bob)][0], "Заявка «осмотреть доску»: осматривает: доска объявлений", "Шанс был")
+	mustContain(t, h.send(alice, private(alice), "/character"), "локация: Зал Серой башни")
+	bobCard := h.send(bob, private(bob), "/character")
+	if strings.Contains(privates[private(bob)][0], "— успех") {
+		mustContain(t, bobCard, "Знания:\n• Гонца видели у башни.")
+	} else {
+		mustContain(t, bobCard, "Знания: пока нет")
+	}
+	mustContain(t, h.send(alice, groupChat, "/status"), "Предыдущий раунд: 1 разрешён, заявок 2")
+	mustContain(t, h.send(owner, groupChat, "/replay 1"), "Раунд 1 воспроизведён", "совпадают")
+	mustContain(t, h.send(owner, groupChat, "/replay 9"), "Раунда с таким номером нет")
+	mustContain(t, h.send(owner, groupChat, "/replay 2"), "ещё не разрешён")
+	// Действие каталога без поддержки движком: заявка rejected с причиной, итог у игрока есть.
+	mustContain(t, h.send(alice, private(alice), "/act крадусь вдоль стены и слушаю"), "Заявка принята: раунд 2")
+	h.send(owner, groupChat, "/next")
+	msgs, _ = h.store.ListOutbox(context.Background(), g.ID)
+	last := msgs[len(msgs)-2]
+	if last.Kind != model.OutboxPrivate {
+		t.Fatalf("last private = %+v", last)
+	}
+	mustContain(t, last.Text, "отклонена", "действие «красться» появится в пункте плана 12")
 }

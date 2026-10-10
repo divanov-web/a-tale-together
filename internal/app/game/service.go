@@ -40,6 +40,8 @@ type Store interface {
 	NicknameTaken(ctx context.Context, game model.GameID, season model.SeasonID, nickname string) (bool, error)
 	GetChat(ctx context.Context, id model.ChatID) (model.Chat, error)
 	SetCurrentGame(ctx context.Context, user model.UserID, game *model.GameID) error
+	CreateLocation(ctx context.Context, l model.Location) (model.Location, error)
+	ListLocations(ctx context.Context, game model.GameID) ([]model.Location, error)
 }
 
 // Rights — права в чате; реализует `app/chat`.
@@ -125,6 +127,9 @@ func (s *Service) Create(ctx context.Context, chat model.Chat, actor model.User)
 		if err := s.createFactions(ctx, game.ID, genre.Template); err != nil {
 			return err
 		}
+		if err := s.createLocations(ctx, game.ID, genre.Template); err != nil {
+			return err
+		}
 		if err := s.store.AddMember(ctx, model.GameMember{GameID: game.ID, UserID: actor.ID, Role: model.RoleAdmin, Status: model.MemberActive}); err != nil {
 			return err
 		}
@@ -154,6 +159,30 @@ func (s *Service) createFactions(ctx context.Context, game model.GameID, t model
 		}
 	}
 	return nil
+}
+
+// createLocations создаёт стартовые локации из шаблона жанра; первая помечается стартовой, если шаблон не указал.
+func (s *Service) createLocations(ctx context.Context, game model.GameID, t model.GenreTemplate) error {
+	hasStart := false
+	for _, lt := range t.Locations {
+		hasStart = hasStart || lt.Start
+	}
+	for i, lt := range t.Locations {
+		l := model.Location{GameID: game, Name: lt.Name, Description: lt.Description, Difficulty: lt.Difficulty, Links: lt.Links, Objects: lt.Objects, Active: true, Start: lt.Start || (!hasStart && i == 0)}
+		if _, err := s.store.CreateLocation(ctx, l); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Locations возвращает локации игры.
+func (s *Service) Locations(ctx context.Context, game model.GameID) ([]model.Location, error) {
+	l, err := s.store.ListLocations(ctx, game)
+	if err != nil {
+		return nil, fmt.Errorf("game.Locations: %w", err)
+	}
+	return l, nil
 }
 
 // CanAdmin сообщает, может ли пользователь менять игру: администратор игры либо владелец или модератор чата.
