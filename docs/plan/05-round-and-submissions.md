@@ -14,10 +14,11 @@
 | № | Шаг | Слой / пакеты | Артефакты | Статус |
 |---|---|---|---|---|
 | 1 | Таблицы `rounds`, `action_submissions`; уникальность `(game_id, round_no)`, `(round_id, character_id)` | `migrations/`, `model` | | план |
-| 2 | `Clock` и планировщик: тик, выбор игр с `next_round_at <= now` в активном окне, блокировка строки | `app/scheduler`, `app/round` | тесты с фейковым Clock | план |
+| 2 | `Clock` и планировщик: тик, выбор игр с `next_round_at <= now` внутри игрового окна `play_from`/`play_to` по `timezone`, длительность `round_minutes`, блокировка строки | `app/scheduler`, `app/round` | тесты с фейковым Clock | план |
 | 3 | `/game_start`: статус `active`, стартовая сцена (пока статический текст из настроек), первый раунд | `app/game` | | план |
 | 4 | `/act <текст>`: валидация длины и частоты, запись/замена заявки, подтверждение с номером раунда и дедлайном | `app/game`, `app/bot` | | план |
 | 5 | Заморозка: по дедлайну `frozen`, снимок состояния (персонажи, локации, заявки) и seed в `rounds` | `app/round`, `adapter/postgres` | тест снимка | план |
+| 5а | Статус персонажа по пропускам: `missed_rounds`, `active → waiting → inactive`, возврат заявкой; события `character_sidelined` / `character_returned` | `app/round`, `service/engine` | тесты переходов | план |
 | 6 | `/game_pause`: пауза и возобновление без догоняющих раундов; `/game_status` показывает дедлайн | `app/game`, `app/scheduler` | | план |
 | 7 | Ручной запуск раунда админом для тестов (`/round_next` только в dev-режиме) | `app/bot` | флаг конфига | план |
 | 8 | Анонс открытия раунда в группу через outbox (минимальная версия outbox, пункт 08 расширит) | `app/delivery` | | план |

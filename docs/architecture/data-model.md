@@ -10,18 +10,24 @@
 |---|---|---|---|
 | Пользователь | `users` | уникальный пользователь Telegram, писавший боту или добавивший его в чат | владеет чатами, участвует в играх, имеет персонажей |
 | Чат | `chats` | Telegram-группа, куда добавили бота: владелец, модераторы, статус бота в чате | 1 владелец; N модераторов (`chat_moderators`); N игр, из них не более одной незавершённой |
-| Игра | `games` | запущенный мир с форматом (глобальная, рассказ, сериал) и режимом (механика, баланс, повествование), привязан к чату | 1 чат; N участников (`game_members`); N персонажей, сезонов, раундов, локаций |
-| Персонаж | `characters` | персонаж пользователя в конкретной игре | ровно один на пару (игра, пользователь); требует участия в игре |
+| Игра | `games` | запущенный мир: жанр из справочника, формат, режим, статус, игровое окно, длительность раунда; привязан к чату | 1 чат; 1 жанр; N участников (`game_members`); N сезонов, фракций, групп, раундов, локаций |
+| Персонаж | `characters` | персонаж пользователя в сезоне игры: никнейм, характеристики по модели персонажа, открытое и скрытое описание, статус, фракция, группа | ровно один на пару (сезон, пользователь); требует участия в игре; в сериале новый сезон — новая строка с перенесённой прокачкой |
+| Фракция | `factions` | сторона конфликта в игре; на старте ровно три (добро, зло, нейтралитет) с именами по сюжету | N персонажей; имена по умолчанию из шаблона жанра ([фракции](../game/factions.md)) |
+| Группа | `parties` | логическая группа персонажей, для которой рассказчик пишет общую историю; на старте до 3 персонажей | N персонажей; совместные испытания только внутри группы ([группы](../game/parties.md)) |
 
-Вспомогательные: `chat_moderators` (права в чате), `game_members` (участие и роль в игре), `seasons` (сезоны сериала), `character_goals` и `goal_steps` (поздний этап), `telegram_updates` (дедупликация), остальные таблицы раунда и LLM ниже.
+Вспомогательные: `chat_moderators` (права в чате), `game_members` (участие и роль в игре), `seasons` (сезоны), `genres` и `character_models` (справочники жанров и моделей персонажа), `character_stats` (значения характеристик и навыков), `character_goals` и `goal_steps` (поздний этап), `telegram_updates` (дедупликация), остальные таблицы раунда и LLM ниже.
 
 ```text
+genres ──> character_models
+  └──< games
 users ──< chats (owner_user_id)
   │          └──< chat_moderators >── users
   │          └──< games
   │                 ├──< game_members >── users
-  │                 ├──< characters  (game_id, user_id) ── game_members
   │                 ├──< seasons ──< rounds
+  │                 │       └──< characters (season_id, user_id) ── game_members
+  │                 │               ├──< character_stats   (ключи из character_models)
+  │                 │               ├──> factions, parties
   │                 ├──< locations, action_submissions, resolved_actions,
   │                 │    world_events, messages_outbox, llm_runs
   └──────────────────┘
@@ -38,15 +44,20 @@ users ──< chats (owner_user_id)
 | `chat_moderators` | права в чате, ручной список владельца | `chat_id` → `chats`, `user_id` → `users`, `granted_by_user_id` | `(chat_id, user_id)` |
 | `telegram_updates` | дедупликация входящих | `update_id`, `received_at` | `update_id` |
 | `llm_profiles` | настройки провайдера LLM | `name`, `provider`, `model_interpreter`, `model_narrator`, `params jsonb`, `enabled` | `name` |
+| `genres` | справочник жанров с шаблонами | `code`, `name`, `character_model_id` → `character_models`, `template jsonb` (тон, стартовая сцена, архетипы, имена фракций по умолчанию, стартовые локации), `enabled` | `code` |
+| `character_models` | модель персонажа: какие характеристики и навыки существуют | `code`, `rules_version`, `definition jsonb` (attributes[], skills[], archetypes[], стартовые очки, формула HP) | `code` |
 | `app_settings` | глобальные настройки бота | `key`, `value` (в т.ч. `default_llm_profile`) | `key` |
 
 ## Таблицы игры
 
 | Таблица | Назначение | Ключевые поля | Уникальность |
 |---|---|---|---|
-| `games` | настройки и статус мира | `chat_id` → `chats`, `format` (global/novel/series, [форматы игр](../game/game-formats.md)), `mode` (mechanics/balanced/narrative, [режимы игр](../game/game-modes.md)), `title`, `genre`, `status` (draft/active/paused/finished), `settings jsonb` (ends_at, max_rounds, round_duration_minutes, timezone, active_windows, pause_overnight, max_players, max_active_locations), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
+| `games` | настройки и статус мира | `chat_id` → `chats`, `genre_id` → `genres`, `format` (global/novel/series, по умолчанию `novel`; этап 1 только он), `mode` (mechanics/balanced/narrative, по умолчанию `balanced`; этап 1 только он), `title`, `status` (draft/active/paused/finished; список расширяется по ходу разработки), `timezone`, `play_from time` и `play_to time` (игровое окно в сутках, оба nullable), `round_minutes` (10–60, по умолчанию 15), `settings jsonb` (ends_at, max_rounds, max_players, max_active_locations, max_party_size = 3, max_active_goals, goal_cooldown_rounds), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
 | `game_members` | участие пользователей | `game_id`, `user_id` → `users`, `role` (admin/player), `status` (active/left/kicked), `joined_at` | `(game_id, user_id)` |
-| `characters` | персонажи | `game_id`, `user_id`, `name`, `archetype`, `stats jsonb`, `hp`, `conditions jsonb`, `inventory jsonb`, `location_id`, `schema_version` | `(game_id, user_id)`; FK `(game_id, user_id)` → `game_members` |
+| `factions` | стороны конфликта | `game_id`, `code` (good/evil/neutral), `name`, `description` | `(game_id, code)` |
+| `parties` | группы персонажей для общей истории | `game_id`, `season_id`, `name`, `status` (active/disbanded) | `(season_id, name)`; размер ≤ `settings.max_party_size` |
+| `characters` | персонажи | `game_id`, `season_id` → `seasons`, `user_id`, `model_id` → `character_models`, `nickname`, `archetype`, `public_bio varchar(100)`, `secret_bio varchar(100)`, `status` (active/waiting/inactive), `missed_rounds`, `faction_id` → `factions`, `party_id` → `parties` (nullable), `hp`, `conditions jsonb`, `inventory jsonb`, `location_id`, `xp` | `(season_id, user_id)`; FK `(game_id, user_id)` → `game_members` |
+| `character_stats` | значения характеристик и навыков | `game_id`, `character_id`, `kind` (attribute/skill), `key` (из `character_models.definition`), `value` | `(character_id, kind, key)` |
 | `seasons` | сезоны сериала; у остальных типов единственный сезон 1 | `game_id`, `season_no`, `title`, `status` (active/finished), `started_at`, `finished_at` | `(game_id, season_no)` |
 | `locations` | места и связи | `game_id`, `name`, `description`, `links jsonb`, `difficulty` (0–2, прибавляется к сложности проверок), `objects jsonb` (объекты с `approaches`: действие, характеристика, навык, сложность), `active` | `(game_id, name)` |
 | `rounds` | раунды | `game_id`, `season_id`, `round_no`, `opens_at`, `deadline_at`, `status` (open/frozen/resolving/resolved/published/failed), `seed`, `snapshot jsonb` | `(game_id, round_no)` |
@@ -67,7 +78,9 @@ users ──< chats (owner_user_id)
 
 - Внутри БД связи по `id`; идентификаторы Telegram (`telegram_id`, `telegram_chat_id`) только в `users`, `chats`, `messages_outbox`.
 - В чате не более одной незавершённой игры; завершённые остаются историей. У игры всегда есть активный сезон; у `global` и `story` он единственный.
-- Персонаж создаётся только у активного участника игры; у пары (игра, пользователь) не более одного персонажа.
+- Персонаж создаётся только у активного участника игры; у пары (сезон, пользователь) не более одного персонажа. Ключи `character_stats` только из модели персонажа жанра.
+- Фракций у игры ровно три на этапе 1; персонаж всегда в одной фракции. Группа не больше `max_party_size`; персонаж не более чем в одной группе сезона.
+- `secret_bio` и `public_bio` — текст игрока: в промпт попадают как данные в выделенном блоке, `secret_bio` только в контекст рассказчика для этого персонажа.
 - Состояние персонажей и локаций производно от `world_events`; прямые правки без события запрещены.
 - У каждой заявки раунда ровно одна строка в `resolved_actions` после разрешения.
 - `rounds.snapshot` хранит версию состояния и список заявок на момент дедлайна; воспроизведение движка по снимку и `seed`.
