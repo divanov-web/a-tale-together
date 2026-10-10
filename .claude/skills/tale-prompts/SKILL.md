@@ -8,7 +8,7 @@ argument-hint: "[interpreter | narrator | eval]"
 
 ## Источники
 
-- Риски §3–6 (`docs/concept/massive_dnd_implementation_risks.md`): граница движок/ИИ, экономия токенов, разбиение запросов, секреты.
+- Риски §3–6 (`docs/concept/massive_dnd_implementation_risks.md`, гипотезы, не источник правды): граница движок/ИИ, экономия токенов, разбиение запросов, секреты.
 - `docs/llm/`: `README.md` (конвейер, бюджет, измерения), `interpreter.md`, `narrator.md`.
 - Промпты: `assets/prompts/<роль>/vN.md`; оценочные наборы `assets/prompts/<роль>/eval/`.
 - Код вокруг LLM: `.claude/rules/llm.md`; провайдеры и профили: `docs/llm/providers.md` (ADR-0003). Промпт пишется провайдеро-независимо: одна системная часть и одна схема для всех реализаций `llm.Client`.

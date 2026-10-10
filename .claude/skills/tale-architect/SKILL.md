@@ -11,7 +11,7 @@ argument-hint: "[adr <тема> | layout | review]"
 - `docs/architecture/`: `layers.md` (слои, пакеты MVP, интерфейсы, транзакции), `overview.md`, `project-layout.md`, `data-model.md`, `round-pipeline.md`, `telegram-commands.md`.
 - `docs/dev/coding-rules.md`: стартовые правила программирования.
 - `docs/decisions/`: принятые ADR; `_template.md`.
-- Концепт §8 и риски §5, §7 (`docs/concept/`): изоляция миров, идемпотентность, атомарность, приватность, наблюдаемость, бюджет.
+- [Обзор архитектуры](../../../docs/architecture/overview.md) — источник правды; риски §5, §7 (`docs/concept/`, не источник правды) — гипотезы для нереализованного: изоляция миров, идемпотентность, атомарность, приватность, наблюдаемость, бюджет.
 
 ## Принцип достаточности
 

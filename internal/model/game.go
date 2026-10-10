@@ -44,7 +44,14 @@ type GameSettings struct {
 	MaxActiveGoals      int        `json:"max_active_goals"`      // сюжетные цели (пункт 17)
 	GoalCooldownRounds  int        `json:"goal_cooldown_rounds"`  // раундов до новой цели после отказа
 	InactiveAfterRounds int        `json:"inactive_after_rounds"` // пропусков подряд до статуса inactive
+	MinRoundAnswers     int        `json:"min_round_answers"`     // кворум: меньше заявок — раунд пропускается
 }
+
+// Кворум раунда по умолчанию и в режиме разработки.
+const (
+	MinRoundAnswersDefault = 2
+	MinRoundAnswersDev     = 1
+)
 
 // DefaultGameSettings — настройки нового мира по умолчанию.
 func DefaultGameSettings() GameSettings {
@@ -56,6 +63,7 @@ func DefaultGameSettings() GameSettings {
 		MaxActiveGoals:      1,
 		GoalCooldownRounds:  3,
 		InactiveAfterRounds: 3,
+		MinRoundAnswers:     MinRoundAnswersDefault,
 	}
 }
 

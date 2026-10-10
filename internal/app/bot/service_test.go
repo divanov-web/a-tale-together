@@ -221,16 +221,20 @@ func TestGame_CreateSetupAndStatus(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "2026-12-31"), "Число раундов")
 	mustContain(t, h.send(owner, private(owner), "30"), "Лимит игроков")
 	mustContain(t, h.send(owner, private(owner), "5"), "Лимит активных локаций")
-	mustContain(t, h.send(owner, private(owner), "-"), "Фракция добра")
+	mustContain(t, h.send(owner, private(owner), "-"), "Кворум раунда", "Сейчас: 2")
+	mustContain(t, h.send(owner, private(owner), "3"), "Фракция добра")
 	mustContain(t, h.send(owner, private(owner), "Орден"), "Фракция зла")
 	mustContain(t, h.send(owner, private(owner), "-"), "Нейтральная фракция")
 	final := h.send(owner, private(owner), "Вольный люд")
 	mustContain(t, final, "Настройка завершена", "Мир «Хроники Серой башни» — черновик", "Раунд: 20 мин", "окно: 10:00–22:00",
-		"до 2026-12-31, 30 раундов", "Игроки: 1 из 5", "Орден (good)", "Гильдия теней (evil)", "Вольный люд (neutral)")
+		"до 2026-12-31, 30 раундов", "кворум 3", "Игроки: 1 из 5", "Орден (good)", "Гильдия теней (evil)", "Вольный люд (neutral)")
 
-	mustContain(t, h.send(alice, groupChat, "/game_status"), "Мир «Хроники Серой башни»")
+	mustContain(t, h.send(alice, groupChat, "/status"), "Мир «Хроники Серой башни»")
 	mustContain(t, h.send(owner, private(owner), "/game_set max_players 3"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/game_set bogus 1"), "неизвестный параметр")
+	mustContain(t, h.send(owner, private(owner), "/game_set min_answers 0"), "кворум раунда от 1 до 20")
+	mustContain(t, h.send(owner, private(owner), "/game_set min_answers 1"), "Сохранено")
+	mustContain(t, h.send(alice, groupChat, "/status"), "кворум 1", "Следующий раунд: нет — игра не запущена")
 	mustContain(t, h.send(alice, groupChat, "/chat"), "Игра: «Хроники Серой башни» — черновик")
 }
 
@@ -274,7 +278,7 @@ func TestCharacter_CreateAutoAndManual(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/character_create"), "уже есть")
 	mustContain(t, h.send(alice, private(alice), "/start join_"+code), "Вы уже в игре")
 	mustContain(t, h.send(alice, private(alice), "/me"), "@alice", "персонаж Элис", "Личка: открыта")
-	mustContain(t, h.send(owner, groupChat, "/game_status"), "Игроки: 3 из 20", "персонажей: 2", "Орден Рассвета (good): 1", "Элис — warrior")
+	mustContain(t, h.send(owner, groupChat, "/status"), "Игроки: 3 из 20", "персонажей: 2", "Орден Рассвета (good): 1", "Элис — warrior")
 }
 
 func TestCharacter_ValidationInDialog(t *testing.T) {

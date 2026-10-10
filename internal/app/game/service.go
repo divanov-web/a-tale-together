@@ -74,11 +74,13 @@ type Service struct {
 	clock   Clock
 	logger  *slog.Logger
 	newCode func() string
+	// Defaults — настройки нового мира; `cmd` меняет их по окружению (кворум 1 в dev).
+	Defaults model.GameSettings
 }
 
 // New собирает сервис игры.
 func New(store Store, rights Rights, clock Clock, logger *slog.Logger) *Service {
-	return &Service{store: store, rights: rights, clock: clock, logger: logger, newCode: joinCode}
+	return &Service{store: store, rights: rights, clock: clock, logger: logger, newCode: joinCode, Defaults: model.DefaultGameSettings()}
 }
 
 // DefaultGenre — код жанра для новой игры, пока жанр не выбран в настройках.
@@ -112,7 +114,7 @@ func (s *Service) Create(ctx context.Context, chat model.Chat, actor model.User)
 		var err error
 		game, err = s.store.CreateGame(ctx, model.Game{
 			ChatID: chat.ID, GenreID: genre.ID, Format: model.FormatNovel, Mode: model.ModeBalanced, Title: title,
-			Status: model.GameDraft, Timezone: "Europe/Moscow", RoundMinutes: 15, Settings: model.DefaultGameSettings(),
+			Status: model.GameDraft, Timezone: "Europe/Moscow", RoundMinutes: 15, Settings: s.Defaults,
 			JoinCode: s.newCode(), CreatedByUserID: actor.ID,
 		})
 		if err != nil {
@@ -296,7 +298,7 @@ func (s *Service) Join(ctx context.Context, user model.User, code string) (model
 	return game, nil
 }
 
-// Status — сводка игры для /game_status.
+// Status — сводка игры для /status.
 type Status struct {
 	Game       model.Game
 	Genre      model.Genre

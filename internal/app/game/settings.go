@@ -29,6 +29,7 @@ var Params = []Param{
 	{Key: "max_rounds", Title: "Число раундов", Hint: "число или 0 без границы"},
 	{Key: "max_players", Title: "Лимит игроков", Hint: "от 1 до 20"},
 	{Key: "max_locations", Title: "Лимит активных локаций", Hint: "от 1 до 4"},
+	{Key: "min_answers", Title: "Кворум раунда", Hint: "заявок от 1 до 20; если меньше, раунд пропускается"},
 	{Key: "faction_good", Title: "Фракция добра", Hint: "имя по сюжету до 40 символов"},
 	{Key: "faction_evil", Title: "Фракция зла", Hint: "имя по сюжету до 40 символов"},
 	{Key: "faction_neutral", Title: "Нейтральная фракция", Hint: "имя по сюжету до 40 символов"},
@@ -157,6 +158,12 @@ func (s *Service) apply(ctx context.Context, g *model.Game, key, value string) e
 			return fmt.Errorf("%w: лимит локаций от 1 до 4", ErrBadValue)
 		}
 		g.Settings.MaxActiveLocations = n
+	case "min_answers":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > 20 {
+			return fmt.Errorf("%w: кворум раунда от 1 до 20 заявок", ErrBadValue)
+		}
+		g.Settings.MinRoundAnswers = n
 	default:
 		return fmt.Errorf("%w: неизвестный параметр %q", ErrBadValue, key)
 	}

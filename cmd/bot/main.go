@@ -18,6 +18,7 @@ import (
 	"taletogether/internal/app/chat"
 	"taletogether/internal/app/game"
 	"taletogether/internal/config"
+	"taletogether/internal/model"
 )
 
 // version подставляется при сборке: -ldflags "-X main.version=...".
@@ -64,6 +65,9 @@ func run() error {
 	clock := systemClock{}
 	chats := chat.New(store, logger)
 	games := game.New(store, chats, clock, logger)
+	if cfg.AppEnv == "dev" {
+		games.Defaults.MinRoundAnswers = model.MinRoundAnswersDev // кворум 1 на время разработки
+	}
 	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username()}, store, store, tg, chats, games, clock, logger)
 	if err := commands.RegisterMenu(ctx); err != nil {
 		logger.Warn("command menu not registered", slog.Any("err", err))

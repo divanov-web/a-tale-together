@@ -121,6 +121,8 @@ func (s *Service) paramValue(ctx context.Context, g model.Game, key string) (str
 		return fmt.Sprint(g.Settings.MaxPlayers), nil
 	case "max_locations":
 		return fmt.Sprint(g.Settings.MaxActiveLocations), nil
+	case "min_answers":
+		return fmt.Sprint(g.Settings.MinRoundAnswers), nil
 	}
 	if strings.HasPrefix(key, "faction_") {
 		factions, err := s.games.Factions(ctx, g.ID)

@@ -36,7 +36,7 @@ func (s *Service) gameCreate(ctx context.Context, req *request) error {
 	return s.reply(ctx, req.in, text)
 }
 
-// gameStatus — /game_status: в группе игра чата, в личке текущая игра пользователя.
+// gameStatus — /status: в группе игра чата, в личке текущая игра пользователя.
 func (s *Service) gameStatus(ctx context.Context, req *request) error {
 	var g model.Game
 	var err error
@@ -55,7 +55,7 @@ func (s *Service) gameStatus(ctx context.Context, req *request) error {
 	return s.reply(ctx, req.in, text)
 }
 
-// renderStatus собирает сводку игры по шаблону game_status.
+// renderStatus собирает сводку игры по шаблону status.
 func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error) {
 	st, err := s.games.Status(ctx, g)
 	if err != nil {
@@ -94,12 +94,26 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 	if len(limits) == 0 {
 		limits = append(limits, "до /game_finish")
 	}
-	return templates.Render("game_status", map[string]any{
+	return templates.Render("status", map[string]any{
 		"Title": g.Title, "Status": statusTitle(g.Status), "Genre": st.Genre.Title, "Format": string(g.Format), "Mode": string(g.Mode),
 		"SeasonNo": st.Season.SeasonNo, "RulesVersion": g.RulesVersion, "RoundMinutes": g.RoundMinutes, "Timezone": g.Timezone,
 		"PlayWindow": window, "Limits": strings.Join(limits, ", "), "MembersCount": len(st.Members), "MaxPlayers": g.Settings.MaxPlayers,
 		"CharactersCount": len(st.Characters), "Factions": factions, "Characters": chars, "JoinLink": s.joinLink(g),
+		"MinAnswers": g.Settings.MinRoundAnswers, "Idle": idleReason(g),
 	})
+}
+
+// idleReason — почему игра стоит; раунды появятся в пункте плана 05, пока только статус игры.
+func idleReason(g model.Game) string {
+	switch g.Status {
+	case model.GameDraft:
+		return "игра не запущена: настройка и набор игроков"
+	case model.GamePaused:
+		return "игра на паузе"
+	case model.GameFinished:
+		return "игра завершена"
+	}
+	return ""
 }
 
 // gameSet — /game_set <параметр> <значение> для текущей игры.

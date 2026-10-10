@@ -53,7 +53,7 @@ func (s *Service) registry() []command {
 		{name: "chat_mod", contexts: ctxGroup, description: "add|remove @user — модераторы чата (владелец)", run: s.chatMod, needsChat: true},
 		{name: "chat_owner", contexts: ctxGroup, description: "@user — передать владение чатом", run: s.chatOwner, needsChat: true},
 		{name: "game_create", contexts: ctxGroup, description: "создать мир в этом чате", run: s.gameCreate, needsChat: true},
-		{name: "game_status", contexts: ctxAny, description: "состояние игры", run: s.gameStatus, needsChat: true},
+		{name: "status", contexts: ctxAny, description: "состояние игры и причина простоя", run: s.gameStatus, needsChat: true},
 		{name: "game_set", contexts: ctxPrivate, description: "<параметр> <значение> — настройка игры", run: s.gameSet},
 		{name: "join", contexts: ctxPrivate, description: "<код> — войти в игру", run: s.join},
 		{name: "games", contexts: ctxPrivate, description: "[номер] — мои игры и выбор текущей", run: s.gamesList},
