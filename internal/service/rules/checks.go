@@ -106,6 +106,20 @@ func ChanceWords(pct int) string {
 	return "почти невозможно"
 }
 
+// DifficultyWords — сложность словами для режима «повествование» (docs/game/checks.md: 1 обычная, 2 трудная,
+// 3 очень трудная, 4 героическая).
+func DifficultyWords(difficulty int) string {
+	switch {
+	case difficulty <= 1:
+		return "обычно"
+	case difficulty == 2:
+		return "трудно"
+	case difficulty == 3:
+		return "очень трудно"
+	}
+	return "героически"
+}
+
 // ModePreset — что из механик включено в режиме игры (docs/game/game-modes.md).
 type ModePreset struct {
 	MaxDifficulty      int  // потолок базовой сложности (без локации); 0 — без потолка

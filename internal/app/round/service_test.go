@@ -580,7 +580,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "«Мир» — раунд 1 — итоги\n• Элис уходит из «Рыночная площадь» в «Зал Серой башни»") {
 		t.Fatalf("fallback chronicle = %q", fallback.Text)
 	}
-	if !strings.Contains(fallback.Text, "— Рыночная площадь (Боб, Кэт) —\nВарианты: прочитать (Разум/внимательность, сложность 1: Боб 67 %, Кэт 67 %).") {
+	if !strings.Contains(fallback.Text, "— Рыночная площадь (Боб, Кэт) —\nВарианты:\n• прочитать (Разум/внимательность, сложность 1)") {
 		t.Fatalf("fallback options = %q", fallback.Text)
 	}
 	// Второй раунд: рассказчик отвечает; в его контексте сцены, события и выжимки нет (прошлой хроники не было).
@@ -611,7 +611,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if chron.ID == 0 {
 		t.Fatalf("chronicle message for round 2 missing: %+v", w.outbox(t))
 	}
-	want := "«Мир» — раунд 2\nОсень в Мире густеет.\n\n— Площадь —\nБоб читает объявление.\nВарианты: прочитать (Разум/внимательность, сложность 1: Боб 67 %, Кэт 67 %).\n\n— Башня —\nЭлис ждёт в зале."
+	want := "«Мир» — раунд 2\nОсень в Мире густеет.\n\n— Площадь —\nБоб читает объявление.\nВарианты:\n• прочитать (Разум/внимательность, сложность 1)\n\n— Башня —\nЭлис ждёт в зале."
 	if chron.Text != want {
 		t.Fatalf("chronicle text = %q\nwant %q", chron.Text, want)
 	}
@@ -637,5 +637,15 @@ func TestResolve_Narrator(t *testing.T) {
 	}
 	if len(parts) != 3 || parts[1].Part != 2 || !strings.HasPrefix(parts[1].Text, "«Мир» — раунд 3 (продолжение)\n") || len([]rune(parts[0].Text)) > partLimit || !strings.Contains(parts[2].Text, "— Башня —\nТихо.") {
 		t.Fatalf("parts = %d: %+v", len(parts), parts)
+	}
+}
+
+func TestDeadline_RoundsUpToMinute(t *testing.T) {
+	base := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	if got := deadline(base.Add(20*time.Second), 5); !got.Equal(base.Add(6 * time.Minute)) {
+		t.Errorf("deadline with seconds = %v", got)
+	}
+	if got := deadline(base, 5); !got.Equal(base.Add(5 * time.Minute)) {
+		t.Errorf("deadline on the minute = %v", got)
 	}
 }

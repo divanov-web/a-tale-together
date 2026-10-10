@@ -224,7 +224,7 @@ func (s *Service) Pause(ctx context.Context, game model.Game, actor model.UserID
 			open, err := s.store.OpenRound(ctx, g.ID)
 			switch {
 			case err == nil:
-				open.DeadlineAt = now.Add(time.Duration(g.RoundMinutes) * time.Minute)
+				open.DeadlineAt = deadline(now, g.RoundMinutes)
 				if err := s.store.UpdateRound(ctx, open); err != nil {
 					return err
 				}
@@ -650,6 +650,16 @@ func activity(c model.Character, acted bool, inactiveAfter int) (model.Character
 	return model.CharacterWaiting, missed
 }
 
+// deadline — дедлайн раунда: `now` + длительность, округлённые вверх до целой минуты, чтобы раунд заканчивался
+// в :00 секунд (замечание руководителя B7); планировщик с шагом 10 с закрывает его в пределах шага.
+func deadline(now time.Time, minutes int) time.Time {
+	d := now.Add(time.Duration(minutes) * time.Minute)
+	if t := d.Truncate(time.Minute); !t.Equal(d) {
+		return t.Add(time.Minute)
+	}
+	return d
+}
+
 // openNext открывает следующий раунд, если момент внутри игрового окна (или force), иначе назначает `next_round_at`
 // на начало окна и возвращает false. Заявки пропущенного раунда переносятся в новый.
 func (s *Service) openNext(ctx context.Context, g *model.Game, chat model.Chat, now time.Time, force bool) (bool, error) {
@@ -668,7 +678,7 @@ func (s *Service) openNext(ctx context.Context, g *model.Game, chat model.Chat, 
 	}
 	r, err := s.store.CreateRound(ctx, model.Round{
 		GameID: g.ID, SeasonID: season.ID, RoundNo: last.RoundNo + 1, Status: model.RoundOpen,
-		OpensAt: now, DeadlineAt: now.Add(time.Duration(g.RoundMinutes) * time.Minute),
+		OpensAt: now, DeadlineAt: deadline(now, g.RoundMinutes),
 	})
 	if err != nil {
 		return false, err

@@ -137,7 +137,7 @@ func TestTick_FailsAfterMaxAttempts(t *testing.T) {
 	if info.Last == nil || info.Last.Status != model.RoundFailed || info.Open == nil || info.Submissions != 1 {
 		t.Fatalf("info = %+v", info)
 	}
-	w.tick(t, 10*time.Minute)
+	w.tick(t, 11*time.Minute) // дедлайн округлён вверх до минуты
 	done, _ := w.store.RoundByNo(ctx, w.game.ID, 2)
 	if done.Status != model.RoundPublished || done.Attempts != 0 {
 		t.Fatalf("round 2 = %+v", done)

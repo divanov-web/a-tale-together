@@ -239,15 +239,15 @@ func TestOptions(t *testing.T) {
 		t.Errorf("pick option = %+v", pick)
 	}
 	text := OptionsText(opts[1:], model.ModeBalanced)
-	if !strings.HasPrefix(text, "Варианты: выбить (Сила, сложность 3: Вор ") || !strings.Contains(text, "; отпереть (Ловкость/воровство, сложность 2: ") {
+	if text != "Варианты:\n• выбить (Сила, сложность 3)\n• отпереть (Ловкость/воровство, сложность 2)" {
 		t.Errorf("text = %q", text)
 	}
 	words := OptionsText(opts[1:], model.ModeNarrative)
-	if strings.ContainsAny(words, "0123456789") || !strings.Contains(words, "выбить (Сила: Вор почти невозможно, Кузнец ") {
+	if strings.ContainsAny(words, "0123456789") || !strings.Contains(words, "• выбить (Сила, очень трудно)\n• отпереть (Ловкость/воровство, трудно)") {
 		t.Errorf("narrative text = %q", words)
 	}
 	st.Locations[1].Objects[1].Revealed = true
-	if o := Options(&st, def(), model.ModeBalanced); len(o) != 4 || o[3].Attribute != "" || !strings.Contains(OptionsText(o[3:], model.ModeBalanced), "дёрнуть (без броска)") {
+	if o := Options(&st, def(), model.ModeBalanced); len(o) != 4 || o[3].Attribute != "" || !strings.Contains(OptionsText(o[3:], model.ModeBalanced), "• дёрнуть (без броска)") {
 		t.Errorf("revealed options = %+v", o)
 	}
 	if OptionsText(nil, model.ModeBalanced) != "" {

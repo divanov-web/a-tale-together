@@ -228,7 +228,7 @@ type Option struct {
 	Chances     []Chance
 }
 
-// Chance — шанс персонажа на подход, в процентах.
+// Chance — шанс персонажа на подход, в процентах (в группу не выводится, для личных подсказок).
 type Chance struct {
 	Nickname string
 	Pct      int
@@ -286,35 +286,28 @@ func Options(state *model.RoundSnapshot, def model.CharacterModelDef, mode model
 	return out
 }
 
-// OptionsText — строка подходов сцены для сообщения в группу: сложность и шанс каждого персонажа; в режиме
-// «повествование» шанс словами и без сложности. Пусто, если подходов нет.
+// OptionsText — блок подходов сцены для сообщения в группу: заголовок и пункт на подход с новой строки,
+// характеристика и сложность; шанс персонажей не показывается (решение руководителя 2026-10-10, B6), в режиме
+// «повествование» сложность словами. Пусто, если подходов нет.
 func OptionsText(opts []Option, mode model.GameMode) string {
 	parts := make([]string, 0, len(opts))
 	for _, o := range opts {
 		if o.Attribute == "" {
-			parts = append(parts, o.Title+" (без броска)")
+			parts = append(parts, "• "+o.Title+" (без броска)")
 			continue
 		}
 		stat := o.Attribute
 		if o.Skill != "" {
 			stat += "/" + strings.ToLower(o.Skill)
 		}
-		chances := make([]string, 0, len(o.Chances))
-		for _, ch := range o.Chances {
-			if mode == model.ModeNarrative {
-				chances = append(chances, ch.Nickname+" "+rules.ChanceWords(ch.Pct))
-			} else {
-				chances = append(chances, fmt.Sprintf("%s %d %%", ch.Nickname, ch.Pct))
-			}
-		}
 		if mode == model.ModeNarrative {
-			parts = append(parts, fmt.Sprintf("%s (%s: %s)", o.Title, stat, strings.Join(chances, ", ")))
+			parts = append(parts, fmt.Sprintf("• %s (%s, %s)", o.Title, stat, rules.DifficultyWords(o.Difficulty)))
 		} else {
-			parts = append(parts, fmt.Sprintf("%s (%s, сложность %d: %s)", o.Title, stat, o.Difficulty, strings.Join(chances, ", ")))
+			parts = append(parts, fmt.Sprintf("• %s (%s, сложность %d)", o.Title, stat, o.Difficulty))
 		}
 	}
 	if len(parts) == 0 {
 		return ""
 	}
-	return "Варианты: " + strings.Join(parts, "; ") + "."
+	return "Варианты:\n" + strings.Join(parts, "\n")
 }
