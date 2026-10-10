@@ -3,7 +3,7 @@
 Слои и их зависимости: [layers.md](layers.md). Правила кода: [coding-rules.md](../dev/coding-rules.md).
 
 ```text
-tale_together/
+a-tale-together/
 ├── CLAUDE.md, .claude/          система промптов Claude Code
 ├── cmd/bot/main.go              сборка зависимостей и запуск
 ├── internal/

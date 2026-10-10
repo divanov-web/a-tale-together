@@ -1,6 +1,6 @@
 # Команды разработки A Tale Together. Запуск из WSL.
 GO ?= $(HOME)/.local/go/bin/go
-GOOSE ?= $(HOME)/go/bin/goose
+GOOSE ?= $(HOME)/.local/bin/goose
 BIN := bin/bot
 -include .env
 export
