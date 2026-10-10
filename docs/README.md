@@ -14,7 +14,7 @@
 | [Команды бота](commands/README.md) | Реализованные команды по контексту: [группа](commands/chat.md), [личка](commands/private.md); блоки базовых и продвинутых |
 | [Решения (ADR)](decisions/README.md) | Принятые и ожидающие архитектурные решения |
 | [Игра](game/README.md) | [Глоссарий игры](game/glossary.md), [форматы игр](game/game-formats.md), [режимы игр](game/game-modes.md), [сюжетные цели](game/story-goals.md), [правила](game/rules.md), [персонаж](game/character.md), [смерть персонажа](game/death.md), [испытания](game/checks.md), [фракции](game/factions.md), [группы](game/parties.md), [модели](game/models/README.md), [каталог действий](game/actions.md), [раунд](game/round.md), [эталонные сценарии](game/scenarios.md), [вопросы руководителю](game/open-questions.md) |
-| [LLM](llm/README.md) | [Конвейер и бюджет](llm/README.md), [провайдеры и профили](llm/providers.md), [интерпретатор](llm/interpreter.md), [рассказчик](llm/narrator.md) |
+| [LLM](llm/README.md) | [Конвейер и бюджет](llm/README.md), [два вызова раунда: шаги, входы, выходы, пример](llm/round-calls.md), [провайдеры и профили](llm/providers.md), [интерпретатор](llm/interpreter.md), [рассказчик](llm/narrator.md) |
 | [Разработка](dev/environment.md) | [Правила программирования](dev/coding-rules.md), [среда](dev/environment.md), [команды запуска бота](go_commands.md), [рабочий процесс](dev/workflow.md) |
 
 ## Система промптов Claude Code
