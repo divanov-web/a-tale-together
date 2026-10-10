@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: tale_db
+    environment:
+      POSTGRES_USER: tale
+      POSTGRES_PASSWORD: tale
+      POSTGRES_DB: tale
+    ports:
+      - "5432:5432"
+    volumes:
+      - tale_pgdata:/var/lib/postgresql/data
+      - ./docker/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tale -d tale"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  tale_pgdata:

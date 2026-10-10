@@ -1,0 +1,24 @@
+# Сборка
+bin/
+dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Окружение и секреты
+.env
+.env.*
+!.env.example
+
+# IDE и ОС
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# Логи и временное
+logs/
+*.log
+tmp/

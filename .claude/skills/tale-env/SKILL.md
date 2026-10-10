@@ -1,0 +1,42 @@
+---
+name: tale-env
+description: Локальная среда A Tale Together в WSL (Ubuntu 24.04 на Windows 11) — проверка и установка Go, PostgreSQL 16 из apt в WSL (Docker как запасной вариант), переменные .env, миграции, сборка, тесты, запуск бота с тестовым токеном, диагностика. Подключать при словах «установи», «запусти», «не собирается», «postgres не поднимается», «миграции», «docker», «env», «make», «go: command not found».
+argument-hint: "[check | setup | run | migrate | reset-db]"
+---
+
+# Среда разработки
+
+Пошаговая установка для человека: `docs/dev/environment.md`. Здесь факты и действия для Claude.
+
+## Факты
+
+- WSL Ubuntu 24.04; passwordless sudo нет: команды с `sudo` отдавать руководителю для запуска через `! <команда>`.
+- Go 1.27 в `~/.local/go/bin` (установлен без sudo), PATH в `~/.bashrc`. Windows Go 1.25 (`/mnt/c/Program Files/Go`) не используется.
+- Postgres 16 установлен из apt (кластер `16 main`, порт 5432, `pg_lsclusters`). Роль и базы `tale`, `tale_test` создаются один раз командой из `docs/dev/environment.md` (нужен sudo → руководитель). Запасной вариант: Docker Desktop с WSL-интеграцией, `docker compose up -d db`.
+- `.env` по `.env.example`, в git не попадает. Обязательные: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`; ключи провайдеров LLM по `docs/llm/providers.md` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, для `claude-cli` путь к `claude` и пустая рабочая папка).
+- Команды: `make build run test test-integration lint migrate migrate-down migrate-status fmt`.
+
+## check
+
+`go version`; `pg_lsclusters`; `psql "$DATABASE_URL" -c 'select 1'`; `make build`; `make test`; `make migrate-status`.
+
+## setup
+
+1. Go отсутствует → `curl -sL https://go.dev/dl/go1.27.2.linux-amd64.tar.gz | tar -xz -C ~/.local` и PATH.
+2. Postgres: кластер запущен (`pg_lsclusters`), роль и базы по `docs/dev/environment.md`.
+3. `cp .env.example .env`; токены заполняет руководитель.
+4. `make migrate`, `make test`.
+
+## Тестовый бот
+
+Отдельный бот от BotFather для разработки; группа-песочница; токен только в `.env`. Прод-токены в репозитории не хранятся.
+
+## Диагностика
+
+| Симптом | Действие |
+|---|---|
+| `go: command not found` | `export PATH=$HOME/.local/go/bin:$PATH`; проверить `~/.bashrc` |
+| `password authentication failed for user "tale"` | роль не создана: команда из `docs/dev/environment.md` через `!` |
+| `connection refused` к БД | `pg_lsclusters` → кластер `down`: `! sudo pg_ctlcluster 16 main start` |
+| миграция упала | `make migrate-status`; миграцию не править, писать новую |
+| Telegram 409 Conflict | запущен второй экземпляр бота с тем же токеном |
