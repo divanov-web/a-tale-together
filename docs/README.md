@@ -12,7 +12,7 @@
 | [Глоссарий проекта](glossary.md), [глоссарий игры](game/glossary.md) | Единая терминология: технические и игровые термины; неудачные термины заменяются с пометкой «Было» |
 | [Архитектура](architecture/overview.md) | [Компоненты](architecture/overview.md), [слои](architecture/layers.md), [структура репозитория](architecture/project-layout.md), [модель данных](architecture/data-model.md), [конвейер раунда](architecture/round-pipeline.md), [команды Telegram](architecture/telegram-commands.md) |
 | [Решения (ADR)](decisions/README.md) | Принятые и ожидающие архитектурные решения |
-| [Игра](game/README.md) | [Глоссарий игры](game/glossary.md), [форматы игр](game/game-formats.md), [сюжетные цели](game/story-goals.md), [правила](game/rules.md), [каталог действий](game/actions.md), [раунд](game/round.md), [эталонные сценарии](game/scenarios.md), [вопросы руководителю](game/open-questions.md) |
+| [Игра](game/README.md) | [Глоссарий игры](game/glossary.md), [форматы игр](game/game-formats.md), [режимы игр](game/game-modes.md), [сюжетные цели](game/story-goals.md), [правила](game/rules.md), [каталог действий](game/actions.md), [раунд](game/round.md), [эталонные сценарии](game/scenarios.md), [вопросы руководителю](game/open-questions.md) |
 | [LLM](llm/README.md) | [Конвейер и бюджет](llm/README.md), [провайдеры и профили](llm/providers.md), [интерпретатор](llm/interpreter.md), [рассказчик](llm/narrator.md) |
 | [Разработка](dev/environment.md) | [Правила программирования](dev/coding-rules.md), [среда](dev/environment.md), [рабочий процесс](dev/workflow.md) |
 
