@@ -15,6 +15,8 @@ import (
 	"taletogether/internal/adapter/postgres"
 	"taletogether/internal/adapter/telegram"
 	"taletogether/internal/app/bot"
+	"taletogether/internal/app/chat"
+	"taletogether/internal/app/game"
 	"taletogether/internal/config"
 )
 
@@ -59,11 +61,17 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv}, store, tg, systemClock{}, logger)
+	clock := systemClock{}
+	chats := chat.New(store, logger)
+	games := game.New(store, chats, clock, logger)
+	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username()}, store, store, tg, chats, games, clock, logger)
+	if err := commands.RegisterMenu(ctx); err != nil {
+		logger.Warn("command menu not registered", slog.Any("err", err))
+	}
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return tg.Run(gctx, commands) })
-	// TODO(этап 2): планировщик раундов и воркер outbox.
+	// TODO(пункт 05): планировщик раундов и воркер outbox.
 
 	err = g.Wait()
 	logger.Info("bot stopped")

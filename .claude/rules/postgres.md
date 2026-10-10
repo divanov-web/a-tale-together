@@ -13,6 +13,6 @@ paths:
 - Связи внутри БД по `id`; идентификаторы Telegram хранятся только в `users.telegram_id`, `chats.telegram_chat_id`, `messages_outbox.telegram_chat_id` (ADR-0007).
 - Идемпотентность: уникальные ключи на внешние события (`telegram_update_id`, `(game_id, round_no)`, `(round_id, character_id)` для заявок); `INSERT ... ON CONFLICT DO NOTHING`.
 - Разрешение раунда — одна транзакция; outbox-сообщения пишутся в ней же; воркеры берут работу через `SELECT ... FOR UPDATE SKIP LOCKED`.
-- Репозитории: методы с `ctx`, работают через интерфейс `Querier` (пул или `pgx.Tx`); SQL в константах рядом с методом; ORM нет.
+- Репозитории: методы с `ctx`, работают через `Querier` из `db(ctx)` (транзакция в контексте после `InTx`, иначе пул; ADR-0008); SQL в константах рядом с методом; ORM нет. Новый метод `Store` дублируется в `adapter/postgres/fake`.
 - JSONB для гибких полей (параметры действий, характеристики) с `schema_version`.
 - `world_events` только добавляется; состояние мира меняется только через события.

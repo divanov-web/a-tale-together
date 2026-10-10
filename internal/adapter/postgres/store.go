@@ -24,9 +24,9 @@ type Querier interface {
 }
 
 // Store — вход в хранилище; методы репозиториев объявлены в файлах по сущностям.
+// Транзакция передаётся через контекст (InTx, ADR-0008).
 type Store struct {
 	pool   *pgxpool.Pool
-	q      Querier
 	logger *slog.Logger
 }
 
@@ -40,7 +40,7 @@ func New(ctx context.Context, s Settings, logger *slog.Logger) (*Store, error) {
 		pool.Close()
 		return nil, fmt.Errorf("postgres.New: ping: %w", err)
 	}
-	return &Store{pool: pool, q: pool, logger: logger}, nil
+	return &Store{pool: pool, logger: logger}, nil
 }
 
 // Close закрывает пул; ждёт возврата занятых соединений.

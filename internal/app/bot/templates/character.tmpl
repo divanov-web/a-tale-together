@@ -1,0 +1,8 @@
+{{.Nickname}} — {{.Archetype}}, фракция «{{.Faction}}», статус {{.Status}}
+Игра «{{.Game}}»
+HP {{.HP}}{{if .Conditions}}; состояния: {{.Conditions}}{{end}}
+Характеристики: {{.Attributes}}
+Навыки: {{.Skills}}
+Инвентарь: {{if .Inventory}}{{.Inventory}}{{else}}пусто{{end}}
+Открытое описание: {{if .PublicBio}}{{.PublicBio}}{{else}}нет (/character_bio <текст>){{end}}
+Скрытое описание: {{if .SecretBio}}{{.SecretBio}}{{else}}нет (/character_secret <текст>){{end}}

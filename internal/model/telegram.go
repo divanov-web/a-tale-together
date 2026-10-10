@@ -3,8 +3,8 @@ package model
 
 import "time"
 
-// ChatID — идентификатор чата Telegram (группа отрицательный, личка положительный).
-type ChatID int64
+// TelegramChatID — идентификатор чата Telegram (группа отрицательный, личка положительный).
+type TelegramChatID int64
 
 // TelegramUserID — идентификатор пользователя Telegram.
 type TelegramUserID int64
@@ -32,7 +32,7 @@ type TelegramUser struct {
 // Command без ведущего слэша и без суффикса @bot; Args — остаток текста после команды.
 type Incoming struct {
 	UpdateID   int64
-	ChatID     ChatID
+	ChatID     TelegramChatID
 	ChatType   ChatType
 	From       TelegramUser
 	Text       string

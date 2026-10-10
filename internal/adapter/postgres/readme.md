@@ -1,6 +1,6 @@
 # adapter/postgres
-- Назначение: хранилище на `pgx/v5` (`pgxpool`): подключение, встроенные миграции goose, репозитории по сущностям (`updates.go`, `users.go`).
-- Публичный вход: `New(ctx, Settings, logger)`, `Store.Migrate`, `Store.Close`, методы репозиториев; транзакции `InTx` появятся с первым сценарием раунда.
-- Правило: SQL в константах рядом с методом, через `Querier`; игровые таблицы только с `game_id`.
-- Тесты: интеграционные с тегом `integration` на `DATABASE_URL_TEST` (`make test-integration`).
+- Назначение: хранилище на `pgx/v5` (`pgxpool`): подключение, встроенные миграции goose, транзакции через контекст (`tx.go`, ADR-0008), репозитории по сущностям: `updates.go`, `users.go`, `chats.go` (чаты и модераторы), `dialogs.go`, `genres.go` (жанры и модели персонажа), `games.go` (игры, сезоны, фракции, участники), `characters.go` (персонажи и `character_stats`).
+- Публичный вход: `New(ctx, Settings, logger)`, `Store.Migrate`, `Store.Close`, `Store.InTx(ctx, func(ctx) error)`, методы репозиториев; `fake/` — хранилище в памяти с тем же контрактом для тестов.
+- Правило: SQL в константах рядом с методом, через `Querier` из `db(ctx)`; игровые таблицы только с `game_id`; `model.ErrNotFound` для отсутствующих записей.
+- Тесты: интеграционные с тегом `integration` на `DATABASE_URL_TEST` (`make test-integration`): дедупликация, пользователи, `TestGameFlow` (чат → игра → участник → персонаж, откат транзакции, диалоги).
 - Связи: `migrations/`, `.claude/rules/postgres.md`, [модель данных](../../../docs/architecture/data-model.md).

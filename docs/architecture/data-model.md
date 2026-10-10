@@ -15,7 +15,7 @@
 | Фракция | `factions` | сторона конфликта в игре; на старте ровно три (добро, зло, нейтралитет) с именами по сюжету | N персонажей; имена по умолчанию из шаблона жанра ([фракции](../game/factions.md)) |
 | Группа | `parties` | логическая группа персонажей, для которой рассказчик пишет общую историю; на старте не более 3 групп в сезоне, размер не ограничен | N персонажей; совместные испытания только внутри группы ([группы](../game/parties.md)) |
 
-Вспомогательные: `chat_moderators` (права в чате), `game_members` (участие и роль в игре), `seasons` (сезоны), `genres` и `character_models` (справочники жанров и моделей персонажа), `character_stats` (значения характеристик и навыков), `character_goals` и `goal_steps` (поздний этап), `telegram_updates` (дедупликация), остальные таблицы раунда и LLM ниже.
+Вспомогательные: `chat_moderators` (права в чате), `dialogs` (состояние диалогов в личке), `game_members` (участие и роль в игре), `seasons` (сезоны), `genres` и `character_models` (справочники жанров и моделей персонажа), `character_stats` (значения характеристик и навыков), `character_goals` и `goal_steps` (поздний этап), `telegram_updates` (дедупликация), остальные таблицы раунда и LLM ниже.
 
 ```text
 genres ──> character_models
@@ -39,10 +39,11 @@ users ──< chats (owner_user_id)
 
 | Таблица | Назначение | Ключевые поля | Уникальность |
 |---|---|---|---|
-| `users` | пользователи Telegram | `telegram_id`, `username`, `first_name`, `language_code`, `started_at` (первый `/start` в личке, nullable), `last_seen_at` | `telegram_id` |
+| `users` | пользователи Telegram | `telegram_id`, `username`, `first_name`, `language_code`, `started_at` (первый `/start` в личке, nullable), `current_game_id` → `games` (игра для команд в личке, ADR-0008), `last_seen_at` | `telegram_id` |
 | `chats` | группы с ботом | `telegram_chat_id`, `type` (group/supergroup), `title`, `owner_user_id` → `users`, `bot_status` (member/admin/left), `added_at`, `left_at` | `telegram_chat_id` |
 | `chat_moderators` | права в чате, ручной список владельца | `chat_id` → `chats`, `user_id` → `users`, `granted_by_user_id` | `(chat_id, user_id)` |
 | `telegram_updates` | дедупликация входящих | `update_id`, `received_at` | `update_id` |
+| `dialogs` | состояние диалога в личке (настройка игры, создание персонажа; ADR-0008) | `user_id` → `users`, `kind`, `step`, `game_id`, `data jsonb` (черновик), `updated_at` | `user_id` |
 | `llm_profiles` | настройки провайдера LLM | `name`, `provider`, `model_interpreter`, `model_narrator`, `params jsonb`, `enabled` | `name` |
 | `genres` | справочник жанров с шаблонами | `code`, `name`, `character_model_id` → `character_models`, `template jsonb` (тон, стартовая сцена, архетипы, имена фракций по умолчанию, стартовые локации), `enabled` | `code` |
 | `character_models` | модель персонажа ([модели](../game/models/README.md)) | `code`, `rules_version`, `definition jsonb` (attributes[], skills[], archetypes[], стартовые очки, формула HP) | `code` |
@@ -52,7 +53,7 @@ users ──< chats (owner_user_id)
 
 | Таблица | Назначение | Ключевые поля | Уникальность |
 |---|---|---|---|
-| `games` | настройки и статус мира | `chat_id` → `chats`, `genre_id` → `genres`, `format` (global/novel/series, по умолчанию `novel`; этап 1 только он), `mode` (mechanics/balanced/narrative, по умолчанию `balanced`; этап 1 только он), `title`, `status` (draft/active/paused/finished; список расширяется по ходу разработки), `timezone`, `play_from time` и `play_to time` (игровое окно в сутках, оба nullable), `round_minutes` (10–60, по умолчанию 15), `settings jsonb` (ends_at, max_rounds, max_players, max_active_locations, max_parties = 3, max_active_goals, goal_cooldown_rounds), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
+| `games` | настройки и статус мира | `chat_id` → `chats`, `genre_id` → `genres`, `format` (global/novel/series, по умолчанию `novel`; этап 1 только он), `mode` (mechanics/balanced/narrative, по умолчанию `balanced`; этап 1 только он), `title`, `status` (draft/active/paused/finished; список расширяется по ходу разработки), `timezone`, `play_from time` и `play_to time` (игровое окно в сутках, оба nullable), `round_minutes` (10–60, по умолчанию 15), `settings jsonb` (ends_at, max_rounds, max_players, max_active_locations, max_parties = 3, max_active_goals, goal_cooldown_rounds), `rules_version`, `llm_profile_id` (nullable, появится с пунктом 06), `join_code`, `created_by_user_id` → `users`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
 | `game_members` | участие пользователей | `game_id`, `user_id` → `users`, `role` (admin/player), `status` (active/left/kicked), `joined_at` | `(game_id, user_id)` |
 | `factions` | стороны конфликта ([модель](../game/models/factions.md)) | `game_id`, `code` (good/evil/neutral), `title`, `description`, `tone`, `relations jsonb` | `(game_id, code)` |
 | `parties` | группы персонажей для общей истории ([модель](../game/models/party.md)) | `game_id`, `season_id`, `name`, `status` (active/disbanded), `leader_character_id`, `location_id`, `motto`, `summary` | `(season_id, name)`; число активных групп сезона ≤ `settings.max_parties` |

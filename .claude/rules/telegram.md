@@ -14,6 +14,6 @@ paths:
 - Длинные тексты делятся по лимиту Telegram; название мира и номер раунда в каждом игровом сообщении.
 - Лимит частоты и длины входящих: спам не доходит до LLM.
 - Входящие приходят как `model.Incoming` (команда без `@bot`, чужие `/cmd@other_bot` отброшены адаптером).
-- Команды MVP: `/ping` везде; группа `/chat /chat_mod /chat_owner /game_create /game_start /game_pause /game_status /game_finish /season_new`; личка `/join /character /character_bio /character_secret /party /party_create /party_join /party_leave /act /journal /games`. Реестр `docs/architecture/telegram-commands.md` обновляется вместе с кодом.
+- Команды MVP: `/ping /help /game_status` везде; группа `/chat /chat_mod /chat_owner /game_create /game_start /game_pause /game_finish /season_new`; личка `/start /me /join /games /game_set /character /character_create /character_bio /character_secret /cancel /party /party_create /party_join /party_leave /act /journal`. Реестр `docs/architecture/telegram-commands.md` обновляется вместе с кодом; новая команда — запись в `app/bot/router.go` с контекстами и `needsChat`.
 - Только слеш-команды; кнопки и callback-запросы не реализуются до пункта плана 14. У команды объявлены контексты (группа, личка, оба); в чужом контексте — подсказка. Меню `setMyCommands` по контекстам из реестра.
-- Обработчики в `internal/app/bot` тонкие: разбор команды → сценарий → ответ; игровой логики нет.
+- Обработчики в `internal/app/bot` тонкие: разбор команды → сценарий → ответ; игровой логики нет. Ошибки для игрока — сентинелы сценариев в `userErrors`; диалоги в личке хранят шаг и черновик в таблице `dialogs` (ADR-0008); тесты сценариев на `adapter/postgres/fake`.

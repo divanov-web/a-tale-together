@@ -1,0 +1,5 @@
+Чат «{{.Title}}»
+Владелец: {{.Owner}}
+Модераторы:{{if not .Moderators}} нет{{end}}{{range .Moderators}} {{.}}{{end}}
+Бот: {{.BotStatus}}
+Игра: {{if .Game}}«{{.Game.Title}}» — {{.Game.Status}} (/game_status){{else}}нет (/game_create){{end}}
