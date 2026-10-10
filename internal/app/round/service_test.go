@@ -162,11 +162,12 @@ func TestTick_SkipWithoutQuorumAndCarrySubmissions(t *testing.T) {
 		t.Fatalf("carried submission = %+v, %v", carried, err)
 	}
 	msgs := w.outbox(t)
-	if len(msgs) != 4 || msgs[2].Kind != model.OutboxRoundClosed || msgs[2].Text != "«Мир» — раунд 1. Недостаточное количество участников. Раунд пропущен." {
+	if len(msgs) != 3 || msgs[2].Kind != model.OutboxRoundOpen || msgs[2].RoundID == nil || *msgs[2].RoundID != last.ID {
 		t.Fatalf("outbox = %+v", msgs)
 	}
-	if msgs[3].Text != "«Мир» — раунд 2 открыт. Заявки до 12:20: /act <текст> в личке с ботом, одна на раунд. Перенесено заявок из пропущенного раунда: 1." {
-		t.Fatalf("open text = %q", msgs[3].Text)
+	// Пропуск и открытие — одно сообщение (B4).
+	if msgs[2].Text != "«Мир» — раунд 1. Недостаточное количество участников. Раунд пропущен.\n«Мир» — раунд 2 открыт. Заявки до 12:20: /act <текст> в личке с ботом, одна на раунд. Перенесено заявок из пропущенного раунда: 1." {
+		t.Fatalf("open text = %q", msgs[2].Text)
 	}
 	// Персонажи при пропуске не наказываются.
 	for _, c := range w.chars {
@@ -179,7 +180,7 @@ func TestTick_SkipWithoutQuorumAndCarrySubmissions(t *testing.T) {
 	w.svc.AnnounceSkipped = false
 	w.tick(t, 10*time.Minute) // раунд 2: заявка одна из двух → пропуск без сообщения
 	msgs = w.outbox(t)
-	if len(msgs) != 5 || msgs[4].Kind != model.OutboxRoundOpen {
+	if len(msgs) != 4 || msgs[3].Kind != model.OutboxRoundOpen || strings.Contains(msgs[3].Text, SkippedText) {
 		t.Fatalf("silent skip outbox = %+v", msgs)
 	}
 	info, err := w.svc.Info(ctx, w.game)
@@ -356,8 +357,8 @@ func TestPause_And_Next(t *testing.T) {
 	for _, m := range w.outbox(t) {
 		kinds = append(kinds, m.Kind)
 	}
-	if len(kinds) != 6 || kinds[2] != model.OutboxSystem || kinds[3] != model.OutboxSystem || kinds[4] != model.OutboxRoundClosed || kinds[5] != model.OutboxRoundOpen {
-		// раунд 1 без заявок пропущен: round_closed с сообщением о пропуске
+	if len(kinds) != 5 || kinds[2] != model.OutboxSystem || kinds[3] != model.OutboxSystem || kinds[4] != model.OutboxRoundOpen {
+		// раунд 1 без заявок пропущен: сообщение о пропуске в одном round_open с анонсом раунда 2
 		t.Fatalf("outbox kinds = %v", kinds)
 	}
 }

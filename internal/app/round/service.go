@@ -509,10 +509,34 @@ func (s *Service) advance(ctx context.Context, g *model.Game, now time.Time, for
 func (s *Service) afterClose(ctx context.Context, g *model.Game, chat model.Chat, closed int, force bool) error {
 	now := s.clock.Now()
 	if reason := boundary(*g, closed, now); reason != "" {
+		if err := s.announceSkipped(ctx, g, chat); err != nil {
+			return err
+		}
 		return s.finish(ctx, g, chat, now, closed, reason)
 	}
 	_, err := s.openNext(ctx, g, chat, now, force)
 	return err
+}
+
+// skippedNote — сообщение о пропуске последнего раунда для группы; пусто вне dev (`AnnounceSkipped`) или если
+// последний раунд не пропущен. Присоединяется к анонсу следующего раунда (замечание руководителя B4).
+func (s *Service) skippedNote(g model.Game, last model.Round) string {
+	if !s.AnnounceSkipped || last.ID == 0 || last.Status != model.RoundSkipped {
+		return ""
+	}
+	return roundSkippedText(g, last)
+}
+
+// announceSkipped шлёт сообщение о пропуске отдельно, когда следующий раунд не открывается сразу (окно, завершение).
+func (s *Service) announceSkipped(ctx context.Context, g *model.Game, chat model.Chat) error {
+	last, err := s.store.LastRound(ctx, g.ID)
+	if err != nil && !errors.Is(err, model.ErrNotFound) {
+		return err
+	}
+	if note := s.skippedNote(*g, last); note != "" {
+		return s.enqueue(ctx, *g, chat, &last.ID, model.OutboxRoundClosed, note)
+	}
+	return nil
 }
 
 // boundary — причина завершения игры по границам рассказа после раунда closed; пусто, если игра продолжается.
@@ -551,10 +575,7 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 		}
 		s.logger.Info("round skipped", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.String("reason", r.SkipReason))
 		s.journal(ctx, g, chat.TelegramChatID, r, "skipped", map[string]any{"reason": r.SkipReason})
-		if !s.AnnounceSkipped {
-			return nil
-		}
-		return s.enqueue(ctx, g, chat, &r.ID, model.OutboxRoundClosed, roundSkippedText(g, r))
+		return nil // сообщение о пропуске (dev) уходит вместе с анонсом следующего раунда, см. openNext
 	}
 	chars, err := s.store.ListCharacters(ctx, g.ID, r.SeasonID)
 	if err != nil {
@@ -661,19 +682,25 @@ func deadline(now time.Time, minutes int) time.Time {
 }
 
 // openNext открывает следующий раунд, если момент внутри игрового окна (или force), иначе назначает `next_round_at`
-// на начало окна и возвращает false. Заявки пропущенного раунда переносятся в новый.
+// на начало окна и возвращает false. Заявки пропущенного раунда переносятся в новый; сообщение о пропуске (dev)
+// идёт в одном сообщении с анонсом, а если раунд не открывается — отдельно.
 func (s *Service) openNext(ctx context.Context, g *model.Game, chat model.Chat, now time.Time, force bool) (bool, error) {
+	last, err := s.store.LastRound(ctx, g.ID)
+	if err != nil && !errors.Is(err, model.ErrNotFound) {
+		return false, err
+	}
 	if !force && !inWindow(g.Timezone, g.PlayFrom, g.PlayTo, now) {
+		if note := s.skippedNote(*g, last); note != "" {
+			if err := s.enqueue(ctx, *g, chat, &last.ID, model.OutboxRoundClosed, note); err != nil {
+				return false, err
+			}
+		}
 		next := nextWindowStart(g.Timezone, g.PlayFrom, now)
 		g.NextRoundAt = &next
 		return false, s.store.UpdateGame(ctx, *g)
 	}
 	season, err := s.store.ActiveSeason(ctx, g.ID)
 	if err != nil {
-		return false, err
-	}
-	last, err := s.store.LastRound(ctx, g.ID)
-	if err != nil && !errors.Is(err, model.ErrNotFound) {
 		return false, err
 	}
 	r, err := s.store.CreateRound(ctx, model.Round{
@@ -700,7 +727,11 @@ func (s *Service) openNext(ctx context.Context, g *model.Game, chat model.Chat, 
 	}
 	s.logger.Info("round opened", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("round_no", r.RoundNo))
 	s.journal(ctx, *g, chat.TelegramChatID, r, "opened", map[string]any{"deadline_at": r.DeadlineAt, "carried": carried})
-	return true, s.enqueue(ctx, *g, chat, &r.ID, model.OutboxRoundOpen, roundOpenText(*g, r, carried, now))
+	text := roundOpenText(*g, r, carried, now)
+	if note := s.skippedNote(*g, last); note != "" {
+		text = note + "\n" + text // одно сообщение: пропуск и открытие (B4)
+	}
+	return true, s.enqueue(ctx, *g, chat, &r.ID, model.OutboxRoundOpen, text)
 }
 
 func (s *Service) enqueue(ctx context.Context, g model.Game, chat model.Chat, round *model.RoundID, kind model.OutboxKind, text string) error {

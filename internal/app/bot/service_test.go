@@ -431,16 +431,15 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 		t.Fatal(err)
 	}
 	texts = h.outboxTexts()
-	mustContain(t, texts[2], "«Песочница» — раунд 1. Недостаточное количество участников. Раунд пропущен.")
-	mustContain(t, texts[3], "раунд 2 открыт", "одна на раунд", "Перенесено заявок из пропущенного раунда: 1")
+	mustContain(t, texts[2], "«Песочница» — раунд 1. Недостаточное количество участников. Раунд пропущен.\n«Песочница» — раунд 2 открыт", "одна на раунд", "Перенесено заявок из пропущенного раунда: 1")
 	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 2, заявки до 12:31; заявок 1 из 2", "Предыдущий раунд: 1 пропущен: заявок 1 из 2")
 
 	// Кворум собран: раунд 2 заморожен со снимком; Боб без заявки — нет, оба подали.
 	mustContain(t, h.send(bob, private(bob), "/act слежу за гонцом"), "раунд 2")
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
 	texts = h.outboxTexts()
-	mustContain(t, texts[4], "раунд 2 — итоги")
-	mustContain(t, texts[5], "раунд 3 открыт")
+	mustContain(t, texts[3], "раунд 2 — итоги")
+	mustContain(t, texts[4], "раунд 3 открыт")
 	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 3", "Предыдущий раунд: 2 разрешён, заявок 2")
 
 	// Пауза и возобновление: открытый раунд получает новый дедлайн.
