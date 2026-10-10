@@ -13,7 +13,7 @@
 | Игра | `games` | запущенный мир с настройками и типом (глобальная, рассказ, сериал), привязан к чату | 1 чат; N участников (`game_members`); N персонажей, сезонов, раундов, локаций |
 | Персонаж | `characters` | персонаж пользователя в конкретной игре | ровно один на пару (игра, пользователь); требует участия в игре |
 
-Вспомогательные: `chat_moderators` (права в чате), `game_members` (участие и роль в игре), `seasons` (сезоны сериала), `telegram_updates` (дедупликация), остальные таблицы раунда и LLM ниже.
+Вспомогательные: `chat_moderators` (права в чате), `game_members` (участие и роль в игре), `seasons` (сезоны сериала), `character_goals` и `goal_steps` (поздний этап), `telegram_updates` (дедупликация), остальные таблицы раунда и LLM ниже.
 
 ```text
 users ──< chats (owner_user_id)
@@ -55,6 +55,13 @@ users ──< chats (owner_user_id)
 | `world_events` | журнал событий | `game_id`, `round_id`, `seq`, `type`, `payload jsonb`, `visibility`, `visible_to bigint[]` | `(game_id, seq)` |
 | `messages_outbox` | исходящие | `game_id`, `round_id`, `telegram_chat_id`, `text`, `kind` (chronicle/private/system), `status`, `telegram_message_id`, `attempts`, `send_after` | дедуп по `(round_id, telegram_chat_id, kind, part)` |
 | `llm_runs` | прогоны LLM | `game_id`, `round_id`, `profile_id`, `provider`, `role` (interpreter/narrator), `model`, `prompt_version`, `tokens_in`, `tokens_out`, `cost_usd`, `subscription bool`, `duration_ms`, `error`, `request_id` | |
+
+## Таблицы поздних этапов
+
+| Таблица | Назначение | Ключевые поля | Уникальность | Пункт |
+|---|---|---|---|---|
+| `character_goals` | личные сюжетные цели | `game_id`, `character_id`, `text`, `status` (active/achieved/abandoned), `created_at`, `achieved_at` | лимит активных по `settings.max_active_goals` | [17](../plan/17-story-goals.md) |
+| `goal_steps` | шаги цели | `game_id`, `goal_id`, `step_no` (1–10), `text`, `status` (pending/done), `done_round_id` | `(goal_id, step_no)` | 17 |
 
 ## Инварианты
 
