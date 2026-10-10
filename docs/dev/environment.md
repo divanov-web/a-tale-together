@@ -26,7 +26,7 @@ cp .env.example .env
 | `make check` | проверка окружения: Go, `.env`, Postgres, токен бота, goose |
 | `make build` | сборка в `bin/bot` |
 | `make run` | запуск бота в терминале |
-| `make start` / `make stop` / `make restart` | бот в фоне: pid `bin/bot.pid`, лог `logs/bot.log`; выполняет только руководитель, см. [go_commands.md](../go_commands.md) |
+| `make start` / `make stop` / `make restart` | бот в фоне: pid `bin/bot.pid`, лог `logs/bot.log`; после правок кода Claude делает `make restart` сам, см. [go_commands.md](../go_commands.md) |
 | `make logs` | последние строки лога фонового бота |
 | `make test` | юнит-тесты |
 | `make test-integration` | тесты с БД (`DATABASE_URL_TEST`) |

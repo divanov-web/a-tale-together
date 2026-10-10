@@ -25,7 +25,7 @@ argument-hint: "[check | setup | apply | migrate | reset-db]"
 1. Go отсутствует → `curl -sL https://go.dev/dl/go1.27.2.linux-amd64.tar.gz | tar -xz -C ~/.local` и PATH.
 2. Postgres: кластер запущен (`pg_lsclusters`), роль и базы по `docs/dev/environment.md`.
 3. `cp .env.example .env`; токены заполняет руководитель.
-4. `make migrate`, `make test`; руководитель делает `make start`; `/ping` в песочнице и в личке.
+4. `make migrate`, `make test`, `make start`; `/ping` в песочнице и в личке.
 
 ## apply
 
@@ -43,6 +43,6 @@ argument-hint: "[check | setup | apply | migrate | reset-db]"
 | `password authentication failed for user "tale"` | роль не создана: команда из `docs/dev/environment.md` через `!` |
 | `connection refused` к БД | `pg_lsclusters` → кластер `down`: `! sudo pg_ctlcluster 16 main start` |
 | миграция упала | `make migrate-status`; миграцию не править, писать новую |
-| Telegram 409 Conflict | запущен второй экземпляр бота с тем же токеном (`pgrep -a bot`); руководитель делает `make stop` — снимает и фоновый, и запущенный без pid-файла |
+| Telegram 409 Conflict | запущен второй экземпляр бота с тем же токеном (`pgrep -a bot`); `make stop` снимает и фоновый, и запущенный без pid-файла, затем `make start` |
 | `getMe: Unauthorized` при старте | токен в `.env` неверный или отозван в BotFather |
 | бот молчит на `/ping` в группе | privacy mode не мешает командам; проверить, что команда адресована этому боту (`/ping@a_tale_together_dev_bot`) и лог `command` |
