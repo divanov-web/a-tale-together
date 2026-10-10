@@ -13,7 +13,7 @@
 | Игра | `games` | запущенный мир: жанр из справочника, формат, режим, статус, игровое окно, длительность раунда; привязан к чату | 1 чат; 1 жанр; N участников (`game_members`); N сезонов, фракций, групп, раундов, локаций |
 | Персонаж | `characters` | персонаж пользователя в сезоне игры: никнейм, характеристики по модели персонажа, открытое и скрытое описание, статус, фракция, группа | ровно один на пару (сезон, пользователь); требует участия в игре; в сериале новый сезон — новая строка с перенесённой прокачкой |
 | Фракция | `factions` | сторона конфликта в игре; на старте ровно три (добро, зло, нейтралитет) с именами по сюжету | N персонажей; имена по умолчанию из шаблона жанра ([фракции](../game/factions.md)) |
-| Группа | `parties` | логическая группа персонажей, для которой рассказчик пишет общую историю; на старте до 3 персонажей | N персонажей; совместные испытания только внутри группы ([группы](../game/parties.md)) |
+| Группа | `parties` | логическая группа персонажей, для которой рассказчик пишет общую историю; на старте не более 3 групп в сезоне, размер не ограничен | N персонажей; совместные испытания только внутри группы ([группы](../game/parties.md)) |
 
 Вспомогательные: `chat_moderators` (права в чате), `game_members` (участие и роль в игре), `seasons` (сезоны), `genres` и `character_models` (справочники жанров и моделей персонажа), `character_stats` (значения характеристик и навыков), `character_goals` и `goal_steps` (поздний этап), `telegram_updates` (дедупликация), остальные таблицы раунда и LLM ниже.
 
@@ -52,10 +52,10 @@ users ──< chats (owner_user_id)
 
 | Таблица | Назначение | Ключевые поля | Уникальность |
 |---|---|---|---|
-| `games` | настройки и статус мира | `chat_id` → `chats`, `genre_id` → `genres`, `format` (global/novel/series, по умолчанию `novel`; этап 1 только он), `mode` (mechanics/balanced/narrative, по умолчанию `balanced`; этап 1 только он), `title`, `status` (draft/active/paused/finished; список расширяется по ходу разработки), `timezone`, `play_from time` и `play_to time` (игровое окно в сутках, оба nullable), `round_minutes` (10–60, по умолчанию 15), `settings jsonb` (ends_at, max_rounds, max_players, max_active_locations, max_party_size = 3, max_active_goals, goal_cooldown_rounds), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
+| `games` | настройки и статус мира | `chat_id` → `chats`, `genre_id` → `genres`, `format` (global/novel/series, по умолчанию `novel`; этап 1 только он), `mode` (mechanics/balanced/narrative, по умолчанию `balanced`; этап 1 только он), `title`, `status` (draft/active/paused/finished; список расширяется по ходу разработки), `timezone`, `play_from time` и `play_to time` (игровое окно в сутках, оба nullable), `round_minutes` (10–60, по умолчанию 15), `settings jsonb` (ends_at, max_rounds, max_players, max_active_locations, max_parties = 3, max_active_goals, goal_cooldown_rounds), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
 | `game_members` | участие пользователей | `game_id`, `user_id` → `users`, `role` (admin/player), `status` (active/left/kicked), `joined_at` | `(game_id, user_id)` |
 | `factions` | стороны конфликта | `game_id`, `code` (good/evil/neutral), `name`, `description` | `(game_id, code)` |
-| `parties` | группы персонажей для общей истории | `game_id`, `season_id`, `name`, `status` (active/disbanded) | `(season_id, name)`; размер ≤ `settings.max_party_size` |
+| `parties` | группы персонажей для общей истории | `game_id`, `season_id`, `name`, `status` (active/disbanded) | `(season_id, name)`; число активных групп сезона ≤ `settings.max_parties` |
 | `characters` | персонажи | `game_id`, `season_id` → `seasons`, `user_id`, `model_id` → `character_models`, `nickname`, `archetype`, `public_bio varchar(100)`, `secret_bio varchar(100)`, `status` (active/waiting/inactive), `missed_rounds`, `faction_id` → `factions`, `party_id` → `parties` (nullable), `hp`, `conditions jsonb`, `inventory jsonb`, `location_id`, `xp` | `(season_id, user_id)`; FK `(game_id, user_id)` → `game_members` |
 | `character_stats` | значения характеристик и навыков | `game_id`, `character_id`, `kind` (attribute/skill), `key` (из `character_models.definition`), `value` | `(character_id, kind, key)` |
 | `seasons` | сезоны сериала; у остальных типов единственный сезон 1 | `game_id`, `season_no`, `title`, `status` (active/finished), `started_at`, `finished_at` | `(game_id, season_no)` |
@@ -79,7 +79,7 @@ users ──< chats (owner_user_id)
 - Внутри БД связи по `id`; идентификаторы Telegram (`telegram_id`, `telegram_chat_id`) только в `users`, `chats`, `messages_outbox`.
 - В чате не более одной незавершённой игры; завершённые остаются историей. У игры всегда есть активный сезон; у `global` и `story` он единственный.
 - Персонаж создаётся только у активного участника игры; у пары (сезон, пользователь) не более одного персонажа. Ключи `character_stats` только из модели персонажа жанра.
-- Фракций у игры ровно три на этапе 1; персонаж всегда в одной фракции. Группа не больше `max_party_size`; персонаж не более чем в одной группе сезона.
+- Фракций у игры ровно три на этапе 1; персонаж всегда в одной фракции. Активных групп в сезоне не больше `max_parties`; размер группы не ограничен; персонаж не более чем в одной группе сезона.
 - `secret_bio` и `public_bio` — текст игрока: в промпт попадают как данные в выделенном блоке, `secret_bio` только в контекст рассказчика для этого персонажа.
 - Состояние персонажей и локаций производно от `world_events`; прямые правки без события запрещены.
 - У каждой заявки раунда ровно одна строка в `resolved_actions` после разрешения.
