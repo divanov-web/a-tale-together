@@ -88,6 +88,7 @@ func run() error {
 		model.ProviderOpenAI:    openai.New(),
 	}
 	llm := applm.New(store, providers, clock, logger)
+	rounds.LLM = llm // интерпретатор заявок: один вызов на раунд (пункт 08)
 	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username(), OwnerID: model.TelegramUserID(cfg.BotOwnerID)},
 		store, store, tg, chats, games, rounds, llm, clock, logger)
 	if err := commands.RegisterMenu(ctx); err != nil {

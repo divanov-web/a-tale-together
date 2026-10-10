@@ -49,7 +49,7 @@ func intents() []model.Intent {
 		{SubmissionID: 3, CharacterID: 13, ActionType: model.ActionMove, Target: "подвал"},
 		{SubmissionID: 4, CharacterID: 14, ActionType: model.ActionAttack, Target: "Вор"},
 		{SubmissionID: 5, CharacterID: 15, ActionType: model.ActionWait},
-		{SubmissionID: 6, CharacterID: 14, ActionType: model.ActionExplore, Ambiguities: []string{"что осмотреть"}},
+		{SubmissionID: 6, CharacterID: 14, Ambiguities: []string{"что осмотреть"}},
 	}
 }
 
@@ -92,7 +92,7 @@ func TestScenario_S07_NobodyLost(t *testing.T) {
 	if byID[5].Status != model.ResultRejected || byID[5].Reason != "персонаж выбыл из игры до возвращения" {
 		t.Errorf("dead wait = %+v", byID[5])
 	}
-	if byID[6].Status != model.ResultAmbiguous || byID[6].Reason != "что осмотреть" {
+	if byID[6].Status != model.ResultAmbiguous || byID[6].Reason != "заявка не разобрана; что осмотреть" {
 		t.Errorf("ambiguous = %+v", byID[6])
 	}
 	// Призрак возвращается: счётчик истёк.
@@ -261,5 +261,83 @@ func TestHelp(t *testing.T) {
 	}
 	if by[1].Status != model.ResultResolved || by[2].Check.Pool != 9 || by[3].Status != model.ResultRejected || by[4].Status != model.ResultRejected {
 		t.Fatalf("results = %+v", res.Results)
+	}
+}
+
+// TestScenario_S13_FreeCheck: свободное испытание без подхода — сложность по таблице риска плюс локация,
+// при успехе факт (и переход по эффекту move), при провале состояние; объекты локации не меняются.
+func TestScenario_S13_FreeCheck(t *testing.T) {
+	t.Parallel()
+	free := model.Intent{SubmissionID: 1, CharacterID: 14, ActionType: model.ActionInteract, Attribute: "agility", Risk: model.RiskHard,
+		OnSuccess: json.RawMessage(`{"fact":"Ров преодолён: тропа к башне.","move":"вниз в подвал","state":"broken"}`), OnFail: json.RawMessage(`{"condition":"wounded"}`)}
+	var successes, failures int
+	for seed := int64(1); seed <= 40; seed++ {
+		snap := cellar(model.ModeBalanced)
+		res := Resolve(snap, []model.Intent{free}, seed)
+		r := res.Results[0]
+		if r.Status != model.ResultResolved || r.Check == nil || r.Check.Pool != 3 || r.Check.Difficulty != 2 || r.Check.Attribute != "agility" {
+			t.Fatalf("seed %d: result = %+v", seed, r)
+		}
+		var state model.RoundSnapshot
+		state = Clone(snap)
+		if err := Apply(&state, res.Events); err != nil {
+			t.Fatal(err)
+		}
+		c, _ := state.Character(14)
+		types := map[model.EventType]int{}
+		for _, ev := range res.Events {
+			types[ev.Type]++
+		}
+		if types[model.EventObjectChanged] != 0 {
+			t.Fatalf("seed %d: free check changed objects: %+v", seed, res.Events)
+		}
+		switch r.Outcome {
+		case model.OutcomeSuccess:
+			successes++
+			if types[model.EventFactLearned] != 1 || types[model.EventCharacterMoved] != 2 || *c.LocationID != 2 || c.HasCondition(model.ConditionWounded) {
+				t.Fatalf("seed %d: success branch: %+v / %+v", seed, types, c)
+			}
+		case model.OutcomeFailure:
+			failures++
+			if types[model.EventConditionAdded] != 1 || !c.HasCondition(model.ConditionWounded) || *c.LocationID != 1 || types[model.EventFactLearned] != 0 {
+				t.Fatalf("seed %d: fail branch: %+v / %+v", seed, types, c)
+			}
+		}
+	}
+	if successes == 0 || failures == 0 {
+		t.Fatalf("branches: successes %d, failures %d", successes, failures)
+	}
+}
+
+// TestFreeCheck_MoveGateAndSafeFallback: переход с испытанием не выполняется при провале;
+// безопасное толкование (тип задан, неоднозначности есть) разрешается как обычное действие с пометкой в итоге.
+func TestFreeCheck_MoveGateAndSafeFallback(t *testing.T) {
+	t.Parallel()
+	gate := model.Intent{SubmissionID: 1, CharacterID: 13, ActionType: model.ActionMove, Target: "подвал", Attribute: "wits", Risk: model.RiskHard, OnFail: json.RawMessage(`{"damage":1}`)}
+	safe := model.Intent{SubmissionID: 2, CharacterID: 14, ActionType: model.ActionWait, Ambiguities: []string{"два сундука"}}
+	var stayed, moved bool
+	for seed := int64(1); seed <= 60; seed++ {
+		res := Resolve(cellar(model.ModeBalanced), []model.Intent{gate, safe}, seed)
+		g, s := res.Results[1], res.Results[0] // фазы: wait раньше move
+		if g.Status != model.ResultResolved || g.Check == nil || g.Check.Difficulty != 2 || g.Check.Pool != 4 {
+			t.Fatalf("seed %d: gate = %+v", seed, g)
+		}
+		if g.Outcome == model.OutcomeFailure {
+			stayed = true
+			if g.Summary != "пробует перейти: Зал башни → Подвал башни — провал" {
+				t.Fatalf("seed %d: summary %q", seed, g.Summary)
+			}
+		} else {
+			moved = true
+			if g.Summary != "переходит: Зал башни → Подвал башни" {
+				t.Fatalf("seed %d: summary %q", seed, g.Summary)
+			}
+		}
+		if s.Status != model.ResultResolved || s.Summary != "ждёт и держится настороже (примечание: два сундука)" {
+			t.Fatalf("safe = %+v", s)
+		}
+	}
+	if !stayed || !moved {
+		t.Fatalf("gate branches: stayed %v, moved %v", stayed, moved)
 	}
 }

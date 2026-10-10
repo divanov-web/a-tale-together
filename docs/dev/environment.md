@@ -31,6 +31,7 @@ cp .env.example .env
 | `make test` | юнит-тесты |
 | `make test-integration` | тесты с БД (`DATABASE_URL_TEST`) |
 | `make lint` | `gofmt`, `go vet`, `golangci-lint` при наличии |
+| `make eval-interpreter` | оценочный набор интерпретатора на живом `claude-cli` (подписка Claude Code; `EVAL_ARGS="-v -case имя -model haiku -effort low"`), порог 90 % |
 | `make migrate` / `migrate-down` / `migrate-status` | миграции goose |
 | `make fmt` | форматирование |
 

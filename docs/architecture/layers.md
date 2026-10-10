@@ -14,7 +14,7 @@ cmd/bot ──────────────► internal/app ──► int
 
 | Слой | Пакеты | Отвечает | Импортирует | Не импортирует |
 |---|---|---|---|---|
-| Запуск | `cmd/bot` | конфиг, логгер, сборка зависимостей, фоновые циклы, остановка по сигналу | всё | |
+| Запуск | `cmd/bot`, `cmd/eval-interpreter` | конфиг, логгер, сборка зависимостей, фоновые циклы, остановка по сигналу; прогон оценочного набора интерпретатора | всё | |
 | Сценарии | `internal/app/*` | порядок шагов прикладного действия, границы транзакций, вызов сервисов, запись в outbox | `service`, `model` | SQL, Telegram API, SDK LLM |
 | Логика | `internal/service/*` | правила, разрешение раунда, видимость, сборка контекста и валидация ответов LLM | `model` | `app`, `adapter`, БД, Telegram |
 | Модель | `internal/model` | типы сущностей, событий, намерений, статусов; без поведения с I/O | ничего внутреннего | |
@@ -36,7 +36,7 @@ cmd/bot ──────────────► internal/app ──► int
 | `service/rules` | `ValidateDraft`, `AutoDistribute`, `HP`, `Parse*`, `Catalog`, `Pool`, `ChancePct`, `Difficulty`, `Preset`, `ParseTyped`, `DeathRounds` | правила как данные: модель персонажа, каталог действий, пул и шансы, таблица риска, пресеты режимов, типовые команды |
 | `service/engine` | `Resolve(snapshot, intents, seed) Result`, `Apply(snapshot, events)`, `Clone` | фазы, проверки с seed, события, ровно один статус на заявку; свёртка событий в состояние; чистые функции (конфликтные группы — пункт 12) |
 | `service/visibility` | `Filter(events, viewer)`, `Public(events)` | события, доступные адресату; события для хроники |
-| `service/interpreter` | `Parse(ctx, scene, submissions) []Intent` | контекст сцены → вызов `LLM` → валидация по каталогу |
+| `service/interpreter` | `New(LLM, logger)`, `Interpret(ctx, snapshot, def) (Result, error)`, `BuildInput`, `Fallback`, `Schema`, `PromptVersion` | контекст сцен из снимка → один вызов `LLM` на все заявки → валидация по снимку и каталогу → повтор → безопасное толкование; `Fallback` — разбор кодом при сбое (ADR-0010) |
 | `service/narrator` | `Chronicle(ctx, ...)`, `Private(ctx, ...)` | тексты из разрешённых событий; шаблоны для стандартных исходов |
 | `adapter/postgres` | `Store`, `InTx` | репозитории по сущностям, миграции goose; `fake` — хранилище в памяти для тестов |
 | `adapter/telegram` | `Client` | источник update, отправка, деление длинных сообщений |

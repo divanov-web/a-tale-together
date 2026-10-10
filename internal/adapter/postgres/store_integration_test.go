@@ -37,6 +37,9 @@ func newTestStore(t *testing.T) *Store {
 	if _, err := s.pool.Exec(ctx, `DELETE FROM llm_profiles WHERE name <> 'local-claude'`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
+	if _, err := s.pool.Exec(ctx, `UPDATE app_settings SET value = 'local-claude' WHERE key = 'default_llm_profile'`); err != nil {
+		t.Fatalf("reset settings: %v", err)
+	}
 	return s
 }
 
@@ -458,7 +461,7 @@ func TestGameFlow(t *testing.T) {
 	}
 
 	// Пункт 07: локации, события, итоги заявок, состояние персонажа.
-	if len(genre.Template.Locations) != 4 || !genre.Template.Locations[0].Start || genre.Template.Locations[3].Objects[1].HiddenUntil {
+	if len(genre.Template.Locations) != 4 || !genre.Template.Locations[0].Start || !genre.Template.Locations[3].Objects[1].HiddenUntil {
 		t.Fatalf("genre locations = %+v", genre.Template.Locations)
 	}
 	loc, err := s.CreateLocation(ctx, model.Location{GameID: game.ID, Name: "Подвал", Difficulty: 1, Links: []model.LocationLink{{To: "Зал", Title: "наверх"}},
@@ -494,8 +497,8 @@ func TestGameFlow(t *testing.T) {
 	if err := s.AppendEvents(ctx, events[:1]); err == nil {
 		t.Fatal("duplicate seq accepted")
 	}
-	got, err := s.ListEvents(ctx, game.ID, r2.ID)
-	if err != nil || len(got) != 2 || got[1].VisibleTo[0] != cid || got[0].LocationID == nil || *got[0].LocationID != loc.ID || got[0].VisibleTo != nil {
+	evs, err := s.ListEvents(ctx, game.ID, r2.ID)
+	if err != nil || len(evs) != 2 || evs[1].VisibleTo[0] != cid || evs[0].LocationID == nil || *evs[0].LocationID != loc.ID || evs[0].VisibleTo != nil {
 		t.Fatalf("ListEvents = %+v, %v", got, err)
 	}
 	if seq, _ := s.NextEventSeq(ctx, game.ID); seq != 3 {

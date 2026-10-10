@@ -19,4 +19,4 @@ paths:
 - Каждый вызов в `llm_runs`: профиль, провайдер, модель, версия промпта, токены, `cost_usd`, признак подписки, длительность, ошибка, `game_id`, `round_id`.
 - Бюджеты на вызов, раунд, игру; превышение → режим деградации (шаблоны), не падение раунда. Повтор вызова не меняет рассчитанные броски.
 - Секреты только из конфига (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CLAUDE_CLI_PATH`), в БД не хранятся.
-- Промпты `assets/prompts/<роль>/vN.md` через `embed`; версия в `llm_runs`.
+- Промпты `assets/prompts/<роль>/vN.md` через пакет `assets/prompts` (`prompts.FS`, `embed`); версия — константа пакета роли (`interpreter.PromptVersion`), пишется в `llm_runs`. Интерпретатор: `service/interpreter` (`BuildInput`, `Schema`, `validate.go`, `Fallback`), вызов из `app/round.interpret` внутри транзакции заморозки (ADR-0010); eval `make eval-interpreter`.

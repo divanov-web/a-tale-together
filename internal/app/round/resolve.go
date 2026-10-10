@@ -8,8 +8,10 @@ import (
 	"reflect"
 	"time"
 
+	applm "taletogether/internal/app/llm"
 	"taletogether/internal/model"
 	"taletogether/internal/service/engine"
+	"taletogether/internal/service/interpreter"
 	"taletogether/internal/service/rules"
 	"taletogether/internal/service/visibility"
 )
@@ -44,16 +46,14 @@ func snapshot(g model.Game, chars []model.Character, locations []model.Location,
 	return snap
 }
 
-// resolve разрешает замороженный раунд (пункт 07): намерения из типовых команд → движок → события, итоги,
-// состояние персонажей и локаций, статус `published`, хроника и приватные итоги в outbox. Внутри транзакции заморозки.
-func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r model.Round, now time.Time) error {
+// resolve разрешает замороженный раунд (пункты 07–08): интерпретатор одним вызовом (или разбор кодом) → движок →
+// события, итоги, состояние персонажей и локаций, статус `published`, хроника и уведомления в outbox.
+// Внутри транзакции заморозки (ADR-0010): вызов модели держит блокировку игры, `/act` и `/status` её не ждут.
+func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r model.Round, def model.CharacterModelDef, now time.Time) error {
 	if r.Snapshot == nil {
 		return fmt.Errorf("round.resolve: round %d without snapshot", r.ID)
 	}
-	intents := make([]model.Intent, 0, len(r.Snapshot.Submissions))
-	for _, sub := range r.Snapshot.Submissions {
-		intents = append(intents, rules.ParseTyped(model.Submission{ID: sub.SubmissionID, CharacterID: sub.CharacterID, RawText: sub.Text}))
-	}
+	intents := s.interpret(ctx, g, r, def)
 	result := engine.Resolve(*r.Snapshot, intents, r.Seed)
 	offset, err := s.store.NextEventSeq(ctx, g.ID)
 	if err != nil {
@@ -90,6 +90,32 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 	}
 	s.logger.Info("round resolved", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("events", len(result.Events)), slog.Int("results", len(result.Results)))
 	return nil
+}
+
+// interpret — вызов 1 из 2 (docs/llm/round-calls.md): все заявки снимка одним вызовом модели через `app/llm.Complete`
+// с ролью `interpreter` и раундом для учёта. Без провайдера, профиля или при сбое — запасной разбор кодом
+// (`interpreter.Fallback`: типовые команды, остальное безопасное толкование); раунд не падает.
+func (s *Service) interpret(ctx context.Context, g model.Game, r model.Round, def model.CharacterModelDef) []model.Intent {
+	snap := *r.Snapshot
+	if len(snap.Submissions) == 0 {
+		return nil
+	}
+	if s.LLM == nil {
+		return interpreter.Fallback(snap, "интерпретатор не настроен: типовые команды")
+	}
+	call := applm.Call{Game: &g, Round: &r.ID, Role: model.RoleInterpreter, PromptVersion: interpreter.PromptVersion}
+	svc := interpreter.New(interpreter.Func(func(ctx context.Context, req model.LLMRequest) (model.LLMResponse, error) {
+		return s.LLM.Complete(ctx, call, req)
+	}), s.logger)
+	res, err := svc.Interpret(ctx, snap, def)
+	if err != nil {
+		s.logger.Warn("interpreter unavailable, typed fallback", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Any("err", err))
+		return interpreter.Fallback(snap, "интерпретатор недоступен: типовые команды")
+	}
+	s.logger.Info("round interpreted", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)),
+		slog.Int("submissions", len(snap.Submissions)), slog.Int("calls", res.Calls), slog.Int("safe", res.Invalid),
+		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
+	return res.Intents
 }
 
 // saveState записывает изменившихся персонажей и локации; значения берутся только из свёртки событий.

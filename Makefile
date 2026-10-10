@@ -9,7 +9,7 @@ export
 PID := bin/bot.pid
 LOG := logs/bot.log
 
-.PHONY: build run start stop restart logs test test-integration lint fmt migrate migrate-down migrate-status tools check
+.PHONY: build run start stop restart logs test test-integration lint fmt migrate migrate-down migrate-status tools check eval-interpreter
 
 build: ## Сборка бота
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o $(BIN) ./cmd/bot
@@ -38,6 +38,9 @@ test: ## Юнит-тесты
 
 test-integration: ## Тесты с БД (DATABASE_URL_TEST)
 	$(GO) test -tags integration ./...
+
+eval-interpreter: ## Оценочный набор интерпретатора на живом claude-cli (EVAL_ARGS="-v -case name -model haiku")
+	$(GO) run ./cmd/eval-interpreter $(EVAL_ARGS)
 
 lint: ## gofmt, go vet, golangci-lint при наличии
 	@test -z "$$($(GO) fmt ./... | tee /dev/stderr)" || (echo "gofmt изменил файлы"; exit 1)

@@ -20,6 +20,31 @@ func RiskDifficulty(r model.Risk) int {
 	return 1
 }
 
+// Risks — уровни риска свободного испытания в порядке роста сложности.
+var Risks = []model.Risk{model.RiskNormal, model.RiskHard, model.RiskExtreme}
+
+// Conditions — состояния персонажа, которые может назначить эффект on_fail (docs/game/character.md).
+var Conditions = []string{model.ConditionWounded, model.ConditionExhausted, model.ConditionHidden, model.ConditionDetained}
+
+// FreeDamageMax — потолок урона в эффекте on_fail свободного испытания (допущение пункта 08).
+const FreeDamageMax = 2
+
+// ValidRisk — риск из таблицы.
+func ValidRisk(r model.Risk) bool {
+	_, ok := riskDifficulty[r]
+	return ok
+}
+
+// ValidCondition — состояние из списка.
+func ValidCondition(c string) bool {
+	for _, k := range Conditions {
+		if k == c {
+			return true
+		}
+	}
+	return false
+}
+
 // Состояния, снимающие по кубику с пула (docs/game/character.md).
 var penaltyConditions = []string{model.ConditionWounded, model.ConditionExhausted}
 

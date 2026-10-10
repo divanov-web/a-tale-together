@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	applm "taletogether/internal/app/llm"
 	"taletogether/internal/model"
 )
 
@@ -49,6 +50,11 @@ type Store interface {
 	EnqueueOutbox(ctx context.Context, m model.OutboxMessage) error
 }
 
+// LLM — вызов модели с учётом в `llm_runs`; реализует `app/llm.Service`. Пусто — заявки разбираются кодом.
+type LLM interface {
+	Complete(ctx context.Context, call applm.Call, req model.LLMRequest) (model.LLMResponse, error)
+}
+
 // Rights — кто может управлять игрой; реализует `app/game.CanAdmin`.
 type Rights interface {
 	CanAdmin(ctx context.Context, game model.Game, user model.UserID) (bool, error)
@@ -85,7 +91,9 @@ type Service struct {
 	logger *slog.Logger
 	// AnnounceSkipped — слать в группу сообщение о пропуске раунда без кворума; `cmd` включает в dev.
 	AnnounceSkipped bool
-	seed            func() int64
+	// LLM — интерпретатор заявок (вызов 1 из 2 на раунд, пункт 08); nil — разбор типовых команд кодом.
+	LLM  LLM
+	seed func() int64
 }
 
 // New собирает сервис раунда.
@@ -481,7 +489,7 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 		return err
 	}
 	s.logger.Info("round frozen", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("submissions", len(subs)))
-	return s.resolve(ctx, g, chat, r, now)
+	return s.resolve(ctx, g, chat, r, cm.Definition, now)
 }
 
 // activity — статус персонажа после раунда: заявка возвращает в `active`, пропуски ведут в `waiting`, затем `inactive`

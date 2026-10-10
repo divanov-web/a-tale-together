@@ -77,8 +77,9 @@ func (r *resolver) resolveOne(in model.Intent) {
 		res.Status, res.Reason = model.ResultRejected, "персонажа нет в снимке раунда"
 	case c.Status == model.CharacterDead:
 		res.Status, res.Reason = model.ResultRejected, "персонаж выбыл из игры до возвращения"
-	case len(in.Ambiguities) > 0:
-		res.Status, res.Reason = model.ResultAmbiguous, strings.Join(in.Ambiguities, "; ")
+	case in.ActionType == "":
+		// Намерение без типа: разбор не удался и безопасного толкования нет.
+		res.Status, res.Reason = model.ResultAmbiguous, strings.Join(append([]string{"заявка не разобрана"}, in.Ambiguities...), "; ")
 	default:
 		entry, known := rules.Entry(in.ActionType)
 		switch {
@@ -93,6 +94,10 @@ func (r *resolver) resolveOne(in model.Intent) {
 	if res.Status != model.ResultResolved && res.Summary == "" {
 		res.Summary = res.Reason
 		r.emit(&res, model.EventActionRejected, model.VisibilityPrivate, []model.CharacterID{in.CharacterID}, c, map[string]any{"status": res.Status, "reason": res.Reason, "action_type": in.ActionType})
+	}
+	if len(in.Ambiguities) > 0 && res.Status == model.ResultResolved {
+		// Неоднозначности интерпретатора (в том числе безопасное толкование, G3): действие выполнено, игроку видно, что было непонятно.
+		res.Summary += " (примечание: " + strings.Join(in.Ambiguities, "; ") + ")"
 	}
 	r.results = append(r.results, res)
 }
@@ -132,14 +137,8 @@ func (r *resolver) move(c *model.SnapshotCharacter, loc *model.SnapshotLocation,
 		return
 	}
 	var dest *model.SnapshotLocation
-	for _, l := range loc.Links {
-		if l.Hidden {
-			continue
-		}
-		if strings.EqualFold(l.To, in.Target) || strings.EqualFold(l.Title, in.Target) || matches(in.Target, l.Title+" "+l.To) {
-			dest, _ = r.snap.LocationByName(l.To)
-			break
-		}
+	if l, ok := visibleLink(loc, in.Target); ok {
+		dest, _ = r.snap.LocationByName(l.To)
 	}
 	if dest == nil {
 		if d, ok := r.snap.LocationByName(in.Target); ok && hasLink(loc, d.Name) {
@@ -150,6 +149,19 @@ func (r *resolver) move(c *model.SnapshotCharacter, loc *model.SnapshotLocation,
 		res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("из «%s» нет выхода «%s»; выходы: %s", loc.Name, in.Target, exits(loc))
 		return
 	}
+	if in.FreeCheck() {
+		// Переход с испытанием: провал оставляет персонажа на месте и применяет on_fail.
+		ap := freeApproach(in)
+		ap.OnSuccess = nil
+		if !r.check(c, loc, in, res, ap, model.LocationObject{}, -1, fmt.Sprintf("пробует перейти: %s → %s", loc.Name, dest.Name)) {
+			return
+		}
+	}
+	r.moveTo(res, c, loc, dest)
+}
+
+// moveTo переводит персонажа в локацию назначения; событие видно в обеих локациях.
+func (r *resolver) moveTo(res *model.ActionResult, c *model.SnapshotCharacter, loc, dest *model.SnapshotLocation) {
 	from := loc.ID
 	res.Status, res.Summary = model.ResultResolved, fmt.Sprintf("переходит: %s → %s", loc.Name, dest.Name)
 	r.emit(res, model.EventCharacterMoved, model.VisibilityLocation, nil, c, map[string]any{"character_id": c.ID, "from": from, "to": dest.ID, "from_name": loc.Name, "to_name": dest.Name})
@@ -163,12 +175,34 @@ func (r *resolver) move(c *model.SnapshotCharacter, loc *model.SnapshotLocation,
 	c.LocationID = &dest.ID
 }
 
+// freeApproach — подход свободного испытания из намерения: сложность по таблице риска, эффекты от интерпретатора.
+func freeApproach(in model.Intent) model.Approach {
+	return model.Approach{Action: in.ActionType, Attribute: in.Attribute, Skill: in.Skill, Difficulty: rules.RiskDifficulty(in.Risk), OnSuccess: in.OnSuccess, OnFail: in.OnFail}
+}
+
+// visibleLink ищет видимый выход локации по имени назначения или названию.
+func visibleLink(loc *model.SnapshotLocation, target string) (model.LocationLink, bool) {
+	for _, l := range loc.Links {
+		if l.Hidden {
+			continue
+		}
+		if strings.EqualFold(l.To, target) || strings.EqualFold(l.Title, target) || matches(target, l.Title+" "+l.To) {
+			return l, true
+		}
+	}
+	return model.LocationLink{}, false
+}
+
 func (r *resolver) explore(c *model.SnapshotCharacter, loc *model.SnapshotLocation, in model.Intent, res *model.ActionResult) {
 	if loc == nil {
 		res.Status, res.Reason = model.ResultRejected, "персонаж вне локаций"
 		return
 	}
 	if in.Target == "" || strings.EqualFold(in.Target, loc.Name) || in.Target == "вокруг" || in.Target == "around" {
+		if in.FreeCheck() {
+			r.check(c, loc, in, res, freeApproach(in), model.LocationObject{}, -1, "действует в локации «"+loc.Name+"»")
+			return
+		}
 		fact := fmt.Sprintf("%s: %s Выходы: %s. Объекты: %s.", loc.Name, loc.Description, exits(loc), objects(loc))
 		res.Status, res.Summary = model.ResultResolved, "осматривается в локации «"+loc.Name+"»"
 		r.learn(res, c, loc, fact)
@@ -177,6 +211,10 @@ func (r *resolver) explore(c *model.SnapshotCharacter, loc *model.SnapshotLocati
 	obj, idx, ok := r.findObject(loc, in.Target)
 	if !ok {
 		res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("в «%s» нет объекта «%s»; объекты: %s", loc.Name, in.Target, objects(loc))
+		return
+	}
+	if in.FreeCheck() {
+		r.check(c, loc, in, res, freeApproach(in), obj, idx, "осматривает: "+obj.Title)
 		return
 	}
 	ap, apIdx := pickApproach(obj, model.ActionExplore, in.ApproachIdx)
@@ -194,9 +232,17 @@ func (r *resolver) interact(c *model.SnapshotCharacter, loc *model.SnapshotLocat
 		res.Status, res.Reason = model.ResultRejected, "персонаж вне локаций"
 		return
 	}
+	if in.Target == "" && in.FreeCheck() {
+		r.check(c, loc, in, res, freeApproach(in), model.LocationObject{}, -1, "действует в локации «"+loc.Name+"»")
+		return
+	}
 	obj, idx, ok := r.findObject(loc, in.Target)
 	if !ok {
 		res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("в «%s» нет объекта «%s»; объекты: %s", loc.Name, in.Target, objects(loc))
+		return
+	}
+	if in.FreeCheck() {
+		r.check(c, loc, in, res, freeApproach(in), obj, idx, "взаимодействует: "+obj.Title)
 		return
 	}
 	ap, apIdx := pickApproach(obj, model.ActionInteract, in.ApproachIdx)
@@ -207,12 +253,13 @@ func (r *resolver) interact(c *model.SnapshotCharacter, loc *model.SnapshotLocat
 	r.check(c, loc, in, res, ap, obj, idx, "взаимодействует: "+obj.Title)
 }
 
-// check выполняет проверку по подходу и применяет on_success / on_fail через события.
-func (r *resolver) check(c *model.SnapshotCharacter, loc *model.SnapshotLocation, in model.Intent, res *model.ActionResult, ap model.Approach, obj model.LocationObject, objIdx int, summary string) {
+// check выполняет проверку по подходу (объекта или свободного испытания, objIdx < 0 — без объекта) и применяет
+// on_success / on_fail через события. Возвращает true, если ветвь успеха.
+func (r *resolver) check(c *model.SnapshotCharacter, loc *model.SnapshotLocation, in model.Intent, res *model.ActionResult, ap model.Approach, obj model.LocationObject, objIdx int, summary string) bool {
 	if ap.Difficulty == 0 && ap.Attribute == "" {
 		res.Status, res.Summary = model.ResultResolved, summary
 		r.applyApproach(res, c, loc, obj, objIdx, ap.OnSuccess)
-		return
+		return true
 	}
 	pool := rules.Pool(*c, ap.Attribute, ap.Skill, r.helpers[c.ID])
 	difficulty := rules.Difficulty(r.preset, ap.Difficulty, loc.Difficulty)
@@ -247,21 +294,24 @@ func (r *resolver) check(c *model.SnapshotCharacter, loc *model.SnapshotLocation
 	}
 	res.Status, res.Check, res.Outcome = model.ResultResolved, &info, info.Outcome
 	res.Summary = summary + " — " + outcomeWords(info.Outcome)
-	r.emit(res, model.EventCheckRolled, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "object": obj.Key, "check": info})
+	r.emit(res, model.EventCheckRolled, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "object": obj.Key, "free": objIdx < 0 || in.FreeCheck(), "check": info})
 	if info.Outcome == model.OutcomeFailure {
-		r.applyFail(res, c, ap.OnFail)
-		return
+		r.applyFail(res, c, loc, ap.OnFail)
+		return false
 	}
 	r.applyApproach(res, c, loc, obj, objIdx, ap.OnSuccess)
+	return true
 }
 
-// applyApproach выполняет on_success подхода: смена состояния объекта, раскрытие скрытого объекта, факт.
+// applyApproach выполняет on_success: смена состояния объекта (только у подхода из данных локации), раскрытие
+// скрытого объекта, факт, переход по видимому выходу (свободное испытание). Без объекта (objIdx < 0) состояние не меняется.
 func (r *resolver) applyApproach(res *model.ActionResult, c *model.SnapshotCharacter, loc *model.SnapshotLocation, obj model.LocationObject, objIdx int, effect json.RawMessage) {
 	var e struct {
 		State  string `json:"state"`
 		Object string `json:"object"`
 		Reveal string `json:"reveal"`
 		Fact   string `json:"fact"`
+		Move   string `json:"move"`
 	}
 	if len(effect) > 0 {
 		_ = json.Unmarshal(effect, &e)
@@ -273,9 +323,11 @@ func (r *resolver) applyApproach(res *model.ActionResult, c *model.SnapshotChara
 				targetKey, targetIdx = e.Object, i
 			}
 		}
-		prev := loc.Objects[targetIdx].State
-		loc.Objects[targetIdx].State = e.State
-		r.emit(res, model.EventObjectChanged, model.VisibilityLocation, nil, c, map[string]any{"character_id": c.ID, "location_id": loc.ID, "object": targetKey, "title": loc.Objects[targetIdx].Title, "from": prev, "to": e.State})
+		if targetIdx >= 0 {
+			prev := loc.Objects[targetIdx].State
+			loc.Objects[targetIdx].State = e.State
+			r.emit(res, model.EventObjectChanged, model.VisibilityLocation, nil, c, map[string]any{"character_id": c.ID, "location_id": loc.ID, "object": targetKey, "title": loc.Objects[targetIdx].Title, "from": prev, "to": e.State})
+		}
 	}
 	if e.Reveal != "" {
 		if _, i, ok := loc.Object(e.Reveal); ok && !loc.Objects[i].Revealed {
@@ -284,16 +336,29 @@ func (r *resolver) applyApproach(res *model.ActionResult, c *model.SnapshotChara
 		}
 	}
 	fact := e.Fact
-	if fact == "" {
+	if fact == "" && objIdx >= 0 {
 		fact = fmt.Sprintf("%s: %s", obj.Title, describeObject(loc.Objects[objIdx]))
 	}
-	r.learn(res, c, loc, fact)
+	if fact != "" {
+		r.learn(res, c, loc, fact)
+	}
+	if e.Move != "" {
+		if l, ok := visibleLink(loc, e.Move); ok {
+			if dest, ok := r.snap.LocationByName(l.To); ok {
+				summary := res.Summary
+				r.moveTo(res, c, loc, dest)
+				res.Summary = summary + "; " + res.Summary
+			}
+		}
+	}
 }
 
-func (r *resolver) applyFail(res *model.ActionResult, c *model.SnapshotCharacter, effect json.RawMessage) {
+// applyFail выполняет on_fail: состояние, урон в пределах режима, факт.
+func (r *resolver) applyFail(res *model.ActionResult, c *model.SnapshotCharacter, loc *model.SnapshotLocation, effect json.RawMessage) {
 	var e struct {
 		Condition string `json:"condition"`
 		Damage    int    `json:"damage"`
+		Fact      string `json:"fact"`
 	}
 	if len(effect) > 0 {
 		_ = json.Unmarshal(effect, &e)
@@ -304,6 +369,9 @@ func (r *resolver) applyFail(res *model.ActionResult, c *model.SnapshotCharacter
 	}
 	if e.Damage > 0 && r.preset.TrackHP {
 		r.damage(res, c, e.Damage)
+	}
+	if e.Fact != "" {
+		r.learn(res, c, loc, e.Fact)
 	}
 }
 

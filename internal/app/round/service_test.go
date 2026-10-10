@@ -2,13 +2,16 @@ package round
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
 	"time"
 
 	"taletogether/internal/adapter/postgres/fake"
+	applm "taletogether/internal/app/llm"
 	"taletogether/internal/model"
 )
 
@@ -408,5 +411,100 @@ func TestTick_LockedOrDbErrorIsReported(t *testing.T) {
 	w.store.Err = errors.New("db down")
 	if err := w.svc.Tick(ctx, w.clock.t.Add(time.Hour)); err == nil {
 		t.Fatal("tick with broken store returned nil")
+	}
+}
+
+// fakeLLM — провайдер через app/llm.Call: записанный JSON или ошибка; запоминает вызовы.
+type fakeLLM struct {
+	json  string
+	err   error
+	calls []applm.Call
+}
+
+func (f *fakeLLM) Complete(_ context.Context, call applm.Call, _ model.LLMRequest) (model.LLMResponse, error) {
+	f.calls = append(f.calls, call)
+	if f.err != nil {
+		return model.LLMResponse{}, f.err
+	}
+	return model.LLMResponse{JSON: json.RawMessage(f.json), TokensIn: 50, TokensOut: 10}, nil
+}
+
+// TestResolve_Interpreter: заявки раунда уходят в интерпретатор одним вызовом с ролью и раундом; свободное
+// испытание из ответа модели разрешается движком; при сбое модели — разбор кодом, раунд публикуется.
+func TestResolve_Interpreter(t *testing.T) {
+	t.Parallel()
+	s := model.DefaultGameSettings()
+	s.MinRoundAnswers = 1
+	w := newWorld(t, s)
+	ctx := context.Background()
+	// Локации жанра и стартовая локация персонажей (в app/game это делает создание игры и персонажа).
+	genre, _ := w.store.GetGenre(ctx, w.game.GenreID)
+	var start model.LocationID
+	for i, lt := range genre.Template.Locations {
+		l, err := w.store.CreateLocation(ctx, model.Location{GameID: w.game.ID, Name: lt.Name, Description: lt.Description, Difficulty: lt.Difficulty, Links: lt.Links, Objects: lt.Objects, Active: true, Start: lt.Start})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if lt.Start || i == 0 {
+			start = l.ID
+		}
+	}
+	for i := range w.chars {
+		w.chars[i].LocationID = &start
+		w.chars[i].Attributes = map[string]int{"strength": 2, "agility": 3, "wits": 4, "will": 3}
+		w.chars[i].Skills = map[string]int{"awareness": 2}
+		if err := w.store.SaveCharacterState(ctx, w.game.ID, w.chars[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	llm := &fakeLLM{}
+	w.svc.LLM = llm
+	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
+		t.Fatal(err)
+	}
+	w.reload(t)
+	_, sub1, err := w.svc.Submit(ctx, w.game, w.chars[0], "прислушиваюсь к толпе на площади")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, sub2, err := w.svc.Submit(ctx, w.game, w.chars[1], "иду к башне")
+	if err != nil {
+		t.Fatal(err)
+	}
+	llm.json = fmt.Sprintf(`{"intents":[
+	 {"submission_id":%d,"character_id":%d,"action_type":"explore","target":"","approach_idx":null,"attribute":"wits","skill":"awareness","risk":"normal","on_success":{"fact":"На площади тихо.","move":null,"reveal":null},"on_fail":{"condition":"exhausted","damage":null,"fact":null},"push":false,"ambiguities":[],"fallback":null},
+	 {"submission_id":%d,"character_id":%d,"action_type":"move","target":"Зал Серой башни","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}]}`,
+		sub1.ID, sub1.CharacterID, sub2.ID, sub2.CharacterID)
+	w.tick(t, 10*time.Minute)
+	if len(llm.calls) != 1 || llm.calls[0].Role != model.RoleInterpreter || llm.calls[0].Round == nil || llm.calls[0].Game == nil || llm.calls[0].PromptVersion == "" {
+		t.Fatalf("llm calls = %+v", llm.calls)
+	}
+	info, _ := w.svc.Info(ctx, w.game)
+	actions, _ := w.store.ListResolvedActions(ctx, w.game.ID, info.Last.ID)
+	if len(actions) != 2 {
+		t.Fatalf("actions = %+v", actions)
+	}
+	byChar := map[model.CharacterID]model.ActionResult{}
+	for _, a := range actions {
+		byChar[a.CharacterID] = a
+	}
+	free := byChar[w.chars[0].ID]
+	if free.Status != model.ResultResolved || free.Check == nil || free.Check.Attribute != "wits" || free.Check.Difficulty != 1 || !free.Intent.FreeCheck() {
+		t.Fatalf("free action = %+v", free)
+	}
+	if mv := byChar[w.chars[1].ID]; mv.Status != model.ResultResolved || mv.Intent.Target != "Зал Серой башни" {
+		t.Fatalf("move = %+v", mv)
+	}
+	// Сбой модели: разбор кодом, безопасное толкование, раунд опубликован.
+	llm.err = errors.New("provider down")
+	w.reload(t)
+	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "что-то невнятное"); err != nil {
+		t.Fatal(err)
+	}
+	w.tick(t, 10*time.Minute)
+	info, _ = w.svc.Info(ctx, w.game)
+	actions, _ = w.store.ListResolvedActions(ctx, w.game.ID, info.Last.ID)
+	if info.Last.Status != model.RoundPublished || len(actions) != 1 || actions[0].Intent.ActionType != model.ActionWait || len(actions[0].Intent.Ambiguities) == 0 {
+		t.Fatalf("fallback round = %+v / %+v", info.Last.Status, actions)
 	}
 }

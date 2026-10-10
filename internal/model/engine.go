@@ -32,18 +32,28 @@ const (
 )
 
 // Intent — разобранное намерение персонажа на раунд: выход интерпретатора (пункт 08) или типовой команды.
+// Свободное испытание (docs/llm/round-calls.md): без подхода объекта модель назначает характеристику, навык, риск
+// и эффекты обеих ветвей; сложность и бросок — движок. Пустой ActionType с Ambiguities → заявка ambiguous;
+// непустой тип с Ambiguities — безопасное толкование, разрешается как обычное действие.
 type Intent struct {
-	SubmissionID SubmissionID `json:"submission_id"`
-	CharacterID  CharacterID  `json:"character_id"`
-	ActionType   ActionType   `json:"action_type"`
-	Target       string       `json:"target,omitempty"`       // ключ объекта, имя выхода или локации, никнейм персонажа
-	ApproachIdx  *int         `json:"approach_idx,omitempty"` // выбранный подход объекта; nil — по типу действия
-	Risk         Risk         `json:"risk,omitempty"`         // для свободного действия без подхода
-	Push         bool         `json:"push,omitempty"`         // форсировать бросок при провале
-	How          string       `json:"how,omitempty"`          // свободное описание способа
-	Ambiguities  []string     `json:"ambiguities,omitempty"`  // непустой список → заявка ambiguous
-	RawText      string       `json:"raw_text,omitempty"`     // исходный текст игрока (данные)
+	SubmissionID SubmissionID    `json:"submission_id"`
+	CharacterID  CharacterID     `json:"character_id"`
+	ActionType   ActionType      `json:"action_type"`
+	Target       string          `json:"target,omitempty"`       // ключ объекта, имя выхода или локации, никнейм персонажа
+	ApproachIdx  *int            `json:"approach_idx,omitempty"` // выбранный подход объекта; nil — по типу действия
+	Attribute    string          `json:"attribute,omitempty"`    // свободное испытание: характеристика из модели персонажа
+	Skill        string          `json:"skill,omitempty"`        // свободное испытание: навык из модели персонажа
+	Risk         Risk            `json:"risk,omitempty"`         // свободное испытание: оценка риска → число успехов по таблице
+	OnSuccess    json.RawMessage `json:"on_success,omitempty"`   // свободное испытание: {"fact": …} | {"reveal": key} | {"move": выход}
+	OnFail       json.RawMessage `json:"on_fail,omitempty"`      // свободное испытание: {"condition": …} | {"damage": N} | {"fact": …}
+	Push         bool            `json:"push,omitempty"`         // форсировать бросок при провале
+	How          string          `json:"how,omitempty"`          // свободное описание способа
+	Ambiguities  []string        `json:"ambiguities,omitempty"`  // что непонятно в заявке; при пустом ActionType → ambiguous
+	RawText      string          `json:"raw_text,omitempty"`     // исходный текст игрока (данные)
 }
+
+// FreeCheck — у намерения задано свободное испытание (характеристика без подхода объекта).
+func (in Intent) FreeCheck() bool { return in.ApproachIdx == nil && in.Attribute != "" }
 
 // Visibility — кому доступно событие.
 type Visibility string
