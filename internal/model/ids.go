@@ -38,3 +38,9 @@ type SubmissionID int64
 
 // OutboxID — идентификатор исходящего сообщения в messages_outbox.
 type OutboxID int64
+
+// LLMProfileID — идентификатор профиля LLM.
+type LLMProfileID int64
+
+// LLMRunID — идентификатор прогона LLM.
+type LLMRunID int64

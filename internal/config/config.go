@@ -22,6 +22,7 @@ type Config struct {
 	MigrateOnStart   bool          `env:"MIGRATE_ON_START"`   // Применять миграции при старте
 	SchedulerTick    time.Duration `env:"SCHEDULER_TICK"`     // Период планировщика раундов
 	OutboxTick       time.Duration `env:"OUTBOX_TICK"`        // Период воркера доставки outbox
+	BotOwnerID       int64         `env:"BOT_OWNER_ID"`       // Telegram ID владельца бота: команды /llm
 	LLM              LLM
 }
 

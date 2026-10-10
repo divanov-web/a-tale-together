@@ -73,6 +73,7 @@ func (s *Service) registry() []command {
 		{name: "bio", contexts: ctxPrivate, description: "<текст> — открытое описание персонажа до 100 символов", run: s.characterBio},
 		{name: "secret", contexts: ctxPrivate, description: "<текст> — скрытое описание персонажа до 100 символов", run: s.characterSecret},
 		{name: "cancel", contexts: ctxPrivate, description: "прервать диалог", run: s.cancel},
+		{name: "llm", contexts: ctxPrivate, description: "профили LLM (владелец бота): use|add|test", run: s.llmCommand},
 	}
 	if s.settings.Env == "dev" {
 		cmds = append(cmds, command{name: "next", contexts: ctxGroup, description: "закрыть раунд и открыть следующий (только dev)", run: s.roundNext, needsChat: true})

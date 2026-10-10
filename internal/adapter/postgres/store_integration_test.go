@@ -30,7 +30,10 @@ func newTestStore(t *testing.T) *Store {
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	if _, err := s.pool.Exec(ctx, `TRUNCATE telegram_updates, users, chats, chat_moderators, dialogs, games, seasons, factions, game_members, characters, character_stats, rounds, action_submissions, messages_outbox CASCADE`); err != nil {
+	if _, err := s.pool.Exec(ctx, `TRUNCATE telegram_updates, users, chats, chat_moderators, dialogs, games, seasons, factions, game_members, characters, character_stats, rounds, action_submissions, messages_outbox, llm_runs CASCADE`); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	if _, err := s.pool.Exec(ctx, `DELETE FROM llm_profiles WHERE name <> 'local-claude'`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 	return s
@@ -402,5 +405,54 @@ func TestGameFlow(t *testing.T) {
 	queued, _ = s.ListOutbox(ctx, game.ID)
 	if queued[0].Status != model.OutboxSent || *queued[0].TelegramMessageID != 777 || queued[1].Status != model.OutboxUnknown {
 		t.Fatalf("outbox final = %+v", queued)
+	}
+
+	// Пункт 06: профили LLM, настройка по умолчанию, профиль игры, учёт вызовов.
+	profiles, err := s.ListLLMProfiles(ctx)
+	if err != nil || len(profiles) != 1 || profiles[0].Name != "local-claude" || profiles[0].Provider != "claude-cli" || profiles[0].Params.Effort != "low" || profiles[0].Params.Parallelism != 2 {
+		t.Fatalf("seed profiles = %+v, %v", profiles, err)
+	}
+	if v, err := s.GetAppSetting(ctx, model.SettingDefaultLLMProfile); err != nil || v != "local-claude" {
+		t.Fatalf("default profile = %q, %v", v, err)
+	}
+	if _, err := s.GetAppSetting(ctx, "missing"); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("missing setting: %v", err)
+	}
+	created2, err := s.CreateLLMProfile(ctx, model.LLMProfile{Name: "api", Provider: "anthropic-api", ModelInterpreter: "claude-haiku-5-5", ModelNarrator: "claude-opus-5-5", Params: model.LLMParams{MaxOutput: 2000}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateLLMProfile(ctx, model.LLMProfile{Name: "api", Provider: "x", ModelInterpreter: "a", ModelNarrator: "b"}); err == nil {
+		t.Fatal("duplicate profile accepted")
+	}
+	if err := s.SetAppSetting(ctx, model.SettingDefaultLLMProfile, "api"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := s.GetAppSetting(ctx, model.SettingDefaultLLMProfile); v != "api" {
+		t.Fatalf("setting after update = %q", v)
+	}
+	if err := s.SetGameLLMProfile(ctx, game.ID, &created2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetGame(ctx, game.ID); got.LLMProfileID == nil || *got.LLMProfileID != created2.ID {
+		t.Fatalf("game profile = %+v", got.LLMProfileID)
+	}
+	if err := s.SetGameLLMProfile(ctx, game.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetGame(ctx, game.ID); got.LLMProfileID != nil {
+		t.Fatal("game profile not reset")
+	}
+	run, err := s.CreateLLMRun(ctx, model.LLMRun{GameID: &game.ID, RoundID: &r2.ID, ProfileID: created2.ID, Provider: "anthropic-api", Role: model.RoleInterpreter, Model: "claude-haiku-5-5",
+		PromptVersion: "v1", TokensIn: 100, TokensOut: 20, CostUSD: 0.001234, Subscription: false, DurationMS: 1500, RequestID: "req-1"})
+	if err != nil || run.ID == 0 {
+		t.Fatalf("CreateLLMRun = %+v, %v", run, err)
+	}
+	if _, err := s.CreateLLMRun(ctx, model.LLMRun{ProfileID: created2.ID, Provider: "anthropic-api", Role: model.RoleTest, Model: "m", Error: "boom"}); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := s.ListLLMRuns(ctx, 10)
+	if err != nil || len(runs) != 2 || runs[0].Error != "boom" || runs[0].GameID != nil || runs[1].CostUSD != 0.001234 || runs[1].RoundID == nil || *runs[1].RoundID != r2.ID {
+		t.Fatalf("ListLLMRuns = %+v, %v", runs, err)
 	}
 }

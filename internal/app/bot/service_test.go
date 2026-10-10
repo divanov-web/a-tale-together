@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
+	llmfake "taletogether/internal/adapter/llm/fake"
 	"taletogether/internal/adapter/postgres/fake"
 	"taletogether/internal/app/chat"
 	"taletogether/internal/app/game"
+	applm "taletogether/internal/app/llm"
 	"taletogether/internal/app/round"
 	"taletogether/internal/model"
 )
@@ -61,6 +63,7 @@ type harness struct {
 	tg     *fakeTelegram
 	clock  *fixedClock
 	rounds *round.Service
+	llm    *llmfake.Client
 	nextID int64
 }
 
@@ -74,8 +77,10 @@ func newHarness(t *testing.T) *harness {
 	games := game.New(store, chats, clock, logger)
 	rounds := round.New(store, games, clock, logger)
 	rounds.AnnounceSkipped = true
-	svc := New(Settings{Version: "v0.1", Env: "dev", BotUsername: "tale_bot"}, store, store, tg, chats, games, rounds, clock, logger)
-	return &harness{t: t, svc: svc, store: store, tg: tg, clock: clock, rounds: rounds}
+	fakeLLM := llmfake.New()
+	llm := applm.New(store, map[string]applm.Client{model.ProviderFake: fakeLLM, model.ProviderClaudeCLI: llmfake.New()}, clock, logger)
+	svc := New(Settings{Version: "v0.1", Env: "dev", BotUsername: "tale_bot", OwnerID: owner.ID}, store, store, tg, chats, games, rounds, llm, clock, logger)
+	return &harness{t: t, svc: svc, store: store, tg: tg, clock: clock, rounds: rounds, llm: fakeLLM}
 }
 
 const groupChat model.TelegramChatID = -100500
@@ -495,4 +500,32 @@ func TestRound_StatusTransitionsAndWindow(t *testing.T) {
 	}
 	mustContain(t, h.send(bob, private(bob), "/character"), "active")
 	mustContain(t, h.send(alice, groupChat, "/status"), "Предыдущий раунд: 4 закрыт, заявок 2", "Следующий раунд: в 11.10 13:00")
+}
+
+func TestLLM_OwnerCommands(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(alice, private(alice), "/llm"), "только владельцу бота")
+	mustContain(t, h.send(owner, private(owner), "/llm"), "Профили LLM:", "нет; добавить", "Провайдеры: claude-cli, fake")
+	mustContain(t, h.send(owner, private(owner), "/llm test"), "не настроен")
+	mustContain(t, h.send(owner, private(owner), "/llm add"), "Формат: /llm add")
+	mustContain(t, h.send(owner, private(owner), "/llm add local fake haiku sonnet"), "Профиль local создан (fake)")
+	mustContain(t, h.send(owner, private(owner), "/llm add local fake haiku sonnet"), "уже есть")
+	mustContain(t, h.send(owner, private(owner), "/llm add xx nope a b"), "Неизвестный провайдер")
+	mustContain(t, h.send(owner, private(owner), "/llm use local"), "Профиль по умолчанию: local")
+	mustContain(t, h.send(owner, private(owner), "/llm"), "• local: fake; интерпретатор haiku, рассказчик sonnet — по умолчанию", "Текущая игра «Песочница» (id 4): профиль по умолчанию")
+	mustContain(t, h.send(owner, private(owner), "/llm use local 4"), "назначен игре 4")
+	mustContain(t, h.send(owner, private(owner), "/llm"), "(id 4): профиль local")
+	mustContain(t, h.send(owner, private(owner), "/llm use local 99"), "Игра не найдена")
+	mustContain(t, h.send(owner, private(owner), "/llm reset 4"), "профиль по умолчанию")
+	mustContain(t, h.send(owner, private(owner), "/llm test"), "Профиль local (fake): ок", "Модель: fake-haiku", "токены 10/5", "Ответ по схеме: {\"ok\":true}")
+	mustContain(t, h.send(owner, private(owner), "/llm test missing"), "не найден")
+	h.llm.Err = errors.New("cli down")
+	mustContain(t, h.send(owner, private(owner), "/llm test"), "ошибка вызова — cli down")
+	runs, _ := h.store.ListLLMRuns(context.Background(), 10)
+	if len(runs) != 2 || runs[0].Error != "cli down" || runs[1].Role != model.RoleTest {
+		t.Fatalf("runs = %+v", runs)
+	}
 }

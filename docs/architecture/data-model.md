@@ -44,16 +44,16 @@ users ──< chats (owner_user_id)
 | `chat_moderators` | права в чате, ручной список владельца | `chat_id` → `chats`, `user_id` → `users`, `granted_by_user_id` | `(chat_id, user_id)` |
 | `telegram_updates` | дедупликация входящих | `update_id`, `received_at` | `update_id` |
 | `dialogs` | состояние диалога в личке (настройка игры, создание персонажа; ADR-0008) | `user_id` → `users`, `kind`, `step`, `game_id`, `data jsonb` (черновик), `updated_at` | `user_id` |
-| `llm_profiles` | настройки провайдера LLM | `name`, `provider`, `model_interpreter`, `model_narrator`, `params jsonb`, `enabled` | `name` |
+| `llm_profiles` | настройки провайдера LLM (миграция `00009`, стартовый `local-claude`) | `name`, `provider`, `model_interpreter`, `model_narrator`, `params jsonb` (effort, temperature, max_output, max_budget_usd, timeout_seconds, parallelism), `enabled` | `name` |
 | `genres` | справочник жанров с шаблонами | `code`, `name`, `character_model_id` → `character_models`, `template jsonb` (тон, стартовая сцена, архетипы, имена фракций по умолчанию, стартовые локации), `enabled` | `code` |
 | `character_models` | модель персонажа ([модели](../game/models/README.md)) | `code`, `rules_version`, `definition jsonb` (attributes[], skills[], archetypes[], стартовые очки, формула HP) | `code` |
-| `app_settings` | глобальные настройки бота | `key`, `value` (в т.ч. `default_llm_profile`) | `key` |
+| `app_settings` | глобальные настройки бота (миграция `00009`) | `key`, `value` (в т.ч. `default_llm_profile`), `updated_at` | `key` |
 
 ## Таблицы игры
 
 | Таблица | Назначение | Ключевые поля | Уникальность |
 |---|---|---|---|
-| `games` | настройки и статус мира | `chat_id` → `chats`, `genre_id` → `genres`, `format` (global/novel/series, по умолчанию `novel`; этап 1 только он), `mode` (mechanics/balanced/narrative, по умолчанию `balanced`; этап 1 только он), `title`, `status` (draft/active/paused/finished; список расширяется по ходу разработки), `timezone`, `play_from time` и `play_to time` (игровое окно в сутках, оба nullable), `round_minutes` (10–60, по умолчанию 15), `settings jsonb` (ends_at, max_rounds, max_round_players = 20 — лимит обрабатываемых за раунд игроков, внутренняя настройка, миграция `00006`; max_active_locations = 4 — лимит локаций, внутренняя настройка; max_parties = 3, max_active_goals, goal_cooldown_rounds, min_round_answers = 2 — кворум раунда, миграция `00005`; allow_resubmit = false — замена заявки, внутренняя настройка), `rules_version`, `llm_profile_id` (nullable, появится с пунктом 06), `join_code`, `created_by_user_id` → `users`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
+| `games` | настройки и статус мира | `chat_id` → `chats`, `genre_id` → `genres`, `format` (global/novel/series, по умолчанию `novel`; этап 1 только он), `mode` (mechanics/balanced/narrative, по умолчанию `balanced`; этап 1 только он), `title`, `status` (draft/active/paused/finished; список расширяется по ходу разработки), `timezone`, `play_from time` и `play_to time` (игровое окно в сутках, оба nullable), `round_minutes` (10–60, по умолчанию 15), `settings jsonb` (ends_at, max_rounds, max_round_players = 20 — лимит обрабатываемых за раунд игроков, внутренняя настройка, миграция `00006`; max_active_locations = 4 — лимит локаций, внутренняя настройка; max_parties = 3, max_active_goals, goal_cooldown_rounds, min_round_answers = 2 — кворум раунда, миграция `00005`; allow_resubmit = false — замена заявки, внутренняя настройка), `rules_version`, `llm_profile_id` → `llm_profiles` (nullable; миграция `00009`), `join_code`, `created_by_user_id` → `users`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
 | `game_members` | участие пользователей | `game_id`, `user_id` → `users`, `role` (admin/player), `status` (active/left/kicked), `joined_at` | `(game_id, user_id)` |
 | `factions` | стороны конфликта ([модель](../game/models/factions.md)) | `game_id`, `code` (good, evil или код фракции, созданной рассказчиком), `title`, `description`, `tone`, `relations jsonb` | `(game_id, code)` |
 | `parties` | группы персонажей для общей истории ([модель](../game/models/party.md)) | `game_id`, `season_id`, `name`, `status` (active/disbanded), `leader_character_id`, `location_id`, `motto`, `summary` | `(season_id, name)`; число активных групп сезона ≤ `settings.max_parties` |
@@ -66,7 +66,7 @@ users ──< chats (owner_user_id)
 | `resolved_actions` | намерения и итоги | `game_id`, `round_id`, `submission_id`, `intent jsonb`, `status`, `checks jsonb`, `conflict_group` | `submission_id` |
 | `world_events` | журнал событий | `game_id`, `round_id`, `seq`, `type`, `payload jsonb`, `visibility`, `visible_to bigint[]` | `(game_id, seq)` |
 | `messages_outbox` | исходящие (миграция `00008`, ADR-0009) | `game_id`, `round_id` (nullable), `telegram_chat_id`, `kind` (scene/round_open/round_closed/system; chronicle/private — пункт 09), `part`, `text`, `status` (pending/sending/sent/failed/unknown), `telegram_message_id`, `attempts`, `send_after`, `claimed_at`, `last_error`, `sent_at` | дедуп по `(round_id, telegram_chat_id, kind, part)` при заданном `round_id` |
-| `llm_runs` | прогоны LLM | `game_id`, `round_id`, `profile_id`, `provider`, `role` (interpreter/narrator), `model`, `prompt_version`, `tokens_in`, `tokens_out`, `cost_usd`, `subscription bool`, `duration_ms`, `error`, `request_id` | |
+| `llm_runs` | прогоны LLM (миграция `00009`) | `game_id` (nullable: `/llm test` вне игры), `round_id` (nullable), `profile_id`, `provider`, `role` (interpreter/narrator/test), `model`, `prompt_version`, `tokens_in`, `tokens_out`, `cost_usd`, `subscription bool`, `duration_ms`, `error`, `request_id` | |
 
 ## Таблицы поздних этапов
 

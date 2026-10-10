@@ -18,7 +18,7 @@ sudo -u postgres psql -c "create user tale with password 'tale';" -c "create dat
 ```bash
 cp .env.example .env
 ```
-Заполнить `TELEGRAM_BOT_TOKEN` (тестовый бот от BotFather), ключи провайдеров LLM по [providers.md](../llm/providers.md). Необязательные: `SCHEDULER_TICK` (период планировщика раундов, 10s), `OUTBOX_TICK` (период воркера доставки, 3s). `.env` в git не попадает.
+Заполнить `TELEGRAM_BOT_TOKEN` (тестовый бот от BotFather), ключи провайдеров LLM по [providers.md](../llm/providers.md). `BOT_OWNER_ID` — Telegram ID владельца (из `/me`), открывает команды `/llm`; `CLAUDE_CLI_PATH` и `CLAUDE_CLI_WORKDIR` — бинарь `claude` и пустая рабочая папка провайдера `claude-cli` (папка создаётся ботом). Необязательные: `SCHEDULER_TICK` (период планировщика раундов, 10s), `OUTBOX_TICK` (период воркера доставки, 3s). `.env` в git не попадает.
 
 ## Команды
 | Команда | Действие |

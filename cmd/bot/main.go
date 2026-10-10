@@ -12,12 +12,16 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"taletogether/internal/adapter/llm/anthropic"
+	"taletogether/internal/adapter/llm/claudecli"
+	"taletogether/internal/adapter/llm/openai"
 	"taletogether/internal/adapter/postgres"
 	"taletogether/internal/adapter/telegram"
 	"taletogether/internal/app/bot"
 	"taletogether/internal/app/chat"
 	"taletogether/internal/app/delivery"
 	"taletogether/internal/app/game"
+	applm "taletogether/internal/app/llm"
 	"taletogether/internal/app/round"
 	"taletogether/internal/app/scheduler"
 	"taletogether/internal/config"
@@ -73,7 +77,19 @@ func run() error {
 	}
 	rounds := round.New(store, games, clock, logger)
 	rounds.AnnounceSkipped = cfg.AppEnv == "dev" // на время разработки пропуск раунда анонсируется в группу
-	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username()}, store, store, tg, chats, games, rounds, clock, logger)
+	if cfg.LLM.ClaudeCLIWorkdir != "" {
+		if err := os.MkdirAll(cfg.LLM.ClaudeCLIWorkdir, 0o755); err != nil {
+			return fmt.Errorf("рабочая папка claude-cli: %w", err)
+		}
+	}
+	providers := map[string]applm.Client{
+		model.ProviderClaudeCLI: claudecli.New(claudecli.Settings{Path: cfg.LLM.ClaudeCLIPath, Workdir: cfg.LLM.ClaudeCLIWorkdir}),
+		model.ProviderAnthropic: anthropic.New(),
+		model.ProviderOpenAI:    openai.New(),
+	}
+	llm := applm.New(store, providers, clock, logger)
+	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username(), OwnerID: model.TelegramUserID(cfg.BotOwnerID)},
+		store, store, tg, chats, games, rounds, llm, clock, logger)
 	if err := commands.RegisterMenu(ctx); err != nil {
 		logger.Warn("command menu not registered", slog.Any("err", err))
 	}

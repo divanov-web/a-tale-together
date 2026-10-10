@@ -1,0 +1,16 @@
+#!/bin/sh
+# Подмена бинаря claude для тестов: проверяет аргументы, читает stdin, печатает записанный ответ.
+# Режимы через переменную FAKE_CLAUDE_MODE: ok (по умолчанию), error, exit, garbage, empty, sleep.
+case "$*" in
+  *"--output-format json"*"--tools "*"--no-session-persistence"*"--setting-sources "*"--strict-mcp-config"*) ;;
+  *) echo "bad args: $*" >&2; exit 2 ;;
+esac
+input=$(cat)
+case "${FAKE_CLAUDE_MODE:-ok}" in
+  error) echo '{"type":"result","subtype":"error_during_execution","is_error":true,"result":"Not logged in","usage":{}}'; exit 0 ;;
+  exit) echo "Invalid API key" >&2; exit 1 ;;
+  garbage) echo "not json"; exit 0 ;;
+  empty) echo '{"type":"result","subtype":"success","is_error":false,"result":"","structured_output":null,"usage":{"input_tokens":1,"output_tokens":1},"total_cost_usd":0.0001}'; exit 0 ;;
+  sleep) sleep 5; exit 0 ;;
+esac
+printf '{"type":"result","subtype":"success","is_error":false,"session_id":"sess-1","duration_ms":2216,"total_cost_usd":0.0011886,"usage":{"input_tokens":2,"cache_creation_input_tokens":5137,"cache_read_input_tokens":0,"output_tokens":322},"modelUsage":{"claude-haiku-5-5":{}},"result":"{\\"echo\\":\\"%s\\"}","structured_output":{"echo":"%s"}}\n' "$input" "$input"

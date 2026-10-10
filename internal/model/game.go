@@ -85,6 +85,7 @@ type Game struct {
 	RoundMinutes    int
 	Settings        GameSettings
 	RulesVersion    int
+	LLMProfileID    *LLMProfileID // профиль LLM игры; nil — глобальный по умолчанию (ADR-0003)
 	JoinCode        string
 	CreatedByUserID UserID
 	NextRoundAt     *time.Time

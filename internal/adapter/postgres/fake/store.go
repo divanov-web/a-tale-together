@@ -15,24 +15,27 @@ import (
 
 // Store — хранилище в памяти; безопасно для параллельных тестов внутри одного экземпляра.
 type Store struct {
-	mu      sync.Mutex
-	now     func() time.Time
-	updates map[int64]bool
-	users   map[model.UserID]model.User
-	chats   map[model.ChatID]model.Chat
-	mods    map[model.ChatID][]moderator
-	dialogs map[model.UserID]model.Dialog
-	genres  map[model.GenreID]model.Genre
-	cmodels map[model.CharacterModelID]model.CharacterModel
-	games   map[model.GameID]model.Game
-	seasons map[model.SeasonID]model.Season
-	facts   map[model.FactionID]model.Faction
-	members map[memberKey]model.GameMember
-	chars   map[model.CharacterID]model.Character
-	rounds  map[model.RoundID]model.Round
-	subs    map[model.SubmissionID]model.Submission
-	outbox  []model.OutboxMessage
-	nextID  int64
+	mu          sync.Mutex
+	now         func() time.Time
+	updates     map[int64]bool
+	users       map[model.UserID]model.User
+	chats       map[model.ChatID]model.Chat
+	mods        map[model.ChatID][]moderator
+	dialogs     map[model.UserID]model.Dialog
+	genres      map[model.GenreID]model.Genre
+	cmodels     map[model.CharacterModelID]model.CharacterModel
+	games       map[model.GameID]model.Game
+	seasons     map[model.SeasonID]model.Season
+	facts       map[model.FactionID]model.Faction
+	members     map[memberKey]model.GameMember
+	chars       map[model.CharacterID]model.Character
+	rounds      map[model.RoundID]model.Round
+	subs        map[model.SubmissionID]model.Submission
+	outbox      []model.OutboxMessage
+	llmProfiles map[model.LLMProfileID]model.LLMProfile
+	llmRuns     []model.LLMRun
+	settings    map[string]string
+	nextID      int64
 	// Err, если задан, возвращается всеми методами: имитация сбоя БД.
 	Err error
 }
@@ -55,6 +58,7 @@ func New(now func() time.Time) *Store {
 		cmodels: map[model.CharacterModelID]model.CharacterModel{}, games: map[model.GameID]model.Game{}, seasons: map[model.SeasonID]model.Season{},
 		facts: map[model.FactionID]model.Faction{}, members: map[memberKey]model.GameMember{}, chars: map[model.CharacterID]model.Character{},
 		rounds: map[model.RoundID]model.Round{}, subs: map[model.SubmissionID]model.Submission{},
+		llmProfiles: map[model.LLMProfileID]model.LLMProfile{}, settings: map[string]string{},
 	}
 	cm := model.CharacterModel{ID: 1, Code: "basic_fantasy", Definition: BasicFantasy()}
 	s.cmodels[cm.ID] = cm

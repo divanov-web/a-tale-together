@@ -1,0 +1,4 @@
+# adapter/llm
+- Назначение: провайдеры LLM по [ADR-0003](../../../docs/decisions/0003-llm-provider.md) и [providers.md](../../../docs/llm/providers.md); каждый пакет реализует `Complete(ctx, model.LLMRequest) (model.LLMResponse, error)` — интерфейс объявляет потребитель `app/llm.Client`. Реестр по ключу провайдера собирает `cmd/bot` и передаёт в `app/llm`.
+- Пакеты: `claudecli` (`claude -p` по подписке Claude Code; флаги изоляции, таймаут, параллелизм, разбор `structured_output`, `usage`, `total_cost_usd`; тесты с подменой бинаря `testdata/claude`), `anthropic` и `openai` (заглушки до пункта 08), `fake` (записанные ответы для тестов).
+- Правило: секреты и пути только из конфига; новый провайдер = пакет + регистрация в `cmd` + строка в `providers.md`; новая зависимость = ADR.

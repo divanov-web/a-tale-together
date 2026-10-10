@@ -14,7 +14,7 @@ import (
 func gameCols(a string) string {
 	return fmt.Sprintf("%[1]sid, %[1]schat_id, %[1]sgenre_id, %[1]sformat, %[1]smode, %[1]stitle, %[1]sstatus, %[1]stimezone, "+
 		"coalesce(to_char(%[1]splay_from, 'HH24:MI'), ''), coalesce(to_char(%[1]splay_to, 'HH24:MI'), ''), %[1]sround_minutes, %[1]ssettings, "+
-		"%[1]srules_version, %[1]sjoin_code, %[1]screated_by_user_id, %[1]snext_round_at, %[1]screated_at, %[1]supdated_at", a)
+		"%[1]srules_version, %[1]sllm_profile_id, %[1]sjoin_code, %[1]screated_by_user_id, %[1]snext_round_at, %[1]screated_at, %[1]supdated_at", a)
 }
 
 var gameColumns = gameCols("")
@@ -22,7 +22,7 @@ var gameColumns = gameCols("")
 func scanGame(row pgx.Row) (model.Game, error) {
 	var g model.Game
 	err := row.Scan(&g.ID, &g.ChatID, &g.GenreID, &g.Format, &g.Mode, &g.Title, &g.Status, &g.Timezone, &g.PlayFrom, &g.PlayTo,
-		&g.RoundMinutes, &g.Settings, &g.RulesVersion, &g.JoinCode, &g.CreatedByUserID, &g.NextRoundAt, &g.CreatedAt, &g.UpdatedAt)
+		&g.RoundMinutes, &g.Settings, &g.RulesVersion, &g.LLMProfileID, &g.JoinCode, &g.CreatedByUserID, &g.NextRoundAt, &g.CreatedAt, &g.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Game{}, model.ErrNotFound
 	}

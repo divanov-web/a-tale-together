@@ -11,6 +11,7 @@ import (
 
 	"taletogether/internal/app/chat"
 	"taletogether/internal/app/game"
+	applm "taletogether/internal/app/llm"
 	"taletogether/internal/app/round"
 	"taletogether/internal/model"
 	"taletogether/internal/service/rules"
@@ -46,9 +47,10 @@ type Clock interface {
 
 // Settings — настройки сценария.
 type Settings struct {
-	Version     string // Версия сборки для ответа на /ping
-	Env         string // dev|prod
-	BotUsername string // Имя бота без @ для ссылок-приглашений
+	Version     string               // Версия сборки для ответа на /ping
+	Env         string               // dev|prod
+	BotUsername string               // Имя бота без @ для ссылок-приглашений
+	OwnerID     model.TelegramUserID // Владелец бота: команды /llm; 0 — команды недоступны
 }
 
 // Service обрабатывает входящие сообщения. Ответы на команды отправляются синхронно (ADR-0006).
@@ -60,6 +62,7 @@ type Service struct {
 	chats    *chat.Service
 	games    *game.Service
 	rounds   *round.Service
+	llm      *applm.Service
 	clock    Clock
 	logger   *slog.Logger
 	limiter  *limiter
@@ -67,8 +70,8 @@ type Service struct {
 }
 
 // New собирает сервис команд и реестр.
-func New(s Settings, store Store, dialogs Dialogs, tg Telegram, chats *chat.Service, games *game.Service, rounds *round.Service, clock Clock, logger *slog.Logger) *Service {
-	svc := &Service{settings: s, store: store, dialogs: dialogs, tg: tg, chats: chats, games: games, rounds: rounds, clock: clock, logger: logger,
+func New(s Settings, store Store, dialogs Dialogs, tg Telegram, chats *chat.Service, games *game.Service, rounds *round.Service, llm *applm.Service, clock Clock, logger *slog.Logger) *Service {
+	svc := &Service{settings: s, store: store, dialogs: dialogs, tg: tg, chats: chats, games: games, rounds: rounds, llm: llm, clock: clock, logger: logger,
 		limiter: newLimiter(clock, rateCapacity, rateWindow)}
 	svc.commands = svc.registry()
 	return svc
@@ -198,6 +201,7 @@ var userErrors = []error{
 	game.ErrHasCharacter, game.ErrNoCharacter, game.ErrNicknameTaken, game.ErrChooseGame, game.ErrBadValue,
 	round.ErrForbidden, round.ErrAlreadyStarted, round.ErrNotActive, round.ErrPaused, round.ErrFinished, round.ErrNoCharacters,
 	round.ErrNoOpenRound, round.ErrEmpty, round.ErrTooLong, round.ErrTooFrequent, round.ErrAlreadyActed,
+	applm.ErrNoProfile, applm.ErrUnknownProfile, applm.ErrUnknownProvider, applm.ErrProfileExists, applm.ErrBadValue, applm.ErrNoGame, errNotOwner,
 	rules.ErrInvalid, errUnknownUser,
 }
 

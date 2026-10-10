@@ -13,8 +13,8 @@ argument-hint: "[check | setup | apply | migrate | reset-db]"
 - WSL Ubuntu 24.04; passwordless sudo нет: команды с `sudo` отдавать руководителю для запуска через `! <команда>`.
 - Go 1.27 в `~/.local/go/bin` (установлен без sudo), PATH в `~/.bashrc`. Windows Go 1.25 (`/mnt/c/Program Files/Go`) не используется.
 - Postgres 16 установлен из apt (кластер `16 main`, порт 5432, `pg_lsclusters`). Роль и базы `tale`, `tale_test` создаются один раз командой из `docs/dev/environment.md` (нужен sudo → руководитель). Запасной вариант: Docker Desktop с WSL-интеграцией, `docker compose up -d db`.
-- `.env` по `.env.example`, в git не попадает. Обязательные: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`; ключи провайдеров LLM по `docs/llm/providers.md` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, для `claude-cli` путь к `claude` и пустая рабочая папка).
-- Команды Claude: `make check build logs test test-integration lint migrate migrate-down migrate-status fmt tools`. Бот для разработки живёт в фоне (pid `bin/bot.pid`, лог `logs/bot.log`); `make start`, `make restart`, `make stop`, `make run` выполняет только руководитель (`docs/go_commands.md`) — Claude их не запускает, а просит перезапуск в отчёте. `make logs` для диагностики. Версия в `/ping` из `git describe` через `-ldflags`.
+- `.env` по `.env.example`, в git не попадает. Обязательные: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`; `BOT_OWNER_ID` для команд `/llm`; ключи провайдеров LLM по `docs/llm/providers.md` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, для `claude-cli` путь к `claude` и пустая рабочая папка `CLAUDE_CLI_WORKDIR`). Значения из `.env` в чат не выводить.
+- Команды Claude: `make check build start stop restart logs test test-integration lint migrate migrate-down migrate-status fmt tools`. Бот для разработки живёт в фоне (pid `bin/bot.pid`, лог `logs/bot.log`); после правок кода Claude сам делает `make restart` и проверяет `make logs` (правило руководителя 2026-10-10, см. `tale-team`). `make run` (в терминале) — только руководитель. Версия в `/ping` из `git describe` через `-ldflags`.
 
 ## check
 
@@ -29,7 +29,7 @@ argument-hint: "[check | setup | apply | migrate | reset-db]"
 
 ## apply
 
-После правок кода: `make build` для проверки сборки, в отчёте — «нужен `make restart`»; перезапуск делает руководитель, после него в `make logs` должно быть `bot starting` с новой версией и без `409 Conflict`. После миграций (делает Claude): `make migrate` для `tale` и `goose ... tale_test up` для тестовой базы; затем `psql` по существующим играм — ключи `settings` и значения dev-режима должны соответствовать коду (новые ключи добавляет миграция, но dev-умолчания вроде кворума 1 на старые игры не распространяются — править `UPDATE` вручную и показать результат).
+После правок кода: `make restart`, затем `make logs` — должно быть `bot starting` с новой версией, `scheduler started`, `delivery started`, без `409 Conflict`. После миграций (делает Claude): `make migrate` для `tale` и `goose ... tale_test up` для тестовой базы; затем `psql` по существующим играм — ключи `settings` и значения dev-режима должны соответствовать коду (новые ключи добавляет миграция, но dev-умолчания вроде кворума 1 на старые игры не распространяются — править `UPDATE` вручную и показать результат).
 
 ## Тестовый бот
 

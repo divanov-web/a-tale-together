@@ -40,7 +40,8 @@ cmd/bot ──────────────► internal/app ──► int
 | `service/narrator` | `Chronicle(ctx, ...)`, `Private(ctx, ...)` | тексты из разрешённых событий; шаблоны для стандартных исходов |
 | `adapter/postgres` | `Store`, `InTx` | репозитории по сущностям, миграции goose; `fake` — хранилище в памяти для тестов |
 | `adapter/telegram` | `Client` | источник update, отправка, деление длинных сообщений |
-| `adapter/llm` | `Client.Complete` | провайдер по ADR-0003, учёт токенов |
+| `app/llm` | `List`, `Profile`, `Resolve`, `Use`, `Reset`, `Add`, `Complete`, `Test` | профили LLM из БД с кэшем, карта провайдеров по ключу, подстановка модели и параметров профиля, запись `llm_runs` |
+| `adapter/llm/*` | `Client.Complete` | провайдеры по ADR-0003: `claudecli`, `anthropic` и `openai` (заглушки до пункта 08), `fake` |
 
 ## Интерфейсы
 
