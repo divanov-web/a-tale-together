@@ -43,7 +43,7 @@ users ──< chats (owner_user_id)
 
 | Таблица | Назначение | Ключевые поля | Уникальность |
 |---|---|---|---|
-| `games` | настройки и статус мира | `chat_id` → `chats`, `title`, `genre`, `status` (draft/active/paused/finished), `settings jsonb` (round_duration_minutes, timezone, active_windows, pause_overnight, max_players, max_active_locations, story_ratio 0–100), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
+| `games` | настройки и статус мира | `chat_id` → `chats`, `title`, `genre`, `status` (draft/active/paused/finished), `settings jsonb` (round_duration_minutes, timezone, active_windows, pause_overnight, max_players, max_active_locations, story_mode mechanics/balanced/story), `rules_version`, `llm_profile_id` (nullable), `join_code`, `next_round_at` | `join_code`; частичный `chat_id where status <> 'finished'` |
 | `game_members` | участие пользователей | `game_id`, `user_id` → `users`, `role` (admin/player), `status` (active/left/kicked), `joined_at` | `(game_id, user_id)` |
 | `characters` | персонажи | `game_id`, `user_id`, `name`, `archetype`, `stats jsonb`, `hp`, `conditions jsonb`, `inventory jsonb`, `location_id`, `schema_version` | `(game_id, user_id)`; FK `(game_id, user_id)` → `game_members` |
 | `locations` | места и связи | `game_id`, `name`, `description`, `links jsonb`, `active` | `(game_id, name)` |
