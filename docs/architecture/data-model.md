@@ -60,8 +60,8 @@ users ──< chats (owner_user_id)
 
 | Таблица | Назначение | Ключевые поля | Уникальность | Пункт |
 |---|---|---|---|---|
-| `character_goals` | личные сюжетные цели | `game_id`, `character_id`, `text`, `status` (active/achieved/abandoned), `created_at`, `achieved_at` | лимит активных по `settings.max_active_goals` | [17](../plan/17-story-goals.md) |
-| `goal_steps` | шаги цели | `game_id`, `goal_id`, `step_no` (1–10), `text`, `status` (pending/done), `done_round_id` | `(goal_id, step_no)` | 17 |
+| `character_goals` | личные сюжетные цели | `game_id`, `character_id`, `text`, `status` (active/achieved/abandoned), `created_at`, `achieved_at`, `abandoned_at` | лимит активных по `settings.max_active_goals`; новая не раньше `goal_cooldown_rounds` после отказа | [17](../plan/17-story-goals.md) |
+| `goal_steps` | шаги цели | `game_id`, `goal_id`, `step_no` (1–10), `text`, `status` (pending/done), `done_round_id`, `stalled_rounds` | `(goal_id, step_no)` | 17 |
 
 ## Инварианты
 
