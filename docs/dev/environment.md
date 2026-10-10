@@ -23,6 +23,7 @@ cp .env.example .env
 ## Команды
 | Команда | Действие |
 |---|---|
+| `make check` | проверка окружения: Go, `.env`, Postgres, токен бота, goose |
 | `make build` | сборка в `bin/bot` |
 | `make run` | запуск бота |
 | `make test` | юнит-тесты |
@@ -30,6 +31,12 @@ cp .env.example .env
 | `make lint` | `gofmt`, `go vet`, `golangci-lint` при наличии |
 | `make migrate` / `migrate-down` / `migrate-status` | миграции goose |
 | `make fmt` | форматирование |
+
+## Первый запуск
+```bash
+make check && make migrate && make run
+```
+Бот пишет `telegram polling started bot=<username>`. Проверка: `/ping` в группе-песочнице и в личке бота → `pong`, версия, время. Остановка `Ctrl+C`. Второй экземпляр с тем же токеном получает в логе `409 Conflict`.
 
 ## GoLand
 Проект открыт из Windows; SDK указать WSL (`\\wsl$\Ubuntu\home\divanov\.local\go`), build tag `os=linux` уже в `.idea`.

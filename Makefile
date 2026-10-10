@@ -2,13 +2,14 @@
 GO ?= $(HOME)/.local/go/bin/go
 GOOSE ?= $(HOME)/.local/bin/goose
 BIN := bin/bot
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 -include .env
 export
 
-.PHONY: build run test test-integration lint fmt migrate migrate-down migrate-status tools
+.PHONY: build run test test-integration lint fmt migrate migrate-down migrate-status tools check
 
 build: ## Сборка бота
-	$(GO) build -o $(BIN) ./cmd/bot
+	$(GO) build -ldflags "-X main.version=$(VERSION)" -o $(BIN) ./cmd/bot
 
 run: build ## Запуск бота
 	./$(BIN)
@@ -38,3 +39,11 @@ migrate-down: ## Откатить последнюю миграцию
 
 migrate-status: ## Статус миграций
 	$(GOOSE) -dir migrations postgres "$(DATABASE_URL)" status
+
+check: ## Проверка окружения: Go, Postgres, .env, токен бота
+	@$(GO) version
+	@test -f .env || (echo "нет .env: cp .env.example .env"; exit 1)
+	@test -n "$(TELEGRAM_BOT_TOKEN)" || (echo "TELEGRAM_BOT_TOKEN пуст в .env"; exit 1)
+	@psql "$(DATABASE_URL)" -Atqc 'select version()' >/dev/null && echo "postgres: ok ($(DATABASE_URL))" || (echo "postgres недоступен: $(DATABASE_URL)"; exit 1)
+	@curl -sf "https://api.telegram.org/bot$(TELEGRAM_BOT_TOKEN)/getMe" | grep -o '"username":"[^"]*"' || (echo "telegram: токен не принят"; exit 1)
+	@test -x "$(GOOSE)" && echo "goose: $(GOOSE)" || echo "goose не установлен: make tools"

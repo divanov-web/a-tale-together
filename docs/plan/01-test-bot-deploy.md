@@ -1,6 +1,6 @@
 # 01. Развёртывание тестового бота на локальной машине
 
-- Статус: план
+- Статус: готово (2026-10-10)
 - Этап концепта: 1
 - Зависит от: подготовка репозитория (готово)
 
@@ -14,16 +14,17 @@
 | № | Шаг | Слой / пакеты | Артефакты | Статус |
 |---|---|---|---|---|
 | 1 | Создать тестового бота в BotFather (`@a_tale_together_dev_bot`); privacy mode оставлен включённым: команды в группе доходят, обычные сообщения группы боту не нужны | руководитель | токен в `.env` | готово |
-| 2 | Создать группу-песочницу, добавить бота администратором | руководитель | `chat_id` для проверок | план |
+| 2 | Создать группу-песочницу, добавить бота администратором | руководитель | `chat_id` для проверок | готово |
 | 3 | Роль и базы `tale`, `tale_test` в локальном Postgres 16 | devops | команда из `docs/dev/environment.md` | готово |
-| 4 | Инструмент миграций: `make tools` (goose установлен), первая миграция `00001_init.sql` с `telegram_updates`, `users` | `migrations/`, `adapter/postgres` | ADR-0005 принят | план |
-| 5 | Подключение к БД при старте: `pgxpool`, проверка `Ping`, `MIGRATE_ON_START` | `adapter/postgres`, `cmd/bot` | `Store`, readme | план |
-| 6 | Подключение к Telegram: long polling, graceful shutdown, лог старта | `adapter/telegram`, `app/bot` | `Client`, обработчик `/ping` | план |
-| 7 | Скрипт проверки окружения `make check` (Go, Postgres, `.env`, токен) | `Makefile` | | план |
-| 8 | Документация запуска и диагностики обновлена | `docs/dev/environment.md`, `/tale-env` | | план |
+| 4 | Инструмент миграций: `make tools` (goose установлен), первая миграция `00001_init.sql` с `telegram_updates`, `users` | `migrations/`, `adapter/postgres` | ADR-0005 принят | готово |
+| 5 | Подключение к БД при старте: `pgxpool`, проверка `Ping`, `MIGRATE_ON_START` | `adapter/postgres`, `cmd/bot` | `Store`, readme, миграции встроены (`migrations.FS`) | готово |
+| 6 | Подключение к Telegram: long polling, graceful shutdown, лог старта | `adapter/telegram`, `app/bot` | `Client`, обработчик `/ping`, ADR-0006 | готово |
+| 7 | Скрипт проверки окружения `make check` (Go, Postgres, `.env`, токен) | `Makefile` | версия сборки через `-ldflags` | готово |
+| 8 | Документация запуска и диагностики обновлена | `docs/dev/environment.md`, `/tale-env` | | готово |
+| 9 | Приёмка руководителем: `/ping` в песочнице и в личке | руководитель | | готово |
 
 ## Проверка
 `make check`, `make migrate-status`, `make run`; `/ping` в группе и в личке → ответ с версией и временем; повторный запуск второго экземпляра даёт понятную ошибку 409.
 
 ## Открытые вопросы
-Хранить ли `chat_id` песочницы в `.env` для автопроверок (`SANDBOX_CHAT_ID`).
+Нет. `SANDBOX_CHAT_ID` в `.env` не нужен: `chat_id` песочницы виден в логе команды и в `getUpdates`; вернуться, если появятся автопроверки.

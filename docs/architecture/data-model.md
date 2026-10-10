@@ -1,6 +1,6 @@
 # Модель данных
 
-Минимальные сущности из концепта §8. Все игровые таблицы содержат `game_id`. Тип идентификаторов: ADR-0005 (ожидает). Миграции: `migrations/`.
+Минимальные сущности из концепта §8. Все игровые таблицы содержат `game_id`. Тип идентификаторов: `bigint identity` (ADR-0005). Миграции: `migrations/`.
 
 | Таблица | Назначение | Ключевые поля | Уникальность |
 |---|---|---|---|
@@ -14,6 +14,7 @@
 | `world_events` | журнал событий | `game_id`, `round_id`, `seq`, `type`, `payload jsonb`, `visibility`, `visible_to bigint[]` | `(game_id, seq)` |
 | `messages_outbox` | исходящие | `game_id`, `round_id`, `chat_id`, `text`, `kind` (chronicle/private/system), `status`, `telegram_message_id`, `attempts`, `send_after` | дедуп по `(round_id, chat_id, kind, part)` |
 | `telegram_updates` | дедупликация входящих | `update_id`, `received_at` | `update_id` |
+| `users` | пользователи Telegram, писавшие боту | `telegram_id`, `username`, `first_name`, `language_code`, `last_seen_at` | `telegram_id` |
 | `llm_profiles` | настройки провайдера LLM | `name`, `provider`, `model_interpreter`, `model_narrator`, `params jsonb`, `enabled` | `name` |
 | `app_settings` | глобальные настройки бота | `key`, `value` (в т.ч. `default_llm_profile`) | `key` |
 | `llm_runs` | прогоны LLM | `game_id`, `round_id`, `profile_id`, `provider`, `role` (interpreter/narrator), `model`, `prompt_version`, `tokens_in`, `tokens_out`, `cost_usd`, `subscription bool`, `duration_ms`, `error`, `request_id` | |
@@ -27,4 +28,4 @@
 
 ## Открыто
 
-Тип PK (ADR-0005); хранение «знаний персонажа» (отдельная таблица `character_knowledge` или факты в событиях); срок хранения `raw_text` (концепт §14 п. 8).
+Хранение «знаний персонажа» (отдельная таблица `character_knowledge` или факты в событиях); срок хранения `raw_text` (концепт §14 п. 8).

@@ -66,8 +66,8 @@ argument-hint: "[status | map | extend <область>]"
 
 ## Среда (кратко)
 
-Go 1.27 в `~/.local/go/bin`; PostgreSQL 16 локально в WSL (apt); `.env` по `.env.example`; команды `make build run test test-integration lint migrate fmt`. Подробно: `/tale-env`, `docs/dev/environment.md`.
+Go 1.27 в `~/.local/go/bin`; PostgreSQL 16 локально в WSL (apt); `.env` по `.env.example`; команды `make check build run test test-integration lint migrate fmt`. Подробно: `/tale-env`, `docs/dev/environment.md`.
 
 ## Статус
 
-План и текущий пункт: `docs/plan/README.md`; этапы концепта: `docs/roadmap.md`. Вопросы руководителю: `docs/game/open-questions.md`. Режим: подготовка; реализация по команде руководителя.
+План и текущий пункт: `docs/plan/README.md`; этапы концепта: `docs/roadmap.md`. Вопросы руководителю: `docs/game/open-questions.md`. Режим: реализация; пункт 01 готов, текущий пункт 02 (базовые команды).

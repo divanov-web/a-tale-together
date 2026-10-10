@@ -14,18 +14,18 @@ argument-hint: "[check | setup | run | migrate | reset-db]"
 - Go 1.27 в `~/.local/go/bin` (установлен без sudo), PATH в `~/.bashrc`. Windows Go 1.25 (`/mnt/c/Program Files/Go`) не используется.
 - Postgres 16 установлен из apt (кластер `16 main`, порт 5432, `pg_lsclusters`). Роль и базы `tale`, `tale_test` создаются один раз командой из `docs/dev/environment.md` (нужен sudo → руководитель). Запасной вариант: Docker Desktop с WSL-интеграцией, `docker compose up -d db`.
 - `.env` по `.env.example`, в git не попадает. Обязательные: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`; ключи провайдеров LLM по `docs/llm/providers.md` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, для `claude-cli` путь к `claude` и пустая рабочая папка).
-- Команды: `make build run test test-integration lint migrate migrate-down migrate-status fmt`.
+- Команды: `make check build run test test-integration lint migrate migrate-down migrate-status fmt tools`. Версия в `/ping` из `git describe` через `-ldflags`.
 
 ## check
 
-`go version`; `pg_lsclusters`; `psql "$DATABASE_URL" -c 'select 1'`; `make build`; `make test`; `make migrate-status`.
+`make check` (Go, `.env`, токен через getMe, Postgres, goose); затем `make build`, `make test`, `make migrate-status`. В терминале GoLand `GOPATH` подставляет IDE: при появлении `~/Go/pkg` или `~/go` проверить Settings → Go → GOPATH (`~/.local/share/go`).
 
 ## setup
 
 1. Go отсутствует → `curl -sL https://go.dev/dl/go1.27.2.linux-amd64.tar.gz | tar -xz -C ~/.local` и PATH.
 2. Postgres: кластер запущен (`pg_lsclusters`), роль и базы по `docs/dev/environment.md`.
 3. `cp .env.example .env`; токены заполняет руководитель.
-4. `make migrate`, `make test`.
+4. `make migrate`, `make test`, `make run`; `/ping` в песочнице и в личке.
 
 ## Тестовый бот
 
@@ -39,4 +39,6 @@ argument-hint: "[check | setup | run | migrate | reset-db]"
 | `password authentication failed for user "tale"` | роль не создана: команда из `docs/dev/environment.md` через `!` |
 | `connection refused` к БД | `pg_lsclusters` → кластер `down`: `! sudo pg_ctlcluster 16 main start` |
 | миграция упала | `make migrate-status`; миграцию не править, писать новую |
-| Telegram 409 Conflict | запущен второй экземпляр бота с тем же токеном |
+| Telegram 409 Conflict | запущен второй экземпляр бота с тем же токеном; остановить лишний |
+| `getMe: Unauthorized` при старте | токен в `.env` неверный или отозван в BotFather |
+| бот молчит на `/ping` в группе | privacy mode не мешает командам; проверить, что команда адресована этому боту (`/ping@a_tale_together_dev_bot`) и лог `command` |
