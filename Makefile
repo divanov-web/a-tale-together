@@ -6,13 +6,32 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 -include .env
 export
 
-.PHONY: build run test test-integration lint fmt migrate migrate-down migrate-status tools check
+PID := bin/bot.pid
+LOG := logs/bot.log
+
+.PHONY: build run start stop restart logs test test-integration lint fmt migrate migrate-down migrate-status tools check
 
 build: ## Сборка бота
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o $(BIN) ./cmd/bot
 
-run: build ## Запуск бота
+run: build ## Запуск бота в терминале (Ctrl+C — остановить)
 	./$(BIN)
+
+start: build ## Запуск бота в фоне: pid в bin/bot.pid, лог в logs/bot.log
+	@mkdir -p logs
+	@if [ -f $(PID) ] && kill -0 $$(cat $(PID)) 2>/dev/null; then echo "бот уже запущен, pid $$(cat $(PID)); make restart"; exit 1; fi
+	@pkill -CONT -x bot -u $$USER 2>/dev/null; pkill -x bot -u $$USER 2>/dev/null && echo "остановлен экземпляр без pid-файла (в том числе приостановленный Ctrl+Z)" || true
+	@setsid nohup ./$(BIN) >> $(LOG) 2>&1 & echo $$! > $(PID); sleep 2; \
+	 if kill -0 $$(cat $(PID)) 2>/dev/null; then echo "бот запущен, pid $$(cat $(PID))"; else echo "бот не запустился, см. $(LOG)"; tail -5 $(LOG); exit 1; fi
+
+stop: ## Остановить фонового бота
+	@if [ -f $(PID) ]; then kill $$(cat $(PID)) 2>/dev/null && echo "бот остановлен" || echo "процесс уже не запущен"; rm -f $(PID); else echo "pid-файла нет"; fi
+	@pkill -CONT -x bot -u $$USER 2>/dev/null; pkill -x bot -u $$USER 2>/dev/null && echo "остановлен экземпляр без pid-файла (в том числе приостановленный Ctrl+Z)" || true
+
+restart: stop start ## Перезапуск бота после правок кода
+
+logs: ## Последние строки лога фонового бота
+	@tail -n 50 $(LOG)
 
 test: ## Юнит-тесты
 	$(GO) test ./...

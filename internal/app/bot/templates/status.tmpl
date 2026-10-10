@@ -2,7 +2,7 @@
 Жанр: {{.Genre}}; формат: {{.Format}}; режим: {{.Mode}}; сезон {{.SeasonNo}}; правила v{{.RulesVersion}}
 Раунд: {{.RoundMinutes}} мин; кворум {{.MinAnswers}}; часовой пояс {{.Timezone}}; окно: {{.PlayWindow}}
 Границы: {{.Limits}}
-Игроки: {{.MembersCount}} из {{.MaxPlayers}}; персонажей: {{.CharactersCount}}
+Игроки: {{.MembersCount}}; персонажей: {{.CharactersCount}}
 Фракции:
 {{range .Factions}}• {{.Title}} ({{.Code}}): {{.Count}}
 {{end}}Персонажи:{{if not .Characters}} пока нет{{end}}

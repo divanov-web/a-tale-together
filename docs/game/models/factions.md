@@ -29,4 +29,4 @@
 }
 ```
 
-Строки `factions` игры создаются из этого шаблона при `/game_create`; `relations` хранятся в `factions.relations jsonb`.
+Строки `factions` игры создаются из этого шаблона при `/create`; `relations` хранятся в `factions.relations jsonb`.

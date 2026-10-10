@@ -22,8 +22,17 @@ type command struct {
 	name        string
 	contexts    cmdContext
 	description string
+	groupDesc   string // описание для меню группы, если отличается (команда с разным действием по контексту)
 	run         func(ctx context.Context, req *request) error
 	needsChat   bool // в группе нужен зарегистрированный чат (req.chat)
+}
+
+// describe — описание команды для контекста.
+func (c command) describe(ctx cmdContext) string {
+	if ctx == ctxGroup && c.groupDesc != "" {
+		return c.groupDesc
+	}
+	return c.description
 }
 
 // allows сообщает, доступна ли команда в контексте сообщения.
@@ -50,17 +59,16 @@ func (s *Service) registry() []command {
 		{name: "me", contexts: ctxPrivate, description: "кто я: чаты и игры", run: s.me},
 		{name: "ping", contexts: ctxAny, description: "проверка: версия и время сервера", run: s.ping},
 		{name: "chat", contexts: ctxGroup, description: "владелец, модераторы, текущая игра", run: s.chatInfo, needsChat: true},
-		{name: "chat_mod", contexts: ctxGroup, description: "add|remove @user — модераторы чата (владелец)", run: s.chatMod, needsChat: true},
-		{name: "chat_owner", contexts: ctxGroup, description: "@user — передать владение чатом", run: s.chatOwner, needsChat: true},
-		{name: "game_create", contexts: ctxGroup, description: "создать мир в этом чате", run: s.gameCreate, needsChat: true},
+		{name: "mod", contexts: ctxGroup, description: "add|remove @user — модераторы чата (владелец)", run: s.chatMod, needsChat: true},
+		{name: "owner", contexts: ctxGroup, description: "@user — передать владение чатом", run: s.chatOwner, needsChat: true},
+		{name: "create", contexts: ctxAny, description: "создать персонажа в текущей игре", groupDesc: "создать мир в этом чате", run: s.create, needsChat: true},
 		{name: "status", contexts: ctxAny, description: "состояние игры и причина простоя", run: s.gameStatus, needsChat: true},
-		{name: "game_set", contexts: ctxPrivate, description: "<параметр> <значение> — настройка игры", run: s.gameSet},
+		{name: "set", contexts: ctxPrivate, description: "<параметр> <значение> — настройка игры", run: s.gameSet},
 		{name: "join", contexts: ctxPrivate, description: "<код> — войти в игру", run: s.join},
 		{name: "games", contexts: ctxPrivate, description: "[номер] — мои игры и выбор текущей", run: s.gamesList},
 		{name: "character", contexts: ctxPrivate, description: "мой персонаж", run: s.character},
-		{name: "character_create", contexts: ctxPrivate, description: "создать персонажа в текущей игре", run: s.characterCreate},
-		{name: "character_bio", contexts: ctxPrivate, description: "<текст> — открытое описание до 100 символов", run: s.characterBio},
-		{name: "character_secret", contexts: ctxPrivate, description: "<текст> — скрытое описание до 100 символов", run: s.characterSecret},
+		{name: "bio", contexts: ctxPrivate, description: "<текст> — открытое описание персонажа до 100 символов", run: s.characterBio},
+		{name: "secret", contexts: ctxPrivate, description: "<текст> — скрытое описание персонажа до 100 символов", run: s.characterSecret},
 		{name: "cancel", contexts: ctxPrivate, description: "прервать диалог", run: s.cancel},
 	}
 }
@@ -79,7 +87,7 @@ func (s *Service) Commands(c cmdContext) []model.BotCommand {
 	var out []model.BotCommand
 	for _, cmd := range s.commands {
 		if cmd.contexts&c != 0 && cmd.name != "start" {
-			out = append(out, model.BotCommand{Name: cmd.name, Description: cmd.description})
+			out = append(out, model.BotCommand{Name: cmd.name, Description: cmd.describe(c)})
 		}
 	}
 	return out

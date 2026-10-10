@@ -34,7 +34,7 @@ func (s *Service) chatInfo(ctx context.Context, req *request) error {
 	return s.reply(ctx, req.in, text)
 }
 
-// chatMod — /chat_mod add|remove @user.
+// chatMod — /mod add|remove @user.
 func (s *Service) chatMod(ctx context.Context, req *request) error {
 	if req.chat.OwnerUserID != req.user.ID {
 		return chat.ErrForbidden
@@ -45,7 +45,7 @@ func (s *Service) chatMod(ctx context.Context, req *request) error {
 		return err
 	}
 	if target.ID == 0 {
-		return s.reply(ctx, req.in, "Формат: /chat_mod add @user или /chat_mod remove @user")
+		return s.reply(ctx, req.in, "Формат: /mod add @user или /mod remove @user")
 	}
 	switch strings.ToLower(action) {
 	case "add":
@@ -59,10 +59,10 @@ func (s *Service) chatMod(ctx context.Context, req *request) error {
 		}
 		return s.reply(ctx, req.in, target.Mention()+" больше не модератор чата.")
 	}
-	return s.reply(ctx, req.in, "Формат: /chat_mod add @user или /chat_mod remove @user")
+	return s.reply(ctx, req.in, "Формат: /mod add @user или /mod remove @user")
 }
 
-// chatOwner — /chat_owner @user.
+// chatOwner — /owner @user.
 func (s *Service) chatOwner(ctx context.Context, req *request) error {
 	if req.chat.OwnerUserID != req.user.ID {
 		return chat.ErrForbidden
@@ -72,7 +72,7 @@ func (s *Service) chatOwner(ctx context.Context, req *request) error {
 		return err
 	}
 	if target.ID == 0 {
-		return s.reply(ctx, req.in, "Формат: /chat_owner @user")
+		return s.reply(ctx, req.in, "Формат: /owner @user")
 	}
 	if err := s.chats.SetOwner(ctx, req.chat, req.user.ID, target); err != nil {
 		return err

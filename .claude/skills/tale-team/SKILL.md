@@ -56,7 +56,8 @@ argument-hint: "[status | map | extend <область>]"
 2. Классифицировать: архитектура → `/tale-architect`; механика → `/tale-gamedesign`; промпт LLM → `/tale-prompts`; среда → `/tale-env`; иначе код по правилам области.
 3. Архитектурное или спорное решение → ADR до кода. Изменение концепта → вопрос в `docs/game/open-questions.md`, работа продолжается по безопасному допущению.
 4. Код → `make test` → `make lint` → readme пакета, `docs/` и статусы шагов в файле пункта плана обновлены.
-5. Отчёт по форме выше.
+5. Применить локально (правило руководителя 2026-10-10): после правок кода `make restart` (фоновый бот, лог `logs/bot.log`); после правок схемы или `settings` — `make migrate` на `tale` и `tale_test`, затем проверить строки уже запущенных игр и при необходимости поправить их SQL (значения по умолчанию, dev-режим), результат показать в отчёте.
+6. Отчёт по форме выше.
 
 ## Саморасширение
 
@@ -67,7 +68,7 @@ argument-hint: "[status | map | extend <область>]"
 
 ## Среда (кратко)
 
-Go 1.27 в `~/.local/go/bin`; PostgreSQL 16 локально в WSL (apt); `.env` по `.env.example`; команды `make check build run test test-integration lint migrate fmt`. Подробно: `/tale-env`, `docs/dev/environment.md`.
+Go 1.27 в `~/.local/go/bin`; PostgreSQL 16 локально в WSL (apt); `.env` по `.env.example`; команды `make check build run start stop restart logs test test-integration lint migrate fmt`. Подробно: `/tale-env`, `docs/dev/environment.md`.
 
 ## Статус
 

@@ -19,7 +19,7 @@ func (s *Service) character(ctx context.Context, req *request) error {
 	}
 	c, err := s.games.Character(ctx, g, req.user.ID)
 	if errors.Is(err, game.ErrNoCharacter) {
-		return s.reply(ctx, req.in, "Персонажа в игре «"+g.Title+"» ещё нет. Создать: /character_create")
+		return s.reply(ctx, req.in, "Персонажа в игре «"+g.Title+"» ещё нет. Создать: /create")
 	}
 	if err != nil {
 		return err
@@ -73,7 +73,7 @@ func (s *Service) renderCharacter(ctx context.Context, g model.Game, c model.Cha
 	})
 }
 
-// characterCreate — /character_create: запуск диалога создания персонажа в текущей игре.
+// characterCreate — /create в личке: запуск диалога создания персонажа в текущей игре.
 func (s *Service) characterCreate(ctx context.Context, req *request) error {
 	g, err := s.games.Current(ctx, req.user)
 	if err != nil {
@@ -87,12 +87,12 @@ func (s *Service) characterCreate(ctx context.Context, req *request) error {
 	return s.startCharacterCreate(ctx, req.user, g)
 }
 
-// characterBio — /character_bio <текст>.
+// characterBio — /bio <текст>.
 func (s *Service) characterBio(ctx context.Context, req *request) error {
 	return s.setBio(ctx, req, false)
 }
 
-// characterSecret — /character_secret <текст>.
+// characterSecret — /secret <текст>.
 func (s *Service) characterSecret(ctx context.Context, req *request) error {
 	return s.setBio(ctx, req, true)
 }

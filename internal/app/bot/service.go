@@ -192,7 +192,7 @@ func (s *Service) fail(ctx context.Context, req *request, err error) error {
 // userErrors — ошибки сценариев, текст которых показывается игроку как есть.
 var userErrors = []error{
 	chat.ErrForbidden, chat.ErrUnknown,
-	game.ErrForbidden, game.ErrGameExists, game.ErrNoGame, game.ErrGameFinished, game.ErrGameFull, game.ErrNotMember,
+	game.ErrForbidden, game.ErrGameExists, game.ErrNoGame, game.ErrGameFinished, game.ErrNotMember,
 	game.ErrHasCharacter, game.ErrNoCharacter, game.ErrNicknameTaken, game.ErrChooseGame, game.ErrBadValue,
 	rules.ErrInvalid, errUnknownUser,
 }

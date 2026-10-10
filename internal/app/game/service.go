@@ -58,7 +58,6 @@ var (
 	ErrGameExists    = errors.New("в чате уже есть незавершённая игра")
 	ErrNoGame        = errors.New("игры нет")
 	ErrGameFinished  = errors.New("игра завершена")
-	ErrGameFull      = errors.New("достигнут лимит игроков")
 	ErrNotMember     = errors.New("вы не участник этой игры")
 	ErrHasCharacter  = errors.New("персонаж в этом сезоне уже есть")
 	ErrNoCharacter   = errors.New("персонажа ещё нет")
@@ -277,13 +276,6 @@ func (s *Service) Join(ctx context.Context, user model.User, code string) (model
 		return game, nil
 	} else if !errors.Is(err, model.ErrNotFound) {
 		return model.Game{}, fmt.Errorf("game.Join: %w", err)
-	}
-	members, err := s.store.ListMembers(ctx, game.ID)
-	if err != nil {
-		return model.Game{}, fmt.Errorf("game.Join: %w", err)
-	}
-	if game.Settings.MaxPlayers > 0 && len(members) >= game.Settings.MaxPlayers {
-		return model.Game{}, ErrGameFull
 	}
 	err = s.store.InTx(ctx, func(ctx context.Context) error {
 		if err := s.store.AddMember(ctx, model.GameMember{GameID: game.ID, UserID: user.ID, Role: model.RolePlayer, Status: model.MemberActive}); err != nil {

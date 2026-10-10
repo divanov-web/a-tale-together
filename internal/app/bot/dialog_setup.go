@@ -50,11 +50,14 @@ func (s *Service) setupStep(ctx context.Context, req *request, d *model.Dialog, 
 	return q, false, err
 }
 
-// nextParam — следующий параметр диалога; жанр пропускается, если в справочнике он один.
+// nextParam — следующий параметр диалога; продвинутые параметры и жанр при единственном в справочнике пропускаются.
 func (s *Service) nextParam(ctx context.Context, current string) string {
 	found := false
 	for _, p := range game.Params {
 		if found {
+			if p.Advanced {
+				continue
+			}
 			if p.Key == "genre" {
 				if genres, err := s.games.Genres(ctx); err == nil && len(genres) <= 1 {
 					continue
@@ -117,10 +120,6 @@ func (s *Service) paramValue(ctx context.Context, g model.Game, key string) (str
 		return g.Settings.EndsAt.Format("2006-01-02"), nil
 	case "max_rounds":
 		return fmt.Sprint(g.Settings.MaxRounds), nil
-	case "max_players":
-		return fmt.Sprint(g.Settings.MaxPlayers), nil
-	case "max_locations":
-		return fmt.Sprint(g.Settings.MaxActiveLocations), nil
 	case "min_answers":
 		return fmt.Sprint(g.Settings.MinRoundAnswers), nil
 	}

@@ -1,7 +1,7 @@
 ---
 name: tale-env
 description: Локальная среда A Tale Together в WSL (Ubuntu 24.04 на Windows 11) — проверка и установка Go, PostgreSQL 16 из apt в WSL (Docker как запасной вариант), переменные .env, миграции, сборка, тесты, запуск бота с тестовым токеном, диагностика. Подключать при словах «установи», «запусти», «не собирается», «postgres не поднимается», «миграции», «docker», «env», «make», «go: command not found».
-argument-hint: "[check | setup | run | migrate | reset-db]"
+argument-hint: "[check | setup | run | restart | migrate | reset-db]"
 ---
 
 # Среда разработки
@@ -14,7 +14,7 @@ argument-hint: "[check | setup | run | migrate | reset-db]"
 - Go 1.27 в `~/.local/go/bin` (установлен без sudo), PATH в `~/.bashrc`. Windows Go 1.25 (`/mnt/c/Program Files/Go`) не используется.
 - Postgres 16 установлен из apt (кластер `16 main`, порт 5432, `pg_lsclusters`). Роль и базы `tale`, `tale_test` создаются один раз командой из `docs/dev/environment.md` (нужен sudo → руководитель). Запасной вариант: Docker Desktop с WSL-интеграцией, `docker compose up -d db`.
 - `.env` по `.env.example`, в git не попадает. Обязательные: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`; ключи провайдеров LLM по `docs/llm/providers.md` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, для `claude-cli` путь к `claude` и пустая рабочая папка).
-- Команды: `make check build run test test-integration lint migrate migrate-down migrate-status fmt tools`. Версия в `/ping` из `git describe` через `-ldflags`.
+- Команды: `make check build run start stop restart logs test test-integration lint migrate migrate-down migrate-status fmt tools`. Бот для разработки живёт в фоне: `make start` (pid `bin/bot.pid`, лог `logs/bot.log`), `make restart` после каждой правки кода, `make logs` для диагностики; `make run` — только для запуска в терминале руками. Версия в `/ping` из `git describe` через `-ldflags`.
 
 ## check
 
@@ -26,6 +26,10 @@ argument-hint: "[check | setup | run | migrate | reset-db]"
 2. Postgres: кластер запущен (`pg_lsclusters`), роль и базы по `docs/dev/environment.md`.
 3. `cp .env.example .env`; токены заполняет руководитель.
 4. `make migrate`, `make test`, `make run`; `/ping` в песочнице и в личке.
+
+## restart
+
+После правок кода: `make restart`; в логе `bot starting` с новой версией и без `409 Conflict`. После миграций: `make migrate` для `tale` и `goose ... tale_test up` для тестовой базы; затем `psql` по существующим играм — ключи `settings` и значения dev-режима должны соответствовать коду (новые ключи добавляет миграция, но dev-умолчания вроде кворума 1 на старые игры не распространяются — править `UPDATE` вручную и показать результат).
 
 ## Тестовый бот
 
@@ -39,6 +43,6 @@ argument-hint: "[check | setup | run | migrate | reset-db]"
 | `password authentication failed for user "tale"` | роль не создана: команда из `docs/dev/environment.md` через `!` |
 | `connection refused` к БД | `pg_lsclusters` → кластер `down`: `! sudo pg_ctlcluster 16 main start` |
 | миграция упала | `make migrate-status`; миграцию не править, писать новую |
-| Telegram 409 Conflict | запущен второй экземпляр бота с тем же токеном; остановить лишний |
+| Telegram 409 Conflict | запущен второй экземпляр бота с тем же токеном (`pgrep -a bot`); `make stop` снимает и фоновый, и запущенный без pid-файла |
 | `getMe: Unauthorized` при старте | токен в `.env` неверный или отозван в BotFather |
 | бот молчит на `/ping` в группе | privacy mode не мешает командам; проверить, что команда адресована этому боту (`/ping@a_tale_together_dev_bot`) и лог `command` |

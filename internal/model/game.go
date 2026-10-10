@@ -38,8 +38,8 @@ type GameSettings struct {
 	SchemaVersion       int        `json:"schema_version"`
 	EndsAt              *time.Time `json:"ends_at,omitempty"`     // граница рассказа: дата
 	MaxRounds           int        `json:"max_rounds,omitempty"`  // граница рассказа: число раундов; 0 — без границы
-	MaxPlayers          int        `json:"max_players"`           // лимит участников
-	MaxActiveLocations  int        `json:"max_active_locations"`  // лимит активных локаций
+	MaxRoundPlayers     int        `json:"max_round_players"`     // сколько игроков обрабатывается за раунд; остальные — в очередь (этап 6 roadmap); админу не показывается
+	MaxActiveLocations  int        `json:"max_active_locations"`  // лимит активных локаций; настройка разработчика, админу не показывается
 	MaxParties          int        `json:"max_parties"`           // лимит групп в сезоне
 	MaxActiveGoals      int        `json:"max_active_goals"`      // сюжетные цели (пункт 17)
 	GoalCooldownRounds  int        `json:"goal_cooldown_rounds"`  // раундов до новой цели после отказа
@@ -49,16 +49,18 @@ type GameSettings struct {
 
 // Кворум раунда по умолчанию и в режиме разработки.
 const (
-	MinRoundAnswersDefault = 2
-	MinRoundAnswersDev     = 1
+	MaxRoundPlayersDefault    = 20 // внутренняя настройка разработчика, не параметр мира
+	MaxActiveLocationsDefault = 4  // то же: лимит активных локаций мира
+	MinRoundAnswersDefault    = 2
+	MinRoundAnswersDev        = 1
 )
 
 // DefaultGameSettings — настройки нового мира по умолчанию.
 func DefaultGameSettings() GameSettings {
 	return GameSettings{
 		SchemaVersion:       1,
-		MaxPlayers:          20,
-		MaxActiveLocations:  4,
+		MaxRoundPlayers:     MaxRoundPlayersDefault,
+		MaxActiveLocations:  MaxActiveLocationsDefault,
 		MaxParties:          3,
 		MaxActiveGoals:      1,
 		GoalCooldownRounds:  3,

@@ -11,24 +11,23 @@ import (
 	"taletogether/internal/model"
 )
 
-// Param — настраиваемый параметр игры для /game_set и диалога настройки.
+// Param — настраиваемый параметр игры для /set и диалога настройки.
 type Param struct {
-	Key   string // ключ в команде /game_set
-	Title string // название для игрока
-	Hint  string // формат значения
+	Key      string // ключ в команде /set
+	Title    string // название для игрока
+	Hint     string // формат значения
+	Advanced bool   // только через /set, в диалог настройки не входит
 }
 
-// Params — параметры в порядке диалога настройки.
+// Params — параметры в порядке диалога настройки; Advanced задаются только командой /set.
 var Params = []Param{
 	{Key: "title", Title: "Название мира", Hint: "текст до 60 символов"},
 	{Key: "genre", Title: "Жанр", Hint: "код жанра из списка"},
 	{Key: "round_minutes", Title: "Длительность раунда", Hint: "минуты от 10 до 60"},
 	{Key: "timezone", Title: "Часовой пояс", Hint: "например Europe/Moscow"},
 	{Key: "play_window", Title: "Игровое окно", Hint: "HH:MM-HH:MM по часовому поясу игры или «нет»"},
-	{Key: "ends_at", Title: "Дата окончания рассказа", Hint: "ГГГГ-ММ-ДД или «нет»"},
+	{Key: "ends_at", Title: "Дата окончания рассказа", Hint: "ГГГГ-ММ-ДД или «нет»", Advanced: true}, // по умолчанию «нет»
 	{Key: "max_rounds", Title: "Число раундов", Hint: "число или 0 без границы"},
-	{Key: "max_players", Title: "Лимит игроков", Hint: "от 1 до 20"},
-	{Key: "max_locations", Title: "Лимит активных локаций", Hint: "от 1 до 4"},
 	{Key: "min_answers", Title: "Кворум раунда", Hint: "заявок от 1 до 20; если меньше, раунд пропускается"},
 	{Key: "faction_good", Title: "Фракция добра", Hint: "имя по сюжету до 40 символов"},
 	{Key: "faction_evil", Title: "Фракция зла", Hint: "имя по сюжету до 40 символов"},
@@ -146,18 +145,6 @@ func (s *Service) apply(ctx context.Context, g *model.Game, key, value string) e
 			return fmt.Errorf("%w: число раундов от 0 до 1000", ErrBadValue)
 		}
 		g.Settings.MaxRounds = n
-	case "max_players":
-		n, err := strconv.Atoi(value)
-		if err != nil || n < 1 || n > 20 {
-			return fmt.Errorf("%w: лимит игроков от 1 до 20", ErrBadValue)
-		}
-		g.Settings.MaxPlayers = n
-	case "max_locations":
-		n, err := strconv.Atoi(value)
-		if err != nil || n < 1 || n > 4 {
-			return fmt.Errorf("%w: лимит локаций от 1 до 4", ErrBadValue)
-		}
-		g.Settings.MaxActiveLocations = n
 	case "min_answers":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 1 || n > 20 {

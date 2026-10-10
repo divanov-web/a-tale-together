@@ -12,7 +12,15 @@ import (
 	"taletogether/internal/model"
 )
 
-// gameCreate — /game_create в группе: создание мира и запуск настройки в личке администратора.
+// create — /create: в группе создаёт мир, в личке — персонажа в текущей игре.
+func (s *Service) create(ctx context.Context, req *request) error {
+	if req.in.IsPrivate() {
+		return s.characterCreate(ctx, req)
+	}
+	return s.gameCreate(ctx, req)
+}
+
+// gameCreate — /create в группе: создание мира и запуск настройки в личке администратора.
 func (s *Service) gameCreate(ctx context.Context, req *request) error {
 	g, err := s.games.Create(ctx, req.chat, req.user)
 	if err != nil {
@@ -92,12 +100,12 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 		limits = append(limits, fmt.Sprintf("%d раундов", g.Settings.MaxRounds))
 	}
 	if len(limits) == 0 {
-		limits = append(limits, "до /game_finish")
+		limits = append(limits, "до /finish")
 	}
 	return templates.Render("status", map[string]any{
 		"Title": g.Title, "Status": statusTitle(g.Status), "Genre": st.Genre.Title, "Format": string(g.Format), "Mode": string(g.Mode),
 		"SeasonNo": st.Season.SeasonNo, "RulesVersion": g.RulesVersion, "RoundMinutes": g.RoundMinutes, "Timezone": g.Timezone,
-		"PlayWindow": window, "Limits": strings.Join(limits, ", "), "MembersCount": len(st.Members), "MaxPlayers": g.Settings.MaxPlayers,
+		"PlayWindow": window, "Limits": strings.Join(limits, ", "), "MembersCount": len(st.Members),
 		"CharactersCount": len(st.Characters), "Factions": factions, "Characters": chars, "JoinLink": s.joinLink(g),
 		"MinAnswers": g.Settings.MinRoundAnswers, "Idle": idleReason(g),
 	})
@@ -116,11 +124,11 @@ func idleReason(g model.Game) string {
 	return ""
 }
 
-// gameSet — /game_set <параметр> <значение> для текущей игры.
+// gameSet — /set <параметр> <значение> для текущей игры.
 func (s *Service) gameSet(ctx context.Context, req *request) error {
 	key, value := splitArgs(req.in.Args)
 	if key == "" {
-		return s.reply(ctx, req.in, "Формат: /game_set <параметр> <значение>\nПараметры:\n"+paramsHelp())
+		return s.reply(ctx, req.in, "Формат: /set <параметр> <значение>\nПараметры:\n"+paramsHelp())
 	}
 	g, err := s.games.Current(ctx, req.user)
 	if err != nil {
@@ -132,11 +140,15 @@ func (s *Service) gameSet(ctx context.Context, req *request) error {
 	return s.reply(ctx, req.in, "Сохранено: "+key+" = "+value)
 }
 
-// paramsHelp — список параметров /game_set.
+// paramsHelp — список параметров /set.
 func paramsHelp() string {
 	var b strings.Builder
 	for _, p := range game.Params {
-		fmt.Fprintf(&b, "%s — %s (%s)\n", p.Key, p.Title, p.Hint)
+		mark := ""
+		if p.Advanced {
+			mark = "; только командой"
+		}
+		fmt.Fprintf(&b, "%s — %s (%s%s)\n", p.Key, p.Title, p.Hint, mark)
 	}
 	return b.String()
 }
