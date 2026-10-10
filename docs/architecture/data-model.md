@@ -34,7 +34,7 @@ users ──< chats (owner_user_id)
 |---|---|---|---|
 | `users` | пользователи Telegram | `telegram_id`, `username`, `first_name`, `language_code`, `started_at` (первый `/start` в личке, nullable), `last_seen_at` | `telegram_id` |
 | `chats` | группы с ботом | `telegram_chat_id`, `type` (group/supergroup), `title`, `owner_user_id` → `users`, `bot_status` (member/admin/left), `added_at`, `left_at` | `telegram_chat_id` |
-| `chat_moderators` | права в чате | `chat_id` → `chats`, `user_id` → `users`, `source` (telegram/manual), `granted_by_user_id` | `(chat_id, user_id)` |
+| `chat_moderators` | права в чате, ручной список владельца | `chat_id` → `chats`, `user_id` → `users`, `granted_by_user_id` | `(chat_id, user_id)` |
 | `telegram_updates` | дедупликация входящих | `update_id`, `received_at` | `update_id` |
 | `llm_profiles` | настройки провайдера LLM | `name`, `provider`, `model_interpreter`, `model_narrator`, `params jsonb`, `enabled` | `name` |
 | `app_settings` | глобальные настройки бота | `key`, `value` (в т.ч. `default_llm_profile`) | `key` |
@@ -66,4 +66,4 @@ users ──< chats (owner_user_id)
 
 ## Открыто
 
-Хранение «знаний персонажа» (отдельная таблица `character_knowledge` или факты в событиях); срок хранения `raw_text` (концепт §14 п. 8); состав модераторов чата (G11).
+Хранение «знаний персонажа» (отдельная таблица `character_knowledge` или факты в событиях); срок хранения `raw_text` (концепт §14 п. 8).
