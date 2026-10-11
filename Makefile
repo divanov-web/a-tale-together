@@ -9,7 +9,7 @@ export
 PID := bin/bot.pid
 LOG := logs/bot.log
 
-.PHONY: build run start stop restart logs test test-integration lint fmt migrate migrate-down migrate-status tools check eval-interpreter eval-narrator
+.PHONY: build run start stop restart logs test test-integration lint fmt migrate migrate-down migrate-status tools check eval-interpreter eval-narrator wipe
 
 build: ## Сборка бота
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o $(BIN) ./cmd/bot
@@ -32,6 +32,13 @@ restart: stop start ## Перезапуск бота после правок к�
 
 logs: ## Последние строки лога фонового бота
 	@tail -n 50 $(LOG)
+
+wipe: ## Вайп песочницы (только APP_ENV=dev): stop, scripts/wipe-sandbox.sql, очистка logs/, start
+	@test "$(APP_ENV)" = "dev" || (echo "make wipe только при APP_ENV=dev (сейчас: $(APP_ENV))"; exit 1)
+	@$(MAKE) --no-print-directory stop
+	psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -q -f scripts/wipe-sandbox.sql
+	@rm -rf logs/chats/* logs/images/*; mkdir -p logs; : > $(LOG); echo "игры и логи удалены"
+	@$(MAKE) --no-print-directory start
 
 test: ## Юнит-тесты
 	$(GO) test ./...

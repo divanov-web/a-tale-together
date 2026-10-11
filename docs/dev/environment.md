@@ -35,6 +35,7 @@ cp .env.example .env
 | `make eval-narrator` | оценочный набор рассказчика на живом `claude-cli` (подписка; те же `EVAL_ARGS`, модель по умолчанию `opus`), порог 90 % |
 | `make migrate` / `migrate-down` / `migrate-status` | миграции goose |
 | `make fmt` | форматирование |
+| `make wipe` | вайп песочницы: удалить все игры и логи, оставить пользователей, чат, настройки и профили LLM (`scripts/wipe-sandbox.sql`, только `APP_ENV=dev`); см. [go_commands.md](../go_commands.md) |
 
 ## Первый запуск
 ```bash

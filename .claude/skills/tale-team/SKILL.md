@@ -42,6 +42,7 @@ argument-hint: "[status | map | extend <область>]"
 | Скилл | `/tale-prompts` | промпты игрового LLM: интерпретатор, рассказчик, схемы JSON, контекст, бюджет токенов |
 | Скилл | `/tale-env` | установка и запуск: Go, Postgres, `.env`, миграции, тесты, тестовый бот |
 | Скилл | `/tale-debug` | разбор сбоя или бага по журналу чатов `logs/chats` и `logs/bot.log`: раунд, заявки, вызовы LLM, доставка |
+| Скилл | `/tale-wipe` | вайп песочницы по просьбе руководителя: `make wipe` удаляет игры и логи, оставляет пользователей, чат, настройки и профили LLM |
 | Правило | `rules/go.md` | `**/*.go`, `go.mod` |
 | Правило | `rules/go-tests.md` | `**/*_test.go` |
 | Правило | `rules/postgres.md` | `migrations/**`, `internal/adapter/postgres/**`, `**/*.sql` |

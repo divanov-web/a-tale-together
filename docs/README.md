@@ -23,5 +23,5 @@
 |---|---|
 | `CLAUDE.md` | Точка входа; импортирует главный скилл |
 | `.claude/skills/tale-team/` | Главный скилл: роли, принципы, карта, цикл задачи |
-| `.claude/skills/tale-architect/`, `tale-gamedesign/`, `tale-prompts/`, `tale-env/`, `tale-debug/` | Скиллы-процессы, по запросу |
+| `.claude/skills/tale-architect/`, `tale-gamedesign/`, `tale-prompts/`, `tale-env/`, `tale-debug/`, `tale-wipe/` | Скиллы-процессы, по запросу |
 | `.claude/rules/*.md` | Правила областей, подключаются при касании файлов по `paths` |
