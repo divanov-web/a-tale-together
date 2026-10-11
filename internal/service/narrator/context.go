@@ -39,6 +39,7 @@ type Params struct {
 	Mode     model.GameMode            `json:"mode"`
 	RoundNo  int                       `json:"round_no"`
 	Factions []Faction                 `json:"factions"`
+	Opening  string                    `json:"opening"`  // завязка истории (ADR-0018); первой строкой в выжимке прошлого
 	Previous []model.Narration         `json:"previous"` // хроники прошлых раундов, от новых к старым
 	State    *model.RoundSnapshot      `json:"state"`    // состояние после применения событий раунда
 	Bios     map[model.CharacterID]Bio `json:"bios"`
@@ -138,7 +139,7 @@ type sceneKey struct {
 // следующего раунда без шансов (их код припишет сам). Сцена без персонажей не нужна; лидер группы не передаётся.
 func BuildInput(p Params) Input {
 	in := Input{Scenes: []scene{}, Events: []event{}, Approaches: []approachIn{}}
-	in.World = world{Title: p.Title, Tone: p.Tone, Mode: string(p.Mode), RoundNo: p.RoundNo, Factions: nonNilFactions(p.Factions), Previous: digest(p.Previous)}
+	in.World = world{Title: p.Title, Tone: p.Tone, Mode: string(p.Mode), RoundNo: p.RoundNo, Factions: nonNilFactions(p.Factions), Previous: digest(p.Opening, p.Previous)}
 	if p.State == nil {
 		return in
 	}
@@ -231,9 +232,13 @@ func (in Input) Encode() string {
 	return string(b)
 }
 
-// digest — выжимка прошлых хроник: общий текст последних раундов, обрезанный; порядок от старых к новым.
-func digest(prev []model.Narration) []string {
+// digest — выжимка прошлого: завязка истории (обрезанная до openingDigestRune), затем общий текст последних
+// раундов, обрезанный; порядок от старых к новым.
+func digest(opening string, prev []model.Narration) []string {
 	out := []string{}
+	if d := openingDigest(opening); d != "" {
+		out = append(out, d)
+	}
 	n := min(len(prev), previousLast)
 	for i := n - 1; i >= 0; i-- {
 		text := strings.TrimSpace(prev[i].Chronicle)

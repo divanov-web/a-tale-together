@@ -1,7 +1,8 @@
 // Package narrator — вызов 2 из 2 на раунд (docs/llm/round-calls.md): публичные и локационные события → хроника
 // раунда в группу одним запросом к модели: общий текст и блок на сцену. Факты и исходы не меняет; код проверяет,
 // что каждое событие упомянуто по ID, скрытые описания не раскрыты; пропуски дозапрашиваются адресно, затем
-// дописываются кодом. При сбое вызывающий публикует шаблонную хронику.
+// дописываются кодом. При сбое вызывающий публикует шаблонную хронику. Отдельный вызов на игру — завязка истории
+// при `/begin` (`opening.go`, ADR-0018): та же роль рассказчика, свой промпт и схема.
 package narrator
 
 import (
@@ -43,6 +44,8 @@ type Service struct {
 	llm    LLM
 	logger *slog.Logger
 	system string
+	// opening — системная часть промпта завязки (OpeningSystemPrompt).
+	opening string
 	// Retries — дозапросов с замечаниями к ответу; по умолчанию 1.
 	Retries int
 	// MaxInputBytes — бюджет контекста; 0 — MaxInputBytes пакета.
@@ -51,7 +54,7 @@ type Service struct {
 
 // New собирает рассказчика с промптом текущей версии.
 func New(llm LLM, logger *slog.Logger) *Service {
-	return &Service{llm: llm, logger: logger, system: SystemPrompt(), Retries: 1, MaxInputBytes: MaxInputBytes}
+	return &Service{llm: llm, logger: logger, system: SystemPrompt(), opening: OpeningSystemPrompt(), Retries: 1, MaxInputBytes: MaxInputBytes}
 }
 
 // SystemPrompt — системная часть промпта текущей версии (стабильный префикс для кэширования).

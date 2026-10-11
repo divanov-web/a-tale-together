@@ -21,9 +21,9 @@ func TestTexts_Templates(t *testing.T) {
 	r2 := model.Round{RoundNo: 2, DeadlineAt: at(12, 20)}
 	factions := []model.Faction{{Code: model.FactionGood, Title: "Орден"}, {Code: model.FactionEvil, Title: "Гильдия"}}
 	cases := []struct{ name, got, want string }{
-		{"opening scene", openingScene(g, "В {{world_title}} наступает осень. {{faction_good}} против {{faction_evil}}.", factions),
+		{"opening scene", openingScene(g, openingTemplate(g, "В {{world_title}} наступает осень. {{faction_good}} против {{faction_evil}}.", factions)),
 			"«Мир» — начало истории\n\nВ Мир наступает осень. Орден против Гильдия."},
-		{"opening scene empty", openingScene(g, "  ", nil), "«Мир» — начало истории\n\nИстория начинается."},
+		{"opening scene empty", openingScene(g, openingTemplate(g, "  ", nil)), "«Мир» — начало истории\n\nИстория начинается."},
 		{"round open", roundOpenText(g, r1, 0, now), "Раунд 1 открыт\nЗаявки до 12:10: /act <текст> в личке с ботом, одна на раунд."},
 		{"round open carried", roundOpenText(g, r2, 1, now), "Раунд 2 открыт\nЗаявки до 12:20: /act <текст> в личке с ботом, одна на раунд.\nПеренесено заявок из пропущенного раунда: 1."},
 		{"round skipped", roundSkippedText(g, r1), "Раунд 1\nНедостаточное количество участников. Раунд пропущен."},

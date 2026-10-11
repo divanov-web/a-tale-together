@@ -36,8 +36,8 @@ func header(_ model.Game, roundNo int) string {
 	return fmt.Sprintf("Раунд %d", roundNo)
 }
 
-// openingScene подставляет название мира и имена фракций в стартовую сцену шаблона жанра.
-func openingScene(g model.Game, template string, factions []model.Faction) string {
+// openingTemplate — запасная стартовая сцена: шаблон жанра с подставленными названием мира и именами фракций.
+func openingTemplate(g model.Game, template string, factions []model.Faction) string {
 	r := strings.NewReplacer("{{world_title}}", g.Title)
 	text := r.Replace(template)
 	for _, f := range factions {
@@ -46,6 +46,11 @@ func openingScene(g model.Game, template string, factions []model.Faction) strin
 	if strings.TrimSpace(text) == "" {
 		text = "История начинается."
 	}
+	return text
+}
+
+// openingScene — сообщение стартовой сцены в группу: заголовок с названием мира и текст завязки.
+func openingScene(g model.Game, text string) string {
 	return fmt.Sprintf("«%s» — начало истории\n\n%s", g.Title, text)
 }
 

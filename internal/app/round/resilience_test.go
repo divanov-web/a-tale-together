@@ -19,7 +19,7 @@ type crashLLM struct {
 }
 
 func (c *crashLLM) Complete(ctx context.Context, call applm.Call, req model.LLMRequest) (model.LLMResponse, error) {
-	if c.crashes > 0 {
+	if c.crashes > 0 && call.Role == model.RoleInterpreter {
 		c.crashes--
 		panic("interpreter exploded")
 	}
@@ -60,7 +60,7 @@ func TestTick_CrashRollsBackAndRetries(t *testing.T) {
 	if events, _ := w.store.ListEvents(ctx, w.game.ID, r1.ID); len(events) != 0 {
 		t.Fatalf("events committed despite rollback: %+v", events)
 	}
-	if got := j.events(); got != "opened submission frozen attempt_failed" {
+	if got := j.events(); got != "opening opened submission frozen attempt_failed" {
 		t.Fatalf("journal = %q", got)
 	}
 	w.tick(t, time.Second)

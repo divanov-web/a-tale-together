@@ -129,8 +129,9 @@ func New(store Store, rights Rights, clock Clock, logger *slog.Logger) *Service 
 	return &Service{store: store, rights: rights, clock: clock, logger: logger, seed: rand.Int64, MaxAttempts: model.MaxRoundAttempts}
 }
 
-// Begin запускает кампанию: статус `active`, стартовая сцена из шаблона жанра в outbox, первый раунд
-// (сразу внутри игрового окна, иначе в его начале). Нужен хотя бы один персонаж.
+// Begin запускает кампанию: статус `active`, завязка истории от рассказчика (`opening.go`, ADR-0018; при сбое —
+// стартовая сцена шаблона жанра) в outbox и у игры, первый раунд (сразу внутри игрового окна, иначе в его начале).
+// Нужен хотя бы один персонаж. Вызов модели идёт внутри транзакции под блокировкой игры, как и в раунде.
 func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID) (model.Game, error) {
 	if err := s.canAdmin(ctx, game, actor); err != nil {
 		return model.Game{}, err
@@ -178,9 +179,14 @@ func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID
 		if err := s.ensureDefaultParty(ctx, g, season.ID, chars, genre); err != nil {
 			return err
 		}
+		locs, err := s.store.ListLocations(ctx, g.ID)
+		if err != nil {
+			return err
+		}
+		g.OpeningScene = s.opening(ctx, g, chat, genre, factions, chars, locs)
 		g.Status = model.GameActive
 		g.SkippedStreak = 0
-		if err := s.enqueue(ctx, g, chat, nil, model.OutboxScene, openingScene(g, genre.Template.OpeningScene, factions)); err != nil {
+		if err := s.enqueue(ctx, g, chat, nil, model.OutboxScene, openingScene(g, g.OpeningScene)); err != nil {
 			return err
 		}
 		opened, err := s.openNext(ctx, &g, chat, now, false)

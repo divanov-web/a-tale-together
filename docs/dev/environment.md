@@ -32,7 +32,7 @@ cp .env.example .env
 | `make test-integration` | тесты с БД (`DATABASE_URL_TEST`); пакеты идут последовательно, потому что две интеграционные папки мигрируют одну базу |
 | `make lint` | `gofmt`, `go vet`, `golangci-lint` при наличии |
 | `make eval-interpreter` | оценочный набор интерпретатора на живом `claude-cli` (подписка Claude Code; `EVAL_ARGS="-v -case имя -model haiku -effort low"`; модель по умолчанию `sonnet`, как в профиле `local-claude`), порог 90 % |
-| `make eval-narrator` | оценочный набор рассказчика на живом `claude-cli` (подписка; те же `EVAL_ARGS`, модель по умолчанию `opus`), порог 90 % |
+| `make eval-narrator` | оценочный набор рассказчика на живом `claude-cli` (подписка; те же `EVAL_ARGS`, модель по умолчанию `opus`), порог 90 %; `EVAL_ARGS="-opening"` — живая завязка истории по миру первого случая (ADR-0018) |
 | `make migrate` / `migrate-down` / `migrate-status` | миграции goose |
 | `make fmt` | форматирование |
 | `make wipe` | вайп песочницы: удалить все игры и логи, оставить пользователей, чат, настройки и профили LLM (`scripts/wipe-sandbox.sql`, только `APP_ENV=dev`); см. [go_commands.md](../go_commands.md) |

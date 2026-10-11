@@ -97,7 +97,8 @@ type Game struct {
 	JoinCode        string
 	CreatedByUserID UserID
 	NextRoundAt     *time.Time
-	SkippedStreak   int // пропущенных без кворума раундов подряд; обнуляется заявками в раунде, возобновлением и сбросом (B11)
+	SkippedStreak   int    // пропущенных без кворума раундов подряд; обнуляется заявками в раунде, возобновлением и сбросом (B11)
+	OpeningScene    string // завязка истории при /begin: текст рассказчика или стартовая сцена шаблона жанра (ADR-0018); пусто до старта
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

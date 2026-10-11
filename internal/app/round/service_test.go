@@ -431,6 +431,7 @@ func TestTick_LockedOrDbErrorIsReported(t *testing.T) {
 type fakeLLM struct {
 	json    string // ответ интерпретатора
 	narr    string // ответ рассказчика; пусто — ошибка вызова (шаблонная хроника)
+	opening string // ответ завязки; пусто — ошибка вызова (стартовая сцена жанра)
 	err     error
 	narrErr error
 	calls   []applm.Call
@@ -445,6 +446,12 @@ func (f *fakeLLM) Complete(_ context.Context, call applm.Call, req model.LLMRequ
 			return model.LLMResponse{}, errors.New("narrator down")
 		}
 		return model.LLMResponse{JSON: json.RawMessage(f.narr), TokensIn: 80, TokensOut: 40}, nil
+	}
+	if call.Role == model.RoleOpening {
+		if f.opening == "" {
+			return model.LLMResponse{}, errors.New("opening down")
+		}
+		return model.LLMResponse{JSON: json.RawMessage(f.opening), TokensIn: 60, TokensOut: 30}, nil
 	}
 	if f.err != nil {
 		return model.LLMResponse{}, f.err
@@ -595,7 +602,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if !strings.Contains(fallback.Text, "— Ночной дозор (Рыночная площадь): Боб, Кэт —\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)") {
 		t.Fatalf("fallback options = %q", fallback.Text)
 	}
-	// Второй раунд: рассказчик отвечает; в его контексте сцены, события и выжимки нет (прошлой хроники не было).
+	// Второй раунд: рассказчик отвечает; в его контексте сцены, события и выжимка только из завязки (прошлой хроники не было).
 	w.reload(t)
 	_, sub, err = w.svc.Submit(ctx, w.game, w.chars[1], "читаю доску")
 	if err != nil {
@@ -615,7 +622,7 @@ func TestResolve_Narrator(t *testing.T) {
 		t.Fatalf("scene locations = %+v", r2.Narration.Scenes)
 	}
 	input := llm.inputs[len(llm.inputs)-1]
-	if !strings.Contains(input, `"round_no":2`) || !strings.Contains(input, `"actor":"Боб"`) || !strings.Contains(input, `"previous":[]`) || !strings.Contains(input, `"tone":"Маленький город`) || !strings.Contains(input, `"party":"Ночной дозор"`) || strings.Contains(input, "leader") {
+	if !strings.Contains(input, `"round_no":2`) || !strings.Contains(input, `"actor":"Боб"`) || !strings.Contains(input, `"previous":["В Мир наступает осень."]`) || !strings.Contains(input, `"tone":"Маленький город`) || !strings.Contains(input, `"party":"Ночной дозор"`) || strings.Contains(input, "leader") {
 		t.Fatalf("narrator input = %s", input)
 	}
 	var chron model.OutboxMessage
@@ -641,7 +648,7 @@ func TestResolve_Narrator(t *testing.T) {
 	llm.narr = fmt.Sprintf(`{"chronicle":"Долгий вечер.","scenes":[{"scene_id":1,"text":"%s","event_seqs":[]},{"scene_id":2,"text":"Тихо.","event_seqs":[]}]}`, long)
 	w.tick(t, 10*time.Minute)
 	input = llm.inputs[len(llm.inputs)-1]
-	if !strings.Contains(input, `"previous":["Осень в Мире густеет."]`) {
+	if !strings.Contains(input, `"previous":["В Мир наступает осень.","Осень в Мире густеет."]`) {
 		t.Fatalf("previous digest missing: %s", input)
 	}
 	info, _ = w.svc.Info(ctx, w.game)

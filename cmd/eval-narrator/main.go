@@ -1,6 +1,7 @@
 // Команда eval-narrator: прогон оценочного набора рассказчика на живом провайдере `claude-cli`
 // (`make eval-narrator`, пункт 09). Проверяет, что каждое событие упомянуто самой моделью (без дописывания кодом),
 // запрещённые слова и секреты в хронике отсутствуют, нужные никнеймы присутствуют; печатает долю прошедших, токены и время.
+// Флаг `-opening` вместо набора запускает завязку истории (ADR-0018) по миру первого случая: печатает текст и замечания.
 package main
 
 import (
@@ -62,6 +63,7 @@ func run() error {
 	modelName := flag.String("model", "opus", "модель claude-cli (как в профиле local-claude)")
 	effort := flag.String("effort", "low", "усилие claude-cli")
 	verbose := flag.Bool("v", false, "печатать хронику")
+	opening := flag.Bool("opening", false, "вместо набора: завязка истории по миру первого случая")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -87,6 +89,9 @@ func run() error {
 		return client.Complete(ctx, req)
 	}), slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
+	if *opening {
+		return runOpening(svc, set)
+	}
 	var passed, total, calls, tokensIn, tokensOut, patched int
 	var elapsed time.Duration
 	for _, c := range set.Cases {
@@ -159,4 +164,37 @@ func check(c evalCase, res narrator.Result) []string {
 		out = append(out, "есть цифры")
 	}
 	return out
+}
+
+// runOpening — живой вызов завязки по миру, локациям и персонажам первого случая набора; проверка кодом: объём, цифры,
+// никнеймы (замечания печатаются, после дозапроса не считаются ошибкой).
+func runOpening(svc *narrator.Service, set evalSet) error {
+	if len(set.Cases) == 0 || set.Cases[0].Params.State == nil {
+		return fmt.Errorf("в наборе нет случая с состоянием")
+	}
+	st := set.Cases[0].Params.State
+	p := narrator.OpeningParams{Title: set.Title, Genre: "Классическое фэнтези", Tone: set.Tone, Mode: model.ModeBalanced, Factions: set.Factions}
+	for i, l := range st.Locations {
+		exits := []string{}
+		for _, link := range l.Links {
+			if !link.Hidden {
+				exits = append(exits, link.To)
+			}
+		}
+		p.Locations = append(p.Locations, narrator.OpeningLocation{Name: l.Name, Description: l.Description, Start: i == 0, Exits: exits})
+	}
+	for _, c := range st.Characters {
+		p.Characters = append(p.Characters, narrator.OpeningCharacter{Nickname: c.Nickname, Gender: string(c.Gender), PublicBio: set.Cases[0].Params.Bios[c.ID].Public})
+	}
+	started := time.Now()
+	res, err := svc.Opening(context.Background(), p)
+	if err != nil {
+		return fmt.Errorf("завязка: %w", err)
+	}
+	fmt.Println(res.Text)
+	for _, is := range res.Issues {
+		fmt.Printf("замечание: %s\n", is)
+	}
+	fmt.Printf("\nвызовов %d, токены вход/выход %d/%d, время %s\n", res.Calls, res.TokensIn, res.TokensOut, time.Since(started).Round(time.Second))
+	return nil
 }
