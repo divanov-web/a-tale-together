@@ -57,7 +57,7 @@ const (
 	MinRoundAnswersDefault    = 2
 	MinRoundAnswersDev        = 1
 	MinRoundMinutes           = 10 // продуктовый минимум длительности раунда
-	MinRoundMinutesDev        = 1  // песочница: короткие раунды для прогонов; в играх ставить не ниже 2, дедлайн округляется вниз (B12)
+	MinRoundMinutesDev        = 2  // песочница: короткие раунды для прогонов; не 1, дедлайн округляется вниз до минуты (B12)
 	MaxRoundMinutes           = 60
 )
 
