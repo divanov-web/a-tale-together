@@ -167,7 +167,7 @@ func TestTick_SkipWithoutQuorumAndCarrySubmissions(t *testing.T) {
 		t.Fatalf("outbox = %+v", msgs)
 	}
 	// Пропуск и открытие — одно сообщение (B4).
-	if msgs[2].Text != "«Мир» — раунд 1. Недостаточное количество участников. Раунд пропущен.\n«Мир» — раунд 2 открыт. Заявки до 12:20: /act <текст> в личке с ботом, одна на раунд. Перенесено заявок из пропущенного раунда: 1." {
+	if msgs[2].Text != "Раунд 1. Недостаточное количество участников. Раунд пропущен.\nРаунд 2 открыт. Заявки до 12:20: /act <текст> в личке с ботом, одна на раунд. Перенесено заявок из пропущенного раунда: 1." {
 		t.Fatalf("open text = %q", msgs[2].Text)
 	}
 	// Персонажи при пропуске не наказываются.
@@ -226,7 +226,7 @@ func TestTick_FreezeSnapshotAndActivity(t *testing.T) {
 			t.Fatalf("outbox[%d] kind = %s; want %s", i, msgs[i].Kind, k)
 		}
 	}
-	if msgs[2].Text != "«Мир» — раунд 1 — итоги\n• тихий раунд: никто ничего заметного не сделал" {
+	if msgs[2].Text != "Раунд 1 — итоги\n• тихий раунд: никто ничего заметного не сделал" {
 		t.Fatalf("closed text = %q", msgs[2].Text)
 	}
 	// Статусы: Элис active (0 пропусков), Боб waiting (2 пропуска), Кэт leaving (3 пропуска — порог, один раунд; B13).
@@ -588,7 +588,7 @@ func TestResolve_Narrator(t *testing.T) {
 	}
 	msgs := w.outbox(t)
 	fallback := msgs[2]
-	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "«Мир» — раунд 1 — итоги\n• Элис (@Элис) уходит из «Рыночная площадь» в «Зал Серой башни»") {
+	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "Раунд 1 — итоги\n• Элис (@Элис) уходит из «Рыночная площадь» в «Зал Серой башни»") {
 		t.Fatalf("fallback chronicle = %q", fallback.Text)
 	}
 	if !strings.Contains(fallback.Text, "— Рыночная площадь (Боб, Кэт) —\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)") {
@@ -622,7 +622,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if chron.ID == 0 {
 		t.Fatalf("chronicle message for round 2 missing: %+v", w.outbox(t))
 	}
-	want := "«Мир» — раунд 2\nОсень в Мире густеет.\n\n— Площадь —\nБоб (@Боб) читает объявление.\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n\n— Башня —\nЭлис (@Элис) ждёт в зале."
+	want := "Раунд 2\nОсень в Мире густеет.\n\n— Площадь —\nБоб (@Боб) читает объявление.\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n\n— Башня —\nЭлис (@Элис) ждёт в зале."
 	if chron.Text != want {
 		t.Fatalf("chronicle text = %q\nwant %q", chron.Text, want)
 	}
@@ -646,7 +646,7 @@ func TestResolve_Narrator(t *testing.T) {
 			parts = append(parts, m)
 		}
 	}
-	if len(parts) != 3 || parts[1].Part != 2 || !strings.HasPrefix(parts[1].Text, "«Мир» — раунд 3 (продолжение)\n") || len([]rune(parts[0].Text)) > partLimit || !strings.Contains(parts[2].Text, "— Башня —\nТихо.") {
+	if len(parts) != 3 || parts[1].Part != 2 || !strings.HasPrefix(parts[1].Text, "Раунд 3 (продолжение)\n") || len([]rune(parts[0].Text)) > partLimit || !strings.Contains(parts[2].Text, "— Башня —\nТихо.") {
 		t.Fatalf("parts = %d: %+v", len(parts), parts)
 	}
 }
@@ -716,8 +716,8 @@ func TestFreeze_EntryMarks(t *testing.T) {
 func TestTagMentions(t *testing.T) {
 	t.Parallel()
 	tags := map[string]string{"Кот": "@cat", "Котофей": "@kotofey", "Элис": "@alice", "Без": "@none"}
-	text := "«Мир» — раунд 3\nКотофей и Кот идут к Элис.\n\n— Площадь (Кот, Элис) —\nКот ждёт. Элис смотрит на Кота."
-	want := "«Мир» — раунд 3\nКотофей (@kotofey) и Кот (@cat) идут к Элис (@alice).\n\n— Площадь (Кот, Элис) —\nКот ждёт. Элис смотрит на Кота."
+	text := "Раунд 3\nКотофей и Кот идут к Элис.\n\n— Площадь (Кот, Элис) —\nКот ждёт. Элис смотрит на Кота."
+	want := "Раунд 3\nКотофей (@kotofey) и Кот (@cat) идут к Элис (@alice).\n\n— Площадь (Кот, Элис) —\nКот ждёт. Элис смотрит на Кота."
 	if got := tagMentions(text, tags); got != want {
 		t.Errorf("tagMentions =\n%s\nwant\n%s", got, want)
 	}

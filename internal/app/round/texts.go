@@ -27,9 +27,10 @@ func FormatTime(g model.Game, t, now time.Time) string {
 	return lt.Format("02.01 15:04")
 }
 
-// header — подпись мира и раунда в каждом игровом сообщении.
-func header(g model.Game, roundNo int) string {
-	return fmt.Sprintf("«%s» — раунд %d", g.Title, roundNo)
+// header — подпись раунда в сообщениях группы; название мира в чате одной игры лишнее (B9),
+// оно остаётся в стартовой сцене, финальной хронике, /status и личных уведомлениях.
+func header(_ model.Game, roundNo int) string {
+	return fmt.Sprintf("Раунд %d", roundNo)
 }
 
 // openingScene подставляет название мира и имена фракций в стартовую сцену шаблона жанра.
@@ -131,10 +132,10 @@ func chronicleText(g model.Game, r model.Round, events []model.Event, state *mod
 	return fmt.Sprintf("%s — итоги\n%s", header(g, r.RoundNo), strings.Join(lines, "\n"))
 }
 
-// noticeText — уведомление о заявке игроку: статус, исход, проверка (числа по режиму), приватные события персонажа.
+// noticeText — уведомление о заявке игроку (с названием мира: у игрока может быть несколько игр): статус, исход, проверка (числа по режиму), приватные события персонажа.
 func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model.Event, preset rules.ModePreset) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s — ваш итог\nЗаявка «%s»: ", header(g, r.RoundNo), truncateText(res.Intent.RawText, 80))
+	fmt.Fprintf(&b, "«%s» — раунд %d — ваш итог\nЗаявка «%s»: ", g.Title, r.RoundNo, truncateText(res.Intent.RawText, 80))
 	switch res.Status {
 	case model.ResultResolved:
 		b.WriteString(res.Summary)

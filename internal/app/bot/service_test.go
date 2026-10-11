@@ -405,6 +405,7 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 	h.joinAndCreate(alice, code, "1", "Элис", "1", "1", "-", "-")
 	h.joinAndCreate(bob, code, "2", "Боб", "2", "1", "-", "-")
 	mustContain(t, h.send(alice, private(alice), "/act иду в башню"), "Игра не запущена")
+	mustContain(t, h.send(alice, private(alice), "иду в башню"), "Я понимаю только команды") // B17: игра не идёт — текст не заявка
 
 	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
 	mustContain(t, h.send(owner, groupChat, "/begin"), "уже запущена")
@@ -413,7 +414,7 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 		t.Fatalf("outbox after begin = %q; want scene and round 1", texts)
 	}
 	mustContain(t, texts[0], "«Песочница» — начало истории", "В Песочница наступает осень")
-	mustContain(t, texts[1], "«Песочница» — раунд 1 открыт", "Заявки до 12:15")
+	mustContain(t, texts[1], "Раунд 1 открыт", "Заявки до 12:15")
 	mustContain(t, h.send(alice, groupChat, "/status"), "идёт", "Текущий раунд: 1, заявки до 12:15; заявок 0 из 2", "Следующий раунд: сразу после текущего, в 12:15")
 
 	mustContain(t, h.send(alice, private(alice), "/act"), "Формат: /act")
@@ -424,6 +425,10 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/act иду на рынок"), "уже принята")
 	mustContain(t, h.send(nobody, private(nobody), "/act что-то"), "Игры нет")
 	mustContain(t, h.send(owner, private(owner), "/act что-то"), "Персонажа ещё нет")
+	mustContain(t, h.send(nobody, private(nobody), "что-то"), "Я понимаю только команды")
+	mustContain(t, h.send(owner, private(owner), "что-то"), "Я понимаю только команды")
+	mustContain(t, h.send(owner, groupChat, "/act что-то"), "Персонажа ещё нет") // B14: /act в группе — игра чата
+	mustContain(t, h.send(bob, groupChat, "/act"), "Формат: /act")
 
 	// Дедлайн: заявок 1 из 2 — раунд пропущен с сообщением, заявка переносится в раунд 2.
 	h.clock.advance(15 * time.Minute)
@@ -431,25 +436,28 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 		t.Fatal(err)
 	}
 	texts = h.outboxTexts()
-	mustContain(t, texts[2], "«Песочница» — раунд 1. Недостаточное количество участников. Раунд пропущен.\n«Песочница» — раунд 2 открыт", "одна на раунд", "Перенесено заявок из пропущенного раунда: 1")
+	mustContain(t, texts[2], "Раунд 1. Недостаточное количество участников. Раунд пропущен.\nРаунд 2 открыт", "одна на раунд", "Перенесено заявок из пропущенного раунда: 1")
 	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 2, заявки до 12:31; заявок 1 из 2", "Предыдущий раунд: 1 пропущен: заявок 1 из 2")
 
 	// Кворум собран: раунд 2 заморожен со снимком; Боб без заявки — нет, оба подали.
-	mustContain(t, h.send(bob, private(bob), "/act слежу за гонцом"), "раунд 2")
+	mustContain(t, h.send(bob, groupChat, "/act слежу за гонцом"), "Заявка принята: раунд 2") // B14: открытая заявка в группе
+	mustContain(t, h.send(bob, private(bob), "ещё раз"), "уже принята")                       // B17: повтор текстом — та же ошибка
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
 	texts = h.outboxTexts()
-	mustContain(t, texts[3], "раунд 2 — итоги")
-	mustContain(t, texts[4], "раунд 3 открыт")
+	mustContain(t, texts[3], "Раунд 2 — итоги")
+	mustContain(t, texts[4], "Раунд 3 открыт")
 	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 3", "Предыдущий раунд: 2 разрешён, заявок 2")
 
 	// Пауза и возобновление: открытый раунд получает новый дедлайн.
 	mustContain(t, h.send(owner, groupChat, "/pause"), "на паузе")
 	mustContain(t, h.send(alice, private(alice), "/act жду"), "Игра на паузе")
+	mustContain(t, h.send(alice, private(alice), "жду"), "Я понимаю только команды") // B17: на паузе текст не заявка
 	mustContain(t, h.send(alice, groupChat, "/status"), "пауза", "Следующий раунд: игра на паузе")
 	h.clock.advance(time.Hour)
 	mustContain(t, h.send(owner, groupChat, "/pause"), "возобновлена")
 	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 3, заявки до 13:31")
-	mustContain(t, h.send(alice, private(alice), "/act иду дальше"), "Заявка принята: раунд 3")
+	mustContain(t, h.send(alice, private(alice), "иду дальше"), "Принято как заявка на раунд 3, до 13:31") // B17
+	mustContain(t, h.send(alice, private(alice), "/act иду дальше"), "уже принята")
 }
 
 func TestRound_StatusTransitionsAndWindow(t *testing.T) {
@@ -548,7 +556,7 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 
 	texts := h.outboxTexts()
-	mustContain(t, texts[2], "«Песочница» — раунд 1 — итоги", "• Элис (@alice) уходит из «Рыночная площадь» в «Зал Серой башни»")
+	mustContain(t, texts[2], "Раунд 1 — итоги", "• Элис (@alice) уходит из «Рыночная площадь» в «Зал Серой башни»")
 	privates := map[model.TelegramChatID][]string{}
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
 	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
@@ -612,7 +620,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 			texts = append(texts, m.Text)
 		}
 	}
-	mustContain(t, texts[2], "раунд 1 — итоги", "Элис (@alice) уходит")
+	mustContain(t, texts[2], "Раунд 1 — итоги", "Элис (@alice) уходит")
 	mustContain(t, texts[len(texts)-1], "«Песочница» — история завершена", "Игру завершил администратор. Раундов сыграно: 1.", "• Элис — ", "Зал Серой башни")
 	// Завершённая игра перестаёт быть игрой чата и текущей игрой игрока: ответы «игры нет», новая игра создаётся заново.
 	mustContain(t, h.send(alice, private(alice), "/act ждать"), "Игры нет")

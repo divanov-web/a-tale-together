@@ -2,11 +2,13 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	"taletogether/internal/app/game"
 	"taletogether/internal/app/round"
 	"taletogether/internal/model"
 )
@@ -174,17 +176,14 @@ func (s *Service) roundReplay(ctx context.Context, req *request) error {
 	return s.reply(ctx, req.in, fmt.Sprintf("Раунд %d: воспроизведение расходится с журналом (%d событий записано).", no, n))
 }
 
-// act — /act <текст> в личке: заявка персонажа на открытый раунд текущей игры.
+// act — /act <текст>: заявка персонажа на открытый раунд. В личке — текущая игра пользователя, заявка скрыта;
+// в группе — игра чата, текст заявки виден всем, это выбор игрока (B14).
 func (s *Service) act(ctx context.Context, req *request) error {
 	text := strings.TrimSpace(req.in.Args)
 	if text == "" {
 		return s.reply(ctx, req.in, fmt.Sprintf("Формат: /act <что делает персонаж> (до %d символов). Заявка одна на раунд, изменить её нельзя.", model.SubmissionMaxLen))
 	}
-	g, err := s.games.Current(ctx, req.user)
-	if err != nil {
-		return err
-	}
-	c, err := s.games.Character(ctx, g, req.user.ID)
+	g, c, err := s.actor(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -193,6 +192,51 @@ func (s *Service) act(ctx context.Context, req *request) error {
 		return err
 	}
 	return s.reply(ctx, req.in, fmt.Sprintf("Заявка принята: раунд %d, до %s.", r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
+}
+
+// actor — игра и персонаж отправителя по контексту сообщения: игра чата в группе, текущая игра пользователя в личке.
+func (s *Service) actor(ctx context.Context, req *request) (model.Game, model.Character, error) {
+	var g model.Game
+	var err error
+	if req.in.IsPrivate() {
+		g, err = s.games.Current(ctx, req.user)
+	} else {
+		g, err = s.games.OfChat(ctx, req.chat.ID)
+	}
+	if err != nil {
+		return model.Game{}, model.Character{}, err
+	}
+	c, err := s.games.Character(ctx, g, req.user.ID)
+	if err != nil {
+		return model.Game{}, model.Character{}, err
+	}
+	return g, c, nil
+}
+
+// implicitAct — текст без команды в личке вне диалога (B17): если у игрока есть текущая игра с живым активным
+// персонажем и открытым раундом, текст принимается как заявка; иначе подсказка про команды. Подтверждения нет
+// (решение руководителя), поэтому ответ явно говорит, что текст стал заявкой.
+func (s *Service) implicitAct(ctx context.Context, req *request) error {
+	const hint = "Я понимаю только команды. Список: /help"
+	g, c, err := s.actor(ctx, req)
+	if errors.Is(err, game.ErrNoGame) || errors.Is(err, game.ErrChooseGame) || errors.Is(err, game.ErrNoCharacter) {
+		return s.reply(ctx, req.in, hint)
+	}
+	if err != nil {
+		return s.fail(ctx, req, err)
+	}
+	if g.Status != model.GameActive || c.Status.Absent() {
+		return s.reply(ctx, req.in, hint)
+	}
+	r, _, err := s.rounds.Submit(ctx, g, c, req.in.Text)
+	if errors.Is(err, round.ErrNoOpenRound) {
+		return s.reply(ctx, req.in, hint)
+	}
+	if err != nil {
+		return s.fail(ctx, req, err)
+	}
+	s.journal(ctx, model.ChatLogRecord{Kind: model.ChatLogIn, Chat: req.in.ChatID, UpdateID: req.in.UpdateID, GameID: g.ID, RoundID: r.ID, RoundNo: r.RoundNo, Event: "implicit_act"})
+	return s.reply(ctx, req.in, fmt.Sprintf("Принято как заявка на раунд %d, до %s. Изменить её нельзя.", r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
 }
 
 // roundLines — строки /status о раундах: текущий, предыдущий, следующий или причина простоя.

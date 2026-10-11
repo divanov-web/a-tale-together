@@ -16,7 +16,7 @@
 | `llm` | `role`, `prompt_version`, `profile`, `provider`, `model`, `system`, `input`, `output`, `tokens_in`, `tokens_out`, `duration_ms` |
 | `data` | подробности события раунда: `opened` — `deadline_at`, `carried`; `submission` — персонаж и текст; `skipped` — `reason`; `frozen` — `seed`, заявки с никнеймами, статусы персонажей; `interpreted` — `intents`, `calls`, `safe` или `fallback` с `error`; `narrated` — `narration`, `calls`, `patched`, `issues` или `fallback`; `resolved` — `results`, `events`; `published` — `chronicle_parts`, `notices`; `metrics` — `model.RoundMetrics` (миллисекунды шагов, вызовы и токены, запасные пути, статусы заявок); `attempt_failed` — `attempt`, `error` (откат транзакции закрытия); `failed` — `attempts`, `error` (раунд не разрешён, заявки перенесены); `finished` — `reason`, `rounds`; `reset` — `characters` |
 
-Где что искать: вызовы LLM и события раунда — в папке группы игры; `/act` игрока — `in` в его личке и `submission` в группе; уведомление о заявке — `out` с `outbox_kind: private` в личке; хроника — `out` с `outbox_kind: chronicle` по частям в группе.
+Где что искать: вызовы LLM и события раунда — в папке группы игры; `/act` игрока — `in` в его личке (текст без команды, принятый как заявка, — ещё запись `in` с `event: implicit_act`) или в группе, и `submission` в группе; уведомление о заявке — `out` с `outbox_kind: private` в личке; хроника — `out` с `outbox_kind: chronicle` по частям в группе.
 
 ## Разбор сбоя
 1. Чат и день: группа игры по `/status` или `chats.telegram_chat_id`; личка — Telegram ID игрока (`/me`).

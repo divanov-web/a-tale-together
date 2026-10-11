@@ -127,7 +127,7 @@ func TestTick_FailsAfterMaxAttempts(t *testing.T) {
 	}
 	msgs := w.outbox(t)
 	if len(msgs) != 4 || msgs[2].Kind != model.OutboxRoundClosed || msgs[2].RoundID == nil || *msgs[2].RoundID != r1.ID ||
-		msgs[2].Text != "«Мир» — раунд 1 не удалось разрешить: сбой на стороне бота. Заявки перенесены в следующий раунд." {
+		msgs[2].Text != "Раунд 1 не удалось разрешить: сбой на стороне бота. Заявки перенесены в следующий раунд." {
 		t.Fatalf("outbox = %+v", msgs)
 	}
 	if !strings.Contains(msgs[3].Text, "Перенесено заявок из пропущенного раунда: 1") {

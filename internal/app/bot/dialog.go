@@ -13,7 +13,7 @@ import (
 func (s *Service) handleDialogAnswer(ctx context.Context, req *request) error {
 	d, err := s.dialogs.GetDialog(ctx, req.user.ID)
 	if errors.Is(err, model.ErrNotFound) {
-		return s.reply(ctx, req.in, "Я понимаю только команды. Список: /help")
+		return s.implicitAct(ctx, req)
 	}
 	if err != nil {
 		return err
