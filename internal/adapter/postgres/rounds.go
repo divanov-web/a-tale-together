@@ -98,14 +98,16 @@ func (s *Store) LockGame(ctx context.Context, id model.GameID) (model.Game, erro
 	return g, nil
 }
 
-// DeleteGameProgress удаляет ход игры для сброса в dev (ADR-0013): раунды с заявками, события, итоги и outbox;
-// участники, персонажи, локации и `llm_runs` остаются.
+// DeleteGameProgress удаляет ход игры для сброса в dev (ADR-0013): раунды с заявками, события, итоги, outbox и группы
+// (персонажи остаются без группы, `/begin` соберёт их заново); участники, персонажи, локации и `llm_runs` остаются.
 func (s *Store) DeleteGameProgress(ctx context.Context, game model.GameID) error {
 	for _, q := range []string{
 		`DELETE FROM messages_outbox WHERE game_id = $1`,
 		`DELETE FROM resolved_actions WHERE game_id = $1`,
 		`DELETE FROM world_events WHERE game_id = $1`,
 		`DELETE FROM rounds WHERE game_id = $1`,
+		`UPDATE characters SET party_id = NULL WHERE game_id = $1`,
+		`DELETE FROM parties WHERE game_id = $1`,
 	} {
 		if _, err := s.db(ctx).Exec(ctx, q, game); err != nil {
 			return fmt.Errorf("postgres.DeleteGameProgress: %w", err)

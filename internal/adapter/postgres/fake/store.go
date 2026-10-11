@@ -35,6 +35,7 @@ type Store struct {
 	subs           map[model.SubmissionID]model.Submission
 	outbox         []model.OutboxMessage
 	locations      map[model.LocationID]model.Location
+	parties        map[model.PartyID]model.Party
 	events         []model.Event
 	resolved       []model.ActionResult
 	resolvedRounds []resolvedKey
@@ -66,6 +67,7 @@ func New(now func() time.Time) *Store {
 		facts: map[model.FactionID]model.Faction{}, members: map[memberKey]model.GameMember{}, chars: map[model.CharacterID]model.Character{},
 		rounds: map[model.RoundID]model.Round{}, subs: map[model.SubmissionID]model.Submission{},
 		llmProfiles: map[model.LLMProfileID]model.LLMProfile{}, settings: map[string]string{}, locations: map[model.LocationID]model.Location{},
+		parties: map[model.PartyID]model.Party{},
 	}
 	cm := model.CharacterModel{ID: 1, Code: "basic_fantasy", Definition: BasicFantasy()}
 	s.cmodels[cm.ID] = cm
@@ -126,6 +128,7 @@ type state struct {
 	subs        map[model.SubmissionID]model.Submission
 	outbox      []model.OutboxMessage
 	locations   map[model.LocationID]model.Location
+	parties     map[model.PartyID]model.Party
 	events      []model.Event
 	resolved    []model.ActionResult
 	resolvedRnd []resolvedKey
@@ -144,7 +147,7 @@ func (s *Store) snapshot() state {
 		updates: maps.Clone(s.updates), users: maps.Clone(s.users), chats: maps.Clone(s.chats), mods: mods, dialogs: maps.Clone(s.dialogs),
 		games: maps.Clone(s.games), seasons: maps.Clone(s.seasons), facts: maps.Clone(s.facts), members: maps.Clone(s.members),
 		chars: maps.Clone(s.chars), rounds: maps.Clone(s.rounds), subs: maps.Clone(s.subs), outbox: slices.Clone(s.outbox),
-		locations: maps.Clone(s.locations), events: slices.Clone(s.events), resolved: slices.Clone(s.resolved), resolvedRnd: slices.Clone(s.resolvedRounds),
+		locations: maps.Clone(s.locations), parties: maps.Clone(s.parties), events: slices.Clone(s.events), resolved: slices.Clone(s.resolved), resolvedRnd: slices.Clone(s.resolvedRounds),
 		llmProfiles: maps.Clone(s.llmProfiles), llmRuns: slices.Clone(s.llmRuns), settings: maps.Clone(s.settings), nextID: s.nextID,
 	}
 }
@@ -152,7 +155,7 @@ func (s *Store) snapshot() state {
 func (s *Store) restore(st state) {
 	s.updates, s.users, s.chats, s.mods, s.dialogs = st.updates, st.users, st.chats, st.mods, st.dialogs
 	s.games, s.seasons, s.facts, s.members, s.chars = st.games, st.seasons, st.facts, st.members, st.chars
-	s.rounds, s.subs, s.outbox, s.locations = st.rounds, st.subs, st.outbox, st.locations
+	s.rounds, s.subs, s.outbox, s.locations, s.parties = st.rounds, st.subs, st.outbox, st.locations, st.parties
 	s.events, s.resolved, s.resolvedRounds = st.events, st.resolved, st.resolvedRnd
 	s.llmProfiles, s.llmRuns, s.settings, s.nextID = st.llmProfiles, st.llmRuns, st.settings, st.nextID
 }

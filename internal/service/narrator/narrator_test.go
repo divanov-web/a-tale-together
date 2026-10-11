@@ -99,8 +99,8 @@ func newService(f *fakeLLM) *Service {
 }
 
 const goodResponse = `{"chronicle":"Над башней седьмой вечер без луны.","scenes":[
- {"location_id":1,"party":"Зал башни","text":"Маг спускается в подвал.","event_seqs":[119]},
- {"location_id":2,"party":"Подвал","text":"Кузнец бил в дверь, пока не выдохся — камень не поддался. Вор дождался щелчка: дверь приоткрылась. Маг сошёл по ступеням.","event_seqs":[117,118]}
+ {"scene_id":1,"text":"Маг спускается в подвал.","event_seqs":[119]},
+ {"scene_id":2,"text":"Кузнец бил в дверь, пока не выдохся — камень не поддался. Вор дождался щелчка: дверь приоткрылась. Маг сошёл по ступеням.","event_seqs":[117,118]}
 ]}`
 
 // TestBuildInput: сцены только с присутствующими (выбывший не входит), скрытое описание как данные, выходы и объекты
@@ -154,6 +154,54 @@ func TestBuildInput(t *testing.T) {
 	}
 }
 
+// TestBuildInput_PartyScenes (пункт 19): сцена на группу внутри локации, персонажи без группы одной локации — отдельная
+// сцена без имени группы; группы раньше одиночек; лидер в контекст не попадает; события групп описаны словами
+// без лидера; хроника с группами разложена по scene_id.
+func TestBuildInput_PartyScenes(t *testing.T) {
+	t.Parallel()
+	st := tower()
+	watch, free := model.PartyID(1), model.PartyID(2)
+	st.Parties = []model.SnapshotParty{{ID: watch, Name: "Ночной дозор", LeaderID: char(11)}, {ID: free, Name: "Вольные клинки", LeaderID: char(13)}}
+	st.Characters[0].PartyID, st.Characters[2].PartyID = &watch, &free
+	st.Characters = append(st.Characters, model.SnapshotCharacter{ID: 16, Nickname: "Бродяга", Status: model.CharacterActive, LocationID: loc(2)})
+	p := params(model.ModeBalanced)
+	p.State = &st
+	held := json.RawMessage(`{"party_id":1,"party":"Ночной дозор","reason":"party_limit","from":2,"from_name":"Подвал башни","to":1,"to_name":"Зал башни","held":[{"character_id":12,"nickname":"Кузнец","wanted":"Тайный ход"}]}`)
+	split := json.RawMessage(`{"party_id":2,"party":"Вольные клинки","new_party_id":9,"new_party":"Странники","leader_id":16,"members":[16],"nicknames":["Бродяга"],"from":1,"from_name":"Зал башни","to":2,"to_name":"Подвал башни"}`)
+	p.Events = append(p.Events,
+		model.Event{Seq: 122, Type: model.EventPartyHeld, Visibility: model.VisibilityLocation, LocationID: loc(2), Payload: held},
+		model.Event{Seq: 123, Type: model.EventPartySplit, Visibility: model.VisibilityLocation, LocationID: loc(1), Payload: split})
+	in := BuildInput(p)
+	if len(in.Scenes) != 3 || in.Scenes[0].SceneID != 1 || in.Scenes[0].Party != "Вольные клинки" || in.Scenes[0].LocationID != 1 ||
+		in.Scenes[1].Party != "Ночной дозор" || len(in.Scenes[1].Characters) != 1 || in.Scenes[2].Party != "" || len(in.Scenes[2].Characters) != 2 {
+		t.Fatalf("scenes = %+v", in.Scenes)
+	}
+	if in.Scenes[1].Label() != "Ночной дозор (Подвал башни)" || in.Scenes[2].Label() != "Подвал башни" {
+		t.Errorf("labels = %q / %q", in.Scenes[1].Label(), in.Scenes[2].Label())
+	}
+	if strings.Contains(in.Encode(), "leader") {
+		t.Error("leader leaked into narrator input")
+	}
+	ev := in.Events[len(in.Events)-2]
+	if ev.Actor != "Ночной дозор" || ev.Summary != "группа «Ночной дозор» держится вместе и уходит из «Подвал башни» в «Зал башни»; Кузнец хотел в «Тайный ход»" {
+		t.Errorf("held event = %+v", ev)
+	}
+	if sp := in.Events[len(in.Events)-1]; sp.Summary != "Бродяга отделяется от группы «Вольные клинки» и уходит из «Зал башни» в «Подвал башни»: теперь это группа «Странники»" {
+		t.Errorf("split event = %+v", sp)
+	}
+	resp := `{"chronicle":"Ночь.","scenes":[{"scene_id":1,"text":"Маг ждёт.","event_seqs":[119,123]},{"scene_id":2,"text":"Вор открыл дверь, дозор ушёл наверх.","event_seqs":[117,122]},{"scene_id":3,"text":"Кузнец бил в дверь.","event_seqs":[118]}]}`
+	res, err := newService(&fakeLLM{responses: []string{resp}}).Narrate(context.Background(), p)
+	if err != nil || res.Calls != 1 || len(res.Narration.Scenes) != 3 || res.Narration.Scenes[1].Party != "Ночной дозор (Подвал башни)" || res.Narration.Scenes[1].LocationID != 2 {
+		t.Fatalf("narration = %+v, %v", res.Narration, err)
+	}
+	// Пропущенное событие дописывается в первую сцену его локации; блок без ответа добавляется с подписью сцены.
+	short := `{"chronicle":"Ночь.","scenes":[{"scene_id":1,"text":"Маг ждёт.","event_seqs":[119,123]},{"scene_id":2,"text":"Вор открыл дверь.","event_seqs":[117,122]}]}`
+	res, err = newService(&fakeLLM{responses: []string{short, short}}).Narrate(context.Background(), p)
+	if err != nil || res.Patched != 1 || len(res.Narration.Scenes) != 3 || res.Narration.Scenes[2].Party != "Подвал башни" || !strings.Contains(res.Narration.Scenes[1].Text, "Кузнец взаимодействует") {
+		t.Fatalf("patched narration = %+v, %v", res.Narration, err)
+	}
+}
+
 // TestNarrate_Valid: один вызов, все события упомянуты (пара перехода — одним seq), ничего не дописано.
 func TestNarrate_Valid(t *testing.T) {
 	t.Parallel()
@@ -165,7 +213,7 @@ func TestNarrate_Valid(t *testing.T) {
 	if res.Calls != 1 || res.Patched != 0 || len(res.Issues) != 0 || res.TokensIn != 100 || res.Narration.PromptVersion != PromptVersion {
 		t.Fatalf("result = %+v", res)
 	}
-	if len(res.Narration.Scenes) != 2 || res.Narration.Scenes[1].Party != "Подвал" || len(res.Narration.Scenes[1].EventSeqs) != 2 {
+	if len(res.Narration.Scenes) != 2 || res.Narration.Scenes[1].Party != "Подвал башни" || res.Narration.Scenes[1].LocationID != 2 || len(res.Narration.Scenes[1].EventSeqs) != 2 {
 		t.Fatalf("narration = %+v", res.Narration)
 	}
 	req := f.requests[0]
@@ -178,8 +226,8 @@ func TestNarrate_Valid(t *testing.T) {
 // пропустила событие, код дописывает строку в сцену его локации и помечает её в Patched.
 func TestNarrate_RetryThenPatch(t *testing.T) {
 	t.Parallel()
-	first := `{"chronicle":"Тихо.","scenes":[{"location_id":2,"party":"Подвал","text":"Вор открыл дверь.","event_seqs":[117,999]}]}`
-	second := `{"chronicle":"Тихо.","scenes":[{"location_id":1,"party":"Зал","text":"Маг ушёл вниз.","event_seqs":[119]},{"location_id":2,"party":"Подвал","text":"Вор открыл дверь.","event_seqs":[117]}]}`
+	first := `{"chronicle":"Тихо.","scenes":[{"scene_id":2,"text":"Вор открыл дверь.","event_seqs":[117,999]}]}`
+	second := `{"chronicle":"Тихо.","scenes":[{"scene_id":1,"text":"Маг ушёл вниз.","event_seqs":[119]},{"scene_id":2,"text":"Вор открыл дверь.","event_seqs":[117]}]}`
 	f := &fakeLLM{responses: []string{first, second}}
 	res, err := newService(f).Narrate(context.Background(), params(model.ModeBalanced))
 	if err != nil {
@@ -189,7 +237,7 @@ func TestNarrate_RetryThenPatch(t *testing.T) {
 		t.Fatalf("result = %+v", res)
 	}
 	retry := f.requests[1].Input
-	if !strings.Contains(retry, "seq=999") || !strings.Contains(retry, "seq=118") || !strings.Contains(retry, "seq=119") || !strings.Contains(retry, "нет блока для сцены location_id=1") {
+	if !strings.Contains(retry, "seq=999") || !strings.Contains(retry, "seq=118") || !strings.Contains(retry, "seq=119") || !strings.Contains(retry, "нет блока для сцены scene_id=1") {
 		t.Errorf("retry input = %s", retry[len(retry)-600:])
 	}
 	cellar := res.Narration.Scenes[1]
@@ -202,7 +250,7 @@ func TestNarrate_RetryThenPatch(t *testing.T) {
 // ошибка; контекст больше бюджета — ErrBudget без вызова.
 func TestNarrate_LeakAndFailures(t *testing.T) {
 	t.Parallel()
-	leak := `{"chronicle":"Вор, на самом деле шпион Гильдии теней, открыл дверь.","scenes":[{"location_id":1,"party":"Зал","text":"Маг ушёл.","event_seqs":[119]},{"location_id":2,"party":"Подвал","text":"Кузнец устал.","event_seqs":[117,118]}]}`
+	leak := `{"chronicle":"Вор, на самом деле шпион Гильдии теней, открыл дверь.","scenes":[{"scene_id":1,"text":"Маг ушёл.","event_seqs":[119]},{"scene_id":2,"text":"Кузнец устал.","event_seqs":[117,118]}]}`
 	f := &fakeLLM{responses: []string{leak, leak}}
 	if _, err := newService(f).Narrate(context.Background(), params(model.ModeBalanced)); !errors.Is(err, ErrLeak) || len(f.requests) != 2 {
 		t.Fatalf("leak: %v, calls %d", err, len(f.requests))

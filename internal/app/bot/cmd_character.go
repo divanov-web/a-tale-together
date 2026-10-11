@@ -84,8 +84,18 @@ func (s *Service) renderCharacter(ctx context.Context, g model.Game, c model.Cha
 	if c.Status == model.CharacterDead {
 		death = fmt.Sprintf("выбыл, до возвращения раундов: %d", c.DeathRoundsLeft)
 	}
+	partyName := ""
+	if c.PartyID != nil {
+		if parties, err := s.games.Parties(ctx, g); err == nil {
+			for _, p := range parties {
+				if p.Party.ID == *c.PartyID {
+					partyName = p.Party.Name
+				}
+			}
+		}
+	}
 	return templates.Render("character", map[string]any{
-		"Location": location, "Knowledge": knowledge, "Death": death,
+		"Location": location, "Knowledge": knowledge, "Death": death, "Party": partyName,
 		"Nickname": c.Nickname, "Gender": c.Gender.Word(), "Archetype": archetype, "Faction": faction, "Status": string(c.Status), "Game": g.Title,
 		"HP": c.HP, "Conditions": strings.Join(c.Conditions, ", "), "Attributes": strings.Join(attrs, ", "),
 		"Skills": strings.Join(skills, ", "), "Inventory": strings.Join(items, ", "), "PublicBio": c.PublicBio, "SecretBio": c.SecretBio,

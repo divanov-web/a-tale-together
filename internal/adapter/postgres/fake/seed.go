@@ -61,6 +61,7 @@ func FantasyTemplate() model.GenreTemplate {
 				}}}},
 		},
 		OpeningScene: "В {{world_title}} наступает осень.",
+		PartyNames:   []string{"Ночной дозор", "Вольные клинки", "Странники", "Искатели", "Тени башни"},
 		Items: []model.ItemTemplate{
 			{Key: "sword", Title: "Меч", Tags: []string{"weapon", "melee"}},
 			{Key: "shield", Title: "Щит", Tags: []string{"armor"}},

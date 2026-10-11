@@ -10,8 +10,26 @@ import (
 )
 
 // Describe — событие словами: кто действует и что произошло; для хроники без модели и для контекста рассказчика.
-// Второе событие перехода (копия для локации назначения) описывается как приход.
+// Второе событие перехода (копия для локации назначения) описывается как приход. У событий группы актёр — группа;
+// лидер не называется (пункт 19).
 func Describe(ev model.Event, state *model.RoundSnapshot) (actor, summary string) {
+	switch ev.Type {
+	case model.EventPartySplit:
+		actor = payloadStr(ev, "party")
+		names := payloadList(ev, "nicknames")
+		verb := "отделяется от группы «%s» и уходит"
+		if strings.Contains(names, ", ") {
+			verb = "отделяются от группы «%s» и уходят"
+		}
+		return actor, fmt.Sprintf("%s "+verb+" из «%s» в «%s»: теперь это группа «%s»", names, actor, payloadStr(ev, "from_name"), payloadStr(ev, "to_name"), payloadStr(ev, "new_party"))
+	case model.EventPartyHeld:
+		actor = payloadStr(ev, "party")
+		wanted := heldWords(ev)
+		if to := payloadStr(ev, "to_name"); to != "" {
+			return actor, fmt.Sprintf("группа «%s» держится вместе и уходит из «%s» в «%s»%s", actor, payloadStr(ev, "from_name"), to, wanted)
+		}
+		return actor, fmt.Sprintf("группа «%s» держится вместе и остаётся в «%s»%s", actor, payloadStr(ev, "from_name"), wanted)
+	}
 	actor = nickname(ev, state, "character_id")
 	switch ev.Type {
 	case model.EventCharacterMoved:
@@ -144,6 +162,37 @@ func payloadStr(ev model.Event, key string) string {
 		return strconv.FormatBool(v)
 	}
 	return ""
+}
+
+// heldWords — кто куда хотел уйти из удержанной группы: «; Паладин хотел в «Рынок»».
+func heldWords(ev model.Event) string {
+	var p struct {
+		Held []struct {
+			Nickname string `json:"nickname"`
+			Wanted   string `json:"wanted"`
+		} `json:"held"`
+	}
+	_ = json.Unmarshal(ev.Payload, &p)
+	var parts []string
+	for _, h := range p.Held {
+		parts = append(parts, fmt.Sprintf("%s хотел в «%s»", h.Nickname, h.Wanted))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "; " + strings.Join(parts, ", ")
+}
+
+// payloadList — строковый массив полезной нагрузки через запятую.
+func payloadList(ev model.Event, key string) string {
+	var p map[string]any
+	_ = json.Unmarshal(ev.Payload, &p)
+	list, _ := p[key].([]any)
+	var out []string
+	for _, v := range list {
+		out = append(out, fmt.Sprint(v))
+	}
+	return strings.Join(out, ", ")
 }
 
 func payloadNum(ev model.Event, key string) float64 {

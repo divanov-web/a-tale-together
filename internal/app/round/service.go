@@ -39,6 +39,11 @@ type Store interface {
 	ListResolvedActions(ctx context.Context, game model.GameID, round model.RoundID) ([]model.ActionResult, error)
 	ListFactions(ctx context.Context, game model.GameID) ([]model.Faction, error)
 	ListCharacters(ctx context.Context, game model.GameID, season model.SeasonID) ([]model.Character, error)
+	ListParties(ctx context.Context, game model.GameID, season model.SeasonID) ([]model.Party, error)
+	CreateParty(ctx context.Context, p model.Party) (model.Party, error)
+	UpdateParty(ctx context.Context, p model.Party) error
+	SetCharacterParty(ctx context.Context, game model.GameID, id model.CharacterID, party *model.PartyID) error
+	ReservePartyIDs(ctx context.Context, n int) ([]model.PartyID, error)
 	UpdateCharacterActivity(ctx context.Context, game model.GameID, id model.CharacterID, status model.CharacterStatus, missed int) error
 	CreateRound(ctx context.Context, r model.Round) (model.Round, error)
 	UpdateRound(ctx context.Context, r model.Round) error
@@ -168,6 +173,9 @@ func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID
 		}
 		chat, err := s.store.GetChat(ctx, g.ChatID)
 		if err != nil {
+			return err
+		}
+		if err := s.ensureDefaultParty(ctx, g, season.ID, chars, genre); err != nil {
 			return err
 		}
 		g.Status = model.GameActive
@@ -672,6 +680,9 @@ func (s *Service) freeze(ctx context.Context, g model.Game, chat model.Chat, r m
 	for i := range snap.Characters {
 		snap.Characters[i].Entry = entries[snap.Characters[i].ID]
 	}
+	if err := s.snapshotParties(ctx, g, r.SeasonID, genre, &snap); err != nil {
+		return err
+	}
 	r.Status = model.RoundFrozen
 	r.Seed = s.seed()
 	r.Snapshot = &snap
@@ -722,7 +733,7 @@ func frozenData(r model.Round, chars []model.SnapshotCharacter, subs []model.Sub
 	statuses := make([]map[string]any, 0, len(chars))
 	for _, c := range chars {
 		names[c.ID] = c.Nickname
-		statuses = append(statuses, map[string]any{"character_id": c.ID, "character": c.Nickname, "status": c.Status, "entry": c.Entry, "missed": c.MissedRounds, "location_id": c.LocationID})
+		statuses = append(statuses, map[string]any{"character_id": c.ID, "character": c.Nickname, "status": c.Status, "entry": c.Entry, "missed": c.MissedRounds, "location_id": c.LocationID, "party_id": c.PartyID})
 	}
 	list := make([]map[string]any, 0, len(subs))
 	for _, sub := range subs {

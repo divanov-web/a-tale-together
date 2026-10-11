@@ -7,7 +7,8 @@ import (
 	"taletogether/internal/model"
 )
 
-// Apply сворачивает события в состояние снимка: персонажи (локация, HP, состояния, знания, статус) и объекты локаций.
+// Apply сворачивает события в состояние снимка: персонажи (локация, группа, HP, состояния, знания, статус), группы
+// (`party_split` добавляет группу) и объекты локаций. `party_held` состояние не меняет: переходы записаны отдельно.
 // Состояние после раунда равно Apply(снимок до раунда, события) — критерий пункта 07.
 func Apply(snap *model.RoundSnapshot, events []model.Event) error {
 	for _, ev := range events {
@@ -44,6 +45,19 @@ func Apply(snap *model.RoundSnapshot, events []model.Event) error {
 		case model.EventCharacterReturned:
 			if c := char(snap, p, "character_id"); c != nil {
 				c.Status, c.HP, c.Conditions, c.DeathRoundsLeft = model.CharacterActive, int(num(p, "hp")), []string{}, 0
+			}
+		case model.EventPartySplit:
+			var sp struct {
+				NewPartyID model.PartyID       `json:"new_party_id"`
+				NewParty   string              `json:"new_party"`
+				LeaderID   model.CharacterID   `json:"leader_id"`
+				Members    []model.CharacterID `json:"members"`
+			}
+			if err := json.Unmarshal(ev.Payload, &sp); err != nil {
+				return fmt.Errorf("engine.Apply: event %d: %w", ev.Seq, err)
+			}
+			if _, exists := snap.Party(sp.NewPartyID); !exists {
+				applySplit(snap, sp.NewPartyID, sp.NewParty, sp.LeaderID, sp.Members)
 			}
 		case model.EventObjectChanged:
 			loc, ok := snap.Location(model.LocationID(num(p, "location_id")))

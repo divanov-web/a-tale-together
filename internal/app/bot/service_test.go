@@ -746,7 +746,9 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 
 	texts := h.outboxTexts()
-	mustContain(t, texts[2], "Раунд 1 — итоги", "• Элис (@alice) уходит из «Рыночная площадь» в «Зал Серой башни»")
+	// Пункт 19: Элис уходит одна — отделяется новой группой, Боб остаётся «Ночным дозором»; блок вариантов подписан группой.
+	mustContain(t, texts[2], "Раунд 1 — итоги", "• Элис (@alice) отделяется от группы «Ночной дозор» и уходит из «Рыночная площадь» в «Зал Серой башни»: теперь это группа «Вольные клинки»",
+		"• Элис уходит из «Рыночная площадь» в «Зал Серой башни»")
 	privates := map[model.TelegramChatID][]string{}
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
 	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
@@ -812,7 +814,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 			texts = append(texts, m.Text)
 		}
 	}
-	mustContain(t, texts[2], "Раунд 1 — итоги", "Элис (@alice) уходит")
+	mustContain(t, texts[2], "Раунд 1 — итоги", "Элис (@alice) отделяется", "Элис уходит")
 	mustContain(t, texts[len(texts)-1], "«Песочница» — история завершена", "Игру завершил администратор. Раундов сыграно: 1.", "• Элис — ", "Зал Серой башни")
 	// Завершённая игра перестаёт быть игрой чата и текущей игрой игрока: ответы «игры нет», новая игра создаётся заново.
 	mustContain(t, h.send(alice, private(alice), "/act ждать"), "Игры нет")
@@ -1051,4 +1053,102 @@ func TestButtons_HelpAndGames(t *testing.T) {
 	if h.tg.lastKeyboard(private(alice)) != nil {
 		t.Fatal("games keyboard with one game")
 	}
+}
+
+// TestParty_Commands (пункт 19): до старта групп нет и можно собрать свою; при старте все без группы входят в группу по
+// умолчанию; /party показывает состав без лидера и кнопки вступления и выхода; join по кнопке `#id`, leave, лимит
+// групп, вступление в группу из другой локации отклоняется; /character и /status показывают группу.
+func TestParty_Commands(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
+	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	mustContain(t, h.send(alice, private(alice), "/party"), "Группы ещё не собраны", "/party create")
+	mustContain(t, h.send(alice, private(alice), "/party create Я"), "от 2 до 30 символов")
+	mustContain(t, h.send(alice, private(alice), "/party create Искатели"), "Группа «Искатели» создана")
+	mustContain(t, h.send(bob, private(bob), "/party create искатели"), "уже есть")
+	mustContain(t, h.send(bob, private(bob), "/party"), "Вы не в группе", "Другие группы:\n• Искатели (1, Рыночная площадь): Элис", "Вступить: кнопкой")
+	kb := h.tg.lastKeyboard(private(bob))
+	if len(kb) != 1 || kb[0][0].Text != "Вступить: Искатели" || !strings.HasPrefix(kb[0][0].Data, "/party join #") {
+		t.Fatalf("join keyboard = %+v", kb)
+	}
+	mustContain(t, h.press(bob, private(bob), 50, kb[0][0].Data), "Вы в группе «Искатели»")
+	if !h.clearedLast(50) {
+		t.Fatal("join keyboard not cleared")
+	}
+	mustContain(t, h.send(bob, private(bob), "/party join Искатели"), "уже в этой группе")
+	mustContain(t, h.send(bob, private(bob), "/party join Никто"), "Группы с таким именем нет")
+	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Искатели»", "Локация: Рыночная площадь", "Участники:\n• Элис — active\n• Боб — active")
+	if strings.Contains(h.tg.last(private(bob)), "лидер") || strings.Contains(h.tg.last(private(bob)), "Лидер") {
+		t.Fatal("leader shown to players")
+	}
+	mustContain(t, h.send(bob, private(bob), "/party leave"), "Вы покинули группу «Искатели»")
+	mustContain(t, h.send(bob, private(bob), "/party leave"), "Вы не в группе")
+	mustContain(t, h.send(bob, private(bob), "/character"), "Группа: нет (/party)")
+	mustContain(t, h.send(alice, private(alice), "/character"), "Группа: «Искатели»")
+
+	// Старт: Боб без группы входит в старейшую активную группу («Искатели», созданная заранее).
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Искатели»", "• Боб — active")
+	mustContain(t, h.send(alice, groupChat, "/status"), "Группы:\n• Искатели (2), Рыночная площадь: Элис, Боб")
+
+	// Лимит: при двух активных группах из двух разрешённых создание отклоняется (создатель не один в своей группе,
+	// место не освобождается); уход единственного участника место освобождает.
+	mustContain(t, h.send(bob, private(bob), "/party create Тени"), "создана")
+	h.joinAndCreate(nobody, code, "1", "Никто", "1", "1", "1", "-", "-")
+	mustContain(t, h.send(nobody, private(nobody), "/party"), "Группа «Искатели»") // новичок попал в группу своей локации
+	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
+	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
+	g.Settings.MaxParties = 2
+	if err := h.store.UpdateGame(context.Background(), g); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, h.send(nobody, private(nobody), "/party create Третьи"), "Новых групп больше создать нельзя")
+	mustContain(t, h.send(bob, private(bob), "/party create Третьи"), "создана") // Боб был один в «Тенях»: они распущены
+	mustContain(t, h.send(alice, groupChat, "/status"), "Группы:\n• Искатели (2), Рыночная площадь: Элис, Никто\n• Третьи (1), Рыночная площадь: Боб")
+	g.Settings.MaxParties = 3
+	if err := h.store.UpdateGame(context.Background(), g); err != nil {
+		t.Fatal(err)
+	}
+	// Элис уходит в башню одна: лимит свободен — отделяется своей группой; вступить к ней из другой локации нельзя.
+	h.clock.advance(time.Minute) // лимит частоты команд Боба
+	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
+	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
+	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Зал Серой башни", "Группа: «Ночной дозор»")
+	mustContain(t, h.send(bob, private(bob), "/party join Ночной дозор"), "Группа в другой локации")
+	mustContain(t, h.send(bob, private(bob), "/party join Искатели"), "Вы в группе «Искатели»")
+	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Искатели»", "• Боб — waiting\n• Никто — waiting", "Другие группы:\n• Ночной дозор (1, Зал Серой башни): Элис")
+}
+
+// TestParty_NewcomerInRunningGame (пункт 19): новичок в идущей игре входит в группу своей стартовой локации; если
+// группы ушли, при свободном лимите он получает свою группу, при занятом — ближайшую и появляется в её локации.
+func TestParty_NewcomerInRunningGame(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
+	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
+	// Группа ушла в башню; Боб появляется на площади и получает свою группу.
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Вольные клинки»", "Локация: Рыночная площадь", "• Боб — active", "Другие группы:\n• Ночной дозор (1, Зал Серой башни): Элис")
+	// Лимит занят: следующий новичок идёт в ближайшую группу и входит в историю в её локации.
+	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
+	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
+	g.Settings.MaxParties = 2
+	if err := h.store.UpdateGame(context.Background(), g); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, h.send(bob, private(bob), "/act идти к башне"), "Заявка принята")
+	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
+	h.joinAndCreate(nobody, code, "1", "Никто", "1", "1", "1", "-", "-")
+	mustContain(t, h.send(nobody, private(nobody), "/party"), "Группа «", "Локация: Зал Серой башни", "• Никто — active")
+	mustContain(t, h.send(nobody, private(nobody), "/character"), "Локация: Зал Серой башни")
 }

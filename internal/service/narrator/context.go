@@ -64,12 +64,22 @@ type world struct {
 }
 
 type scene struct {
+	SceneID     int              `json:"scene_id"`
 	LocationID  model.LocationID `json:"location_id"`
+	Party       string           `json:"party,omitempty"` // имя группы; пусто — персонажи без группы в этой локации (пункт 19)
 	Name        string           `json:"name"`
 	Description string           `json:"description"`
 	Exits       []string         `json:"exits"`
 	Objects     []sceneObject    `json:"objects"`
 	Characters  []sceneCharacter `json:"characters"`
+}
+
+// Label — подпись сцены в хронике: имя группы с локацией в скобках, у одиночек — название локации.
+func (sc scene) Label() string {
+	if sc.Party == "" {
+		return sc.Name
+	}
+	return sc.Party + " (" + sc.Name + ")"
 }
 
 type sceneObject struct {
@@ -115,16 +125,25 @@ type approachIn struct {
 	Difficulty int              `json:"difficulty,omitempty"` // в режиме «повествование» не передаётся
 }
 
-// BuildInput собирает контекст вызова 2 (docs/llm/round-calls.md): сцены по локациям с присутствующими персонажами
-// (без выбывших: `inactive` и `dead` в сцены не попадают, уход описывается в раунде статуса `leaving`), их описания как данные, видимые объекты и выходы; события только public и location, числа броска —
-// в режиме «механика»; подходы следующего раунда без шансов (их код припишет сам). Сцена без персонажей не нужна.
+// sceneKey — сцена: локация и группа (0 — персонажи без группы).
+type sceneKey struct {
+	location model.LocationID
+	party    model.PartyID
+}
+
+// BuildInput собирает контекст вызова 2 (docs/llm/round-calls.md): сцены по группам внутри локаций (пункт 19: блок на
+// группу, персонажи без группы одной локации — отдельная сцена без имени группы) с присутствующими персонажами
+// (без выбывших: `inactive` и `dead` в сцены не попадают, уход описывается в раунде статуса `leaving`), их описания как
+// данные, видимые объекты и выходы; события только public и location, числа броска — в режиме «механика»; подходы
+// следующего раунда без шансов (их код припишет сам). Сцена без персонажей не нужна; лидер группы не передаётся.
 func BuildInput(p Params) Input {
 	in := Input{Scenes: []scene{}, Events: []event{}, Approaches: []approachIn{}}
 	in.World = world{Title: p.Title, Tone: p.Tone, Mode: string(p.Mode), RoundNo: p.RoundNo, Factions: nonNilFactions(p.Factions), Previous: digest(p.Previous)}
 	if p.State == nil {
 		return in
 	}
-	present := map[model.LocationID][]sceneCharacter{}
+	present := map[sceneKey][]sceneCharacter{}
+	var keys []sceneKey
 	for _, c := range p.State.Characters {
 		if c.LocationID == nil || c.Status.Absent() {
 			continue
@@ -134,14 +153,36 @@ func BuildInput(p Params) Input {
 			conds = append(conds, ConditionWords(cond))
 		}
 		bio := p.Bios[c.ID]
-		present[*c.LocationID] = append(present[*c.LocationID], sceneCharacter{Nickname: c.Nickname, Gender: string(c.Gender), Status: string(c.Status), Entry: c.Entry, PublicBio: bio.Public, SecretBio: bio.Secret, Conditions: conds})
+		key := sceneKey{location: *c.LocationID}
+		if c.PartyID != nil {
+			if _, ok := p.State.Party(*c.PartyID); ok {
+				key.party = *c.PartyID
+			}
+		}
+		if _, seen := present[key]; !seen {
+			keys = append(keys, key)
+		}
+		present[key] = append(present[key], sceneCharacter{Nickname: c.Nickname, Gender: string(c.Gender), Status: string(c.Status), Entry: c.Entry, PublicBio: bio.Public, SecretBio: bio.Secret, Conditions: conds})
 	}
-	for _, l := range p.State.Locations {
-		chars := present[l.ID]
-		if len(chars) == 0 {
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].location != keys[j].location {
+			return keys[i].location < keys[j].location
+		}
+		// Группы раньше одиночек, группы между собой по id.
+		if (keys[i].party == 0) != (keys[j].party == 0) {
+			return keys[i].party != 0
+		}
+		return keys[i].party < keys[j].party
+	})
+	for _, key := range keys {
+		l, ok := p.State.Location(key.location)
+		if !ok {
 			continue
 		}
-		sc := scene{LocationID: l.ID, Name: l.Name, Description: l.Description, Exits: []string{}, Objects: []sceneObject{}, Characters: chars}
+		sc := scene{SceneID: len(in.Scenes) + 1, LocationID: l.ID, Name: l.Name, Description: l.Description, Exits: []string{}, Objects: []sceneObject{}, Characters: present[key]}
+		if pt, ok := p.State.Party(key.party); ok && key.party != 0 {
+			sc.Party = pt.Name
+		}
 		for _, link := range l.Links {
 			if !link.Hidden {
 				sc.Exits = append(sc.Exits, link.Title)
@@ -155,7 +196,6 @@ func BuildInput(p Params) Input {
 		}
 		in.Scenes = append(in.Scenes, sc)
 	}
-	sort.Slice(in.Scenes, func(i, j int) bool { return in.Scenes[i].LocationID < in.Scenes[j].LocationID })
 	mechanics := p.Mode == model.ModeMechanics
 	for _, ev := range p.Events {
 		if ev.Visibility == model.VisibilityPrivate {

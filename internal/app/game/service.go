@@ -37,6 +37,10 @@ type Store interface {
 	GetCharacter(ctx context.Context, game model.GameID, season model.SeasonID, user model.UserID) (model.Character, error)
 	ListCharacters(ctx context.Context, game model.GameID, season model.SeasonID) ([]model.Character, error)
 	UpdateCharacterBio(ctx context.Context, game model.GameID, id model.CharacterID, public, secret string) error
+	ListParties(ctx context.Context, game model.GameID, season model.SeasonID) ([]model.Party, error)
+	CreateParty(ctx context.Context, p model.Party) (model.Party, error)
+	UpdateParty(ctx context.Context, p model.Party) error
+	SetCharacterParty(ctx context.Context, game model.GameID, id model.CharacterID, party *model.PartyID) error
 	NicknameTaken(ctx context.Context, game model.GameID, season model.SeasonID, nickname string) (bool, error)
 	GetChat(ctx context.Context, id model.ChatID) (model.Chat, error)
 	SetCurrentGame(ctx context.Context, user model.UserID, game *model.GameID) error

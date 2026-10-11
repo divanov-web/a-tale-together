@@ -357,6 +357,48 @@ func TestGameFlow(t *testing.T) {
 	if got, _ := s.GetCharacter(ctx, game.ID, season.ID, player.ID); got.Status != model.CharacterWaiting || got.MissedRounds != 1 {
 		t.Fatalf("character activity = %+v", got)
 	}
+	// Группы (пункт 19): создание, явный зарезервированный id, участие персонажа, обновление лидера и статуса, сброс.
+	leader := created.ID
+	watch, err := s.CreateParty(ctx, model.Party{GameID: game.ID, SeasonID: season.ID, Name: "Ночной дозор", LeaderCharacterID: &leader, LocationID: created.LocationID})
+	if err != nil || watch.ID == 0 || watch.Status != model.PartyActive {
+		t.Fatalf("CreateParty = %+v, %v", watch, err)
+	}
+	if _, err := s.CreateParty(ctx, model.Party{GameID: game.ID, SeasonID: season.ID, Name: "ночной дозор"}); err == nil {
+		t.Fatal("duplicate active party name accepted")
+	}
+	reserved, err := s.ReservePartyIDs(ctx, 2)
+	if err != nil || len(reserved) != 2 || reserved[0] <= watch.ID || reserved[1] <= reserved[0] {
+		t.Fatalf("ReservePartyIDs = %v, %v", reserved, err)
+	}
+	blades, err := s.CreateParty(ctx, model.Party{ID: reserved[1], GameID: game.ID, SeasonID: season.ID, Name: "Вольные клинки"})
+	if err != nil || blades.ID != reserved[1] {
+		t.Fatalf("CreateParty with id = %+v, %v", blades, err)
+	}
+	if err := s.SetCharacterParty(ctx, game.ID, created.ID, &watch.ID); err != nil {
+		t.Fatal(err)
+	}
+	member, _ := s.GetCharacter(ctx, game.ID, season.ID, player.ID)
+	if member.PartyID == nil || *member.PartyID != watch.ID {
+		t.Fatalf("character party = %+v", member)
+	}
+	member.PartyID = &blades.ID
+	if err := s.SaveCharacterState(ctx, game.ID, member); err != nil {
+		t.Fatal(err)
+	}
+	watch.Status, watch.LeaderCharacterID = model.PartyDisbanded, nil
+	if err := s.UpdateParty(ctx, watch); err != nil {
+		t.Fatal(err)
+	}
+	parties, err := s.ListParties(ctx, game.ID, season.ID)
+	if err != nil || len(parties) != 2 || parties[0].Status != model.PartyDisbanded || parties[0].LeaderCharacterID != nil || parties[1].Name != "Вольные клинки" {
+		t.Fatalf("ListParties = %+v, %v", parties, err)
+	}
+	if member, _ = s.GetCharacter(ctx, game.ID, season.ID, player.ID); member.PartyID == nil || *member.PartyID != blades.ID {
+		t.Fatalf("character party after SaveCharacterState = %+v", member)
+	}
+	if next, err := s.ReservePartyIDs(ctx, 0); err != nil || next != nil {
+		t.Fatalf("ReservePartyIDs(0) = %v, %v", next, err)
+	}
 	// Блокировка игры внутри транзакции; из второй транзакции строка пропускается.
 	err = s.InTx(ctx, func(txCtx context.Context) error {
 		if _, err := s.LockGame(txCtx, game.ID); err != nil {

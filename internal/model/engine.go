@@ -82,6 +82,8 @@ const (
 	EventActionRejected    EventType = "action_rejected"
 	EventCharacterDied     EventType = "character_died"
 	EventCharacterReturned EventType = "character_returned"
+	EventPartySplit        EventType = "party_split" // часть группы ушла в другую локацию новой группой (пункт 19)
+	EventPartyHeld         EventType = "party_held"  // лимит не дал разделиться: группа идёт за лидером (пункт 19)
 )
 
 // Event — событие мира: единственный способ изменить состояние (docs/architecture/data-model.md, `world_events`).

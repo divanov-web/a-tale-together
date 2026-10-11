@@ -21,14 +21,22 @@ type Result struct {
 }
 
 // Resolve разрешает раунд. Фазы (docs/game/round.md): подготовка (help, wait) → перемещение → взаимодействие
-// (explore, interact) → итоги (возврат после ненастоящей смерти). Броски d100 из rand.New(rand.NewPCG(seed, seed>>1)).
+// (explore, interact) → итоги (возврат после ненастоящей смерти). Перемещения участников группы сверяются после
+// фазы перемещения (`settleMoves`, S14): расхождение локаций даёт `party_split` в пределах лимитов или `party_held`
+// с приоритетом направления лидера. Броски d100 из rand.New(rand.NewPCG(seed, seed>>1)).
 func Resolve(snap model.RoundSnapshot, intents []model.Intent, seed int64) Result {
 	r := &resolver{snap: Clone(snap), rng: rand.New(rand.NewPCG(uint64(seed), uint64(seed)>>1)), preset: rules.Preset(snap.Mode), helpers: map[model.CharacterID]int{}}
 	ordered := append([]model.Intent(nil), intents...)
 	sort.SliceStable(ordered, func(i, j int) bool { return phase(ordered[i].ActionType) < phase(ordered[j].ActionType) })
+	settled := false
 	for _, in := range ordered {
+		if !settled && phase(in.ActionType) > phase(model.ActionMove) {
+			r.settleMoves()
+			settled = true
+		}
 		r.resolveOne(in)
 	}
+	r.settleMoves() // перемещения фазы 2, если дальше намерений не было, и переходы по эффектам испытаний фазы 3
 	r.returns()
 	return Result{Events: r.events, Results: r.results}
 }
@@ -62,12 +70,13 @@ func phase(t model.ActionType) int {
 }
 
 type resolver struct {
-	snap    model.RoundSnapshot
-	rng     *rand.Rand
-	preset  rules.ModePreset
-	events  []model.Event
-	results []model.ActionResult
-	helpers map[model.CharacterID]int
+	snap      model.RoundSnapshot
+	rng       *rand.Rand
+	preset    rules.ModePreset
+	events    []model.Event
+	results   []model.ActionResult
+	helpers   map[model.CharacterID]int
+	proposals []proposal // заявленные переходы до сверки с группой (parties.go)
 }
 
 func (r *resolver) resolveOne(in model.Intent) {
@@ -118,6 +127,9 @@ func (r *resolver) resolveSupported(c *model.SnapshotCharacter, in model.Intent,
 			res.Status, res.Reason = model.ResultRejected, "помочь самому себе нельзя"
 		case !sameLocation(c, target):
 			res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("%s не рядом", target.Nickname)
+		case !sameParty(c, target):
+			// Помощь только внутри группы (docs/game/checks.md, пункт 19).
+			res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("помогать можно только участнику своей группы, а %s не в вашей группе (/party)", target.Nickname)
 		default:
 			r.helpers[target.ID]++
 			res.Status, res.Summary = model.ResultResolved, "помогает: "+target.Nickname
@@ -158,13 +170,19 @@ func (r *resolver) move(c *model.SnapshotCharacter, loc *model.SnapshotLocation,
 			return
 		}
 	}
-	r.moveTo(res, c, loc, dest)
+	r.propose(res, c, loc, dest)
 }
 
-// moveTo переводит персонажа в локацию назначения; событие видно в обеих локациях.
+// propose заявляет переход: итог считается выполненным, сам переход и события — после сверки с группой (`settleMoves`).
+func (r *resolver) propose(res *model.ActionResult, c *model.SnapshotCharacter, loc, dest *model.SnapshotLocation) {
+	res.Status, res.Summary = model.ResultResolved, fmt.Sprintf("переходит: %s → %s", loc.Name, dest.Name)
+	r.proposals = append(r.proposals, proposal{submission: res.SubmissionID, character: c.ID, from: loc.ID, to: dest.ID})
+}
+
+// moveTo переводит персонажа в локацию назначения; событие видно в обеих локациях. Итог res может быть nil
+// (участник группы, которого группа увела с собой без его заявки).
 func (r *resolver) moveTo(res *model.ActionResult, c *model.SnapshotCharacter, loc, dest *model.SnapshotLocation) {
 	from := loc.ID
-	res.Status, res.Summary = model.ResultResolved, fmt.Sprintf("переходит: %s → %s", loc.Name, dest.Name)
 	r.emit(res, model.EventCharacterMoved, model.VisibilityLocation, nil, c, map[string]any{"character_id": c.ID, "from": from, "to": dest.ID, "from_name": loc.Name, "to_name": dest.Name})
 	// Событие видно и в локации назначения: второе событие с той же сутью, адресованное новой локации.
 	ev := r.events[len(r.events)-1]
@@ -172,7 +190,9 @@ func (r *resolver) moveTo(res *model.ActionResult, c *model.SnapshotCharacter, l
 	ev2.LocationID = &dest.ID
 	ev2.Seq = int64(len(r.events) + 1)
 	r.events = append(r.events, ev2)
-	res.EventSeqs = append(res.EventSeqs, ev2.Seq)
+	if res != nil {
+		res.EventSeqs = append(res.EventSeqs, ev2.Seq)
+	}
 	c.LocationID = &dest.ID
 }
 
@@ -343,7 +363,7 @@ func (r *resolver) applyApproach(res *model.ActionResult, c *model.SnapshotChara
 		if l, ok := visibleLink(loc, e.Move); ok {
 			if dest, ok := r.snap.LocationByName(l.To); ok {
 				summary := res.Summary
-				r.moveTo(res, c, loc, dest)
+				r.propose(res, c, loc, dest)
 				res.Summary = summary + "; " + res.Summary
 			}
 		}
@@ -555,6 +575,10 @@ func matches(target, title string) bool {
 
 func sameLocation(a, b *model.SnapshotCharacter) bool {
 	return a.LocationID != nil && b.LocationID != nil && *a.LocationID == *b.LocationID
+}
+
+func sameParty(a, b *model.SnapshotCharacter) bool {
+	return a.PartyID != nil && b.PartyID != nil && *a.PartyID == *b.PartyID
 }
 
 func hasLink(loc *model.SnapshotLocation, name string) bool {

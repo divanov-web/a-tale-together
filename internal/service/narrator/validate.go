@@ -19,7 +19,7 @@ var digits = regexp.MustCompile(`\d`)
 type validator struct {
 	in       Input
 	mode     model.GameMode
-	scenes   map[model.LocationID]scene
+	scenes   map[int]scene   // по scene_id
 	groups   map[int64]int64 // seq события → ключ группы (у перехода два seq с одной сутью)
 	required map[int64]bool  // ключи групп, которые должны быть упомянуты
 	events   map[int64]event
@@ -39,9 +39,9 @@ type checked struct {
 func (c checked) needsRetry() bool { return len(c.issues) > 0 }
 
 func newValidator(in Input, p Params) *validator {
-	v := &validator{in: in, mode: p.Mode, scenes: map[model.LocationID]scene{}, groups: map[int64]int64{}, required: map[int64]bool{}, events: map[int64]event{}, secrets: map[string]string{}, failed: map[int64]string{}}
+	v := &validator{in: in, mode: p.Mode, scenes: map[int]scene{}, groups: map[int64]int64{}, required: map[int64]bool{}, events: map[int64]event{}, secrets: map[string]string{}, failed: map[int64]string{}}
 	for _, sc := range in.Scenes {
-		v.scenes[sc.LocationID] = sc
+		v.scenes[sc.SceneID] = sc
 		for _, c := range sc.Characters {
 			if len([]rune(strings.TrimSpace(c.SecretBio))) >= 8 {
 				v.secrets[c.Nickname] = strings.ToLower(strings.TrimSpace(c.SecretBio))
@@ -77,25 +77,21 @@ func (v *validator) validate(raw json.RawMessage) (checked, error) {
 	}
 	out := checked{narration: model.Narration{Chronicle: strings.TrimSpace(resp.Chronicle), Scenes: []model.NarrationScene{}}}
 	mentioned := map[int64]bool{}
-	seen := map[model.LocationID]bool{}
+	seen := map[int]bool{}
 	var all strings.Builder
 	all.WriteString(out.narration.Chronicle)
 	for _, rs := range resp.Scenes {
-		id := model.LocationID(rs.LocationID)
-		sc, ok := v.scenes[id]
+		sc, ok := v.scenes[rs.SceneID]
 		if !ok {
-			out.issues = append(out.issues, fmt.Sprintf("сцены location_id=%d нет во входе: убери её", rs.LocationID))
+			out.issues = append(out.issues, fmt.Sprintf("сцены scene_id=%d нет во входе: убери её", rs.SceneID))
 			continue
 		}
-		if seen[id] {
-			out.issues = append(out.issues, fmt.Sprintf("сцена location_id=%d повторяется: оставь один блок", rs.LocationID))
+		if seen[rs.SceneID] {
+			out.issues = append(out.issues, fmt.Sprintf("сцена scene_id=%d повторяется: оставь один блок", rs.SceneID))
 			continue
 		}
-		seen[id] = true
-		ns := model.NarrationScene{LocationID: id, Party: strings.TrimSpace(rs.Party), Text: strings.TrimSpace(rs.Text), EventSeqs: []int64{}}
-		if ns.Party == "" {
-			ns.Party = sc.Name
-		}
+		seen[rs.SceneID] = true
+		ns := model.NarrationScene{LocationID: sc.LocationID, Party: sc.Label(), Text: strings.TrimSpace(rs.Text), EventSeqs: []int64{}}
 		for _, seq := range rs.EventSeqs {
 			key, ok := v.groups[seq]
 			if !ok {
@@ -109,8 +105,8 @@ func (v *validator) validate(raw json.RawMessage) (checked, error) {
 		out.narration.Scenes = append(out.narration.Scenes, ns)
 	}
 	for _, sc := range v.in.Scenes {
-		if !seen[sc.LocationID] {
-			out.issues = append(out.issues, fmt.Sprintf("нет блока для сцены location_id=%d («%s»)", sc.LocationID, sc.Name))
+		if !seen[sc.SceneID] {
+			out.issues = append(out.issues, fmt.Sprintf("нет блока для сцены scene_id=%d («%s»)", sc.SceneID, sc.Label()))
 		}
 	}
 	for key := range v.required {
@@ -121,7 +117,7 @@ func (v *validator) validate(raw json.RawMessage) (checked, error) {
 	sort.Slice(out.missing, func(i, j int) bool { return out.missing[i] < out.missing[j] })
 	for _, key := range out.missing {
 		e := v.events[key]
-		out.issues = append(out.issues, fmt.Sprintf("событие seq=%d (%s) не упомянуто: опиши его в сцене location_id=%s и добавь seq в event_seqs", key, e.Summary, locStr(e.LocationID)))
+		out.issues = append(out.issues, fmt.Sprintf("событие seq=%d (%s) не упомянуто: опиши его в сцене %s и добавь seq в event_seqs", key, e.Summary, v.sceneHint(e.LocationID)))
 	}
 	text := strings.ToLower(all.String())
 	for nick, secret := range v.secrets {
@@ -160,11 +156,29 @@ func (v *validator) suspectOutcome(n model.Narration) string {
 	return ""
 }
 
-// patch дописывает в сцены строки кода для неупомянутых событий и добавляет блоки для сцен без текста.
+// sceneHint — сцены локации события для замечания модели: «scene_id=2» или перечень, «любой» без локации.
+func (v *validator) sceneHint(loc *model.LocationID) string {
+	if loc == nil {
+		return "любой"
+	}
+	var ids []string
+	for _, sc := range v.in.Scenes {
+		if sc.LocationID == *loc {
+			ids = append(ids, fmt.Sprintf("scene_id=%d", sc.SceneID))
+		}
+	}
+	if len(ids) == 0 {
+		return "любой"
+	}
+	return strings.Join(ids, " или ")
+}
+
+// patch дописывает в сцены строки кода для неупомянутых событий (в первую сцену локации события) и добавляет
+// блоки для сцен без текста; порядок сцен — как во входе.
 func (v *validator) patch(n *model.Narration, missing []int64) {
-	find := func(id model.LocationID) int {
+	find := func(loc model.LocationID, label string) int {
 		for i, sc := range n.Scenes {
-			if sc.LocationID == id {
+			if sc.LocationID == loc && (label == "" || sc.Party == label) {
 				return i
 			}
 		}
@@ -176,10 +190,21 @@ func (v *validator) patch(n *model.Narration, missing []int64) {
 		if e.LocationID != nil {
 			target = *e.LocationID
 		}
-		i := find(target)
+		i := find(target, "")
 		if i < 0 {
-			if sc, ok := v.scenes[target]; ok || len(n.Scenes) == 0 {
-				n.Scenes = append(n.Scenes, model.NarrationScene{LocationID: target, Party: sc.Name, EventSeqs: []int64{}})
+			added := false
+			for _, sc := range v.in.Scenes {
+				if sc.LocationID == target {
+					n.Scenes = append(n.Scenes, model.NarrationScene{LocationID: target, Party: sc.Label(), EventSeqs: []int64{}})
+					added = true
+					break
+				}
+			}
+			if !added && len(n.Scenes) == 0 {
+				n.Scenes = append(n.Scenes, model.NarrationScene{LocationID: target, EventSeqs: []int64{}})
+				added = true
+			}
+			if added {
 				i = len(n.Scenes) - 1
 			} else {
 				i = 0
@@ -195,16 +220,15 @@ func (v *validator) patch(n *model.Narration, missing []int64) {
 		n.Patched = append(n.Patched, key)
 	}
 	for _, sc := range v.in.Scenes {
-		if find(sc.LocationID) < 0 {
-			n.Scenes = append(n.Scenes, model.NarrationScene{LocationID: sc.LocationID, Party: sc.Name, EventSeqs: []int64{}})
+		if find(sc.LocationID, sc.Label()) < 0 {
+			n.Scenes = append(n.Scenes, model.NarrationScene{LocationID: sc.LocationID, Party: sc.Label(), EventSeqs: []int64{}})
 		}
 	}
-	sort.SliceStable(n.Scenes, func(i, j int) bool { return n.Scenes[i].LocationID < n.Scenes[j].LocationID })
-}
-
-func locStr(id *model.LocationID) string {
-	if id == nil {
-		return "любой"
+	order := map[string]int{}
+	for _, sc := range v.in.Scenes {
+		order[fmt.Sprintf("%d|%s", sc.LocationID, sc.Label())] = sc.SceneID
 	}
-	return fmt.Sprint(*id)
+	sort.SliceStable(n.Scenes, func(i, j int) bool {
+		return order[fmt.Sprintf("%d|%s", n.Scenes[i].LocationID, n.Scenes[i].Party)] < order[fmt.Sprintf("%d|%s", n.Scenes[j].LocationID, n.Scenes[j].Party)]
+	})
 }

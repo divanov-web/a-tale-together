@@ -49,15 +49,34 @@ func chronicleMessage(g model.Game, r model.Round, events []model.Event, state *
 		if line == "" {
 			continue
 		}
+		// Блок на группу в локации, затем персонажи без группы (пункт 19), как в сценах рассказчика.
+		for _, pt := range state.Parties {
+			var present []string
+			for _, c := range state.Characters {
+				if c.LocationID != nil && *c.LocationID == l.ID && c.Status != model.CharacterDead && c.PartyID != nil && *c.PartyID == pt.ID {
+					present = append(present, c.Nickname)
+				}
+			}
+			if len(present) > 0 {
+				fmt.Fprintf(&b, "\n\n— %s (%s): %s —\n\n%s", pt.Name, l.Name, strings.Join(present, ", "), line)
+			}
+		}
 		var present []string
 		for _, c := range state.Characters {
-			if c.LocationID != nil && *c.LocationID == l.ID && c.Status != model.CharacterDead {
+			if c.LocationID != nil && *c.LocationID == l.ID && c.Status != model.CharacterDead && (c.PartyID == nil || !hasParty(state, *c.PartyID)) {
 				present = append(present, c.Nickname)
 			}
 		}
-		fmt.Fprintf(&b, "\n\n— %s (%s) —\n\n%s", l.Name, strings.Join(present, ", "), line)
+		if len(present) > 0 {
+			fmt.Fprintf(&b, "\n\n— %s (%s) —\n\n%s", l.Name, strings.Join(present, ", "), line)
+		}
 	}
 	return b.String()
+}
+
+func hasParty(state *model.RoundSnapshot, id model.PartyID) bool {
+	_, ok := state.Party(id)
+	return ok
 }
 
 // splitParts делит текст на части не длиннее limit символов по строкам (слишком длинная строка режется по символам);

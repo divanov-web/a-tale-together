@@ -79,6 +79,17 @@ func (s *Store) DeleteGameProgress(_ context.Context, game model.GameID) error {
 	}
 	s.outbox = slices.DeleteFunc(s.outbox, func(m model.OutboxMessage) bool { return m.GameID == game })
 	s.events = slices.DeleteFunc(s.events, func(ev model.Event) bool { return ev.GameID == game })
+	for id, p := range s.parties {
+		if p.GameID == game {
+			delete(s.parties, id)
+		}
+	}
+	for id, c := range s.chars {
+		if c.GameID == game && c.PartyID != nil {
+			c.PartyID = nil
+			s.chars[id] = c
+		}
+	}
 	var resolved []model.ActionResult
 	var keys []resolvedKey
 	for i, r := range s.resolved {
@@ -232,7 +243,7 @@ func (s *Store) SaveCharacterState(_ context.Context, game model.GameID, c model
 	if !ok || ex.GameID != game {
 		return model.ErrNotFound
 	}
-	ex.LocationID, ex.HP, ex.Conditions, ex.Knowledge, ex.Status, ex.MissedRounds, ex.DeathRoundsLeft, ex.DiedAt = c.LocationID, c.HP, c.Conditions, c.Knowledge, c.Status, c.MissedRounds, c.DeathRoundsLeft, c.DiedAt
+	ex.LocationID, ex.HP, ex.Conditions, ex.Knowledge, ex.Status, ex.MissedRounds, ex.DeathRoundsLeft, ex.DiedAt, ex.PartyID = c.LocationID, c.HP, c.Conditions, c.Knowledge, c.Status, c.MissedRounds, c.DeathRoundsLeft, c.DiedAt, c.PartyID
 	s.chars[c.ID] = ex
 	return nil
 }

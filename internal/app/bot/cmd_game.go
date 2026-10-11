@@ -113,8 +113,34 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 	if g.Status == model.GameDraft {
 		next = "игра не запущена: настройка и набор игроков; старт — /begin в группе"
 	}
+	type partyRow struct {
+		Name, Location, Members string
+		Count                   int
+	}
+	var parties []partyRow
+	if infos, err := s.games.Parties(ctx, g); err == nil {
+		locNames := map[model.LocationID]string{}
+		if locs, err := s.games.Locations(ctx, g.ID); err == nil {
+			for _, l := range locs {
+				locNames[l.ID] = l.Name
+			}
+		}
+		for _, p := range infos {
+			row := partyRow{Name: p.Party.Name, Count: len(p.Members)}
+			if p.Party.LocationID != nil {
+				row.Location = locNames[*p.Party.LocationID]
+			}
+			names := make([]string, 0, len(p.Members))
+			for _, m := range p.Members {
+				names = append(names, m.Nickname)
+			}
+			row.Members = strings.Join(names, ", ")
+			parties = append(parties, row)
+		}
+	}
 	return templates.Render("status", map[string]any{
-		"Title": g.Title, "Status": statusTitle(g.Status), "Genre": st.Genre.Title, "Format": string(g.Format), "Mode": string(g.Mode),
+		"Parties": parties,
+		"Title":   g.Title, "Status": statusTitle(g.Status), "Genre": st.Genre.Title, "Format": string(g.Format), "Mode": string(g.Mode),
 		"SeasonNo": st.Season.SeasonNo, "RulesVersion": g.RulesVersion, "RoundMinutes": g.RoundMinutes, "Timezone": g.Timezone,
 		"PlayWindow": window, "Limits": strings.Join(limits, ", "), "MembersCount": len(st.Members),
 		"CharactersCount": len(st.Characters), "Factions": factions, "Characters": chars, "JoinLink": s.joinLink(g),

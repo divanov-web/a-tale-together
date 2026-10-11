@@ -172,15 +172,45 @@ func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user mod
 	}
 	var created model.Character
 	err = s.store.InTx(ctx, func(ctx context.Context) error {
+		if err := s.assignParty(ctx, game, genre, &c); err != nil {
+			return err
+		}
 		var err error
 		created, err = s.store.CreateCharacter(ctx, c)
-		return err
+		if err != nil {
+			return err
+		}
+		if c.PartyID != nil {
+			// Лидер группы, созданной для новичка в идущей игре, — он сам.
+			if err := s.store.SetCharacterParty(ctx, game.ID, created.ID, c.PartyID); err != nil {
+				return err
+			}
+			created.PartyID = c.PartyID
+			return s.adoptLeader(ctx, game, created)
+		}
+		return nil
 	})
 	if err != nil {
 		return model.Character{}, fmt.Errorf("game.CreateCharacter: %w", err)
 	}
 	s.logger.Info("character created", slog.Int64("game_id", int64(game.ID)), slog.Int64("character_id", int64(created.ID)))
 	return created, nil
+}
+
+// adoptLeader назначает персонажа лидером его группы, если лидера ещё нет (группа создана для него при входе).
+func (s *Service) adoptLeader(ctx context.Context, game model.Game, c model.Character) error {
+	parties, err := s.store.ListParties(ctx, game.ID, c.SeasonID)
+	if err != nil {
+		return err
+	}
+	for _, p := range parties {
+		if p.ID == *c.PartyID && p.LeaderCharacterID == nil {
+			id := c.ID
+			p.LeaderCharacterID = &id
+			return s.store.UpdateParty(ctx, p)
+		}
+	}
+	return nil
 }
 
 // SetBio меняет открытое или скрытое описание персонажа.

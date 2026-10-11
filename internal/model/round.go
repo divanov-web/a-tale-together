@@ -70,14 +70,34 @@ type RoundMetrics struct {
 }
 
 // RoundSnapshot — состояние на дедлайн: персонажи, локации и заявки; воспроизведение движка по снимку и seed.
-// SchemaVersion 2 (пункт 07): характеристики, инвентарь, знания, локации с объектами.
+// SchemaVersion 2 (пункт 07): характеристики, инвентарь, знания, локации с объектами. SchemaVersion 3 (пункт 19):
+// группы, лимиты групп и локаций, зарезервированные идентификаторы и имена для новых групп (`party_split`
+// детерминирован и воспроизводим по снимку).
 type RoundSnapshot struct {
-	SchemaVersion int                  `json:"schema_version"`
-	Mode          GameMode             `json:"mode,omitempty"`
-	RulesVersion  int                  `json:"rules_version"`
-	Characters    []SnapshotCharacter  `json:"characters"`
-	Locations     []SnapshotLocation   `json:"locations,omitempty"`
-	Submissions   []SnapshotSubmission `json:"submissions"`
+	SchemaVersion      int                  `json:"schema_version"`
+	Mode               GameMode             `json:"mode,omitempty"`
+	RulesVersion       int                  `json:"rules_version"`
+	Characters         []SnapshotCharacter  `json:"characters"`
+	Locations          []SnapshotLocation   `json:"locations,omitempty"`
+	Parties            []SnapshotParty      `json:"parties,omitempty"`
+	MaxParties         int                  `json:"max_parties,omitempty"`          // лимит активных групп; 0 — без лимита
+	MaxActiveLocations int                  `json:"max_active_locations,omitempty"` // лимит занятых локаций; 0 — без лимита
+	NewPartyIDs        []PartyID            `json:"new_party_ids,omitempty"`        // идентификаторы для групп, созданных движком в этом раунде
+	PartyNames         []string             `json:"party_names,omitempty"`          // имена для новых групп из шаблона жанра
+	Submissions        []SnapshotSubmission `json:"submissions"`
+}
+
+// SnapshotSchemaVersion — текущая версия снимка.
+const SnapshotSchemaVersion = 3
+
+// Party возвращает группу снимка по id.
+func (s *RoundSnapshot) Party(id PartyID) (*SnapshotParty, bool) {
+	for i := range s.Parties {
+		if s.Parties[i].ID == id {
+			return &s.Parties[i], true
+		}
+	}
+	return nil, false
 }
 
 // Character возвращает персонажа снимка по id.

@@ -4,6 +4,7 @@
 Статус: {{.Status}}{{if .Death}} ({{.Death}}){{end}}
 Игра: «{{.Game}}»
 Локация: {{.Location}}
+Группа: {{if .Party}}«{{.Party}}»{{else}}нет (/party){{end}}
 HP: {{.HP}}
 Состояния: {{if .Conditions}}{{.Conditions}}{{else}}нет{{end}}
 Характеристики: {{.Attributes}}

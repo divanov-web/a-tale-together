@@ -575,7 +575,8 @@ func TestResolve_Narrator(t *testing.T) {
 		byName[l.Name] = l.ID
 	}
 	events, _ := w.store.ListEvents(ctx, w.game.ID, r1.ID)
-	if len(events) != 2 {
+	// Пункт 19: уход Элис из группы по умолчанию даёт `party_split` и пару событий перехода.
+	if len(events) != 3 || events[0].Type != model.EventPartySplit || events[1].Type != model.EventCharacterMoved {
 		t.Fatalf("events = %+v", events)
 	}
 	// Рассказчик вызван и упал (ответа нет): шаблонная хроника с подходами, раунд опубликован, хроника у раунда пуста.
@@ -588,10 +589,10 @@ func TestResolve_Narrator(t *testing.T) {
 	}
 	msgs := w.outbox(t)
 	fallback := msgs[2]
-	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "Раунд 1 — итоги\n\n• Элис (@Элис) уходит из «Рыночная площадь» в «Зал Серой башни»") {
+	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "Раунд 1 — итоги\n\n• Элис (@Элис) отделяется от группы «Ночной дозор» и уходит из «Рыночная площадь» в «Зал Серой башни»: теперь это группа «Вольные клинки»\n• Элис уходит из «Рыночная площадь» в «Зал Серой башни»") {
 		t.Fatalf("fallback chronicle = %q", fallback.Text)
 	}
-	if !strings.Contains(fallback.Text, "— Рыночная площадь (Боб, Кэт) —\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)") {
+	if !strings.Contains(fallback.Text, "— Ночной дозор (Рыночная площадь): Боб, Кэт —\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)") {
 		t.Fatalf("fallback options = %q", fallback.Text)
 	}
 	// Второй раунд: рассказчик отвечает; в его контексте сцены, события и выжимки нет (прошлой хроники не было).
@@ -602,15 +603,19 @@ func TestResolve_Narrator(t *testing.T) {
 	}
 	llm.json = fmt.Sprintf(`{"intents":[{"submission_id":%d,"character_id":%d,"action_type":"explore","target":"notice_board","approach_idx":0,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}]}`, sub.ID, sub.CharacterID)
 	square, hall := byName["Рыночная площадь"], byName["Зал Серой башни"]
-	llm.narr = fmt.Sprintf(`{"chronicle":"Осень в Мире густеет.","scenes":[{"location_id":%d,"party":"Площадь","text":"Боб читает объявление.","event_seqs":[3]},{"location_id":%d,"party":"Башня","text":"Элис ждёт в зале.","event_seqs":[]}]}`, square, hall)
+	// Сцены по группам (пункт 19): 1 — «Ночной дозор» на площади, 2 — «Вольные клинки» в зале.
+	llm.narr = `{"chronicle":"Осень в Мире густеет.","scenes":[{"scene_id":1,"text":"Боб читает объявление.","event_seqs":[4]},{"scene_id":2,"text":"Элис ждёт в зале.","event_seqs":[]}]}`
 	w.tick(t, 10*time.Minute)
 	info, _ = w.svc.Info(ctx, w.game)
 	r2 := *info.Last
 	if r2.Narration == nil || r2.Narration.PromptVersion != narrator.PromptVersion || len(r2.Narration.Scenes) != 2 || r2.Narration.Chronicle != "Осень в Мире густеет." {
 		t.Fatalf("narration = %+v", r2.Narration)
 	}
+	if r2.Narration.Scenes[0].LocationID != square || r2.Narration.Scenes[1].LocationID != hall {
+		t.Fatalf("scene locations = %+v", r2.Narration.Scenes)
+	}
 	input := llm.inputs[len(llm.inputs)-1]
-	if !strings.Contains(input, `"round_no":2`) || !strings.Contains(input, `"actor":"Боб"`) || !strings.Contains(input, `"previous":[]`) || !strings.Contains(input, `"tone":"Маленький город`) {
+	if !strings.Contains(input, `"round_no":2`) || !strings.Contains(input, `"actor":"Боб"`) || !strings.Contains(input, `"previous":[]`) || !strings.Contains(input, `"tone":"Маленький город`) || !strings.Contains(input, `"party":"Ночной дозор"`) || strings.Contains(input, "leader") {
 		t.Fatalf("narrator input = %s", input)
 	}
 	var chron model.OutboxMessage
@@ -622,7 +627,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if chron.ID == 0 {
 		t.Fatalf("chronicle message for round 2 missing: %+v", w.outbox(t))
 	}
-	want := "Раунд 2\n\nОсень в Мире густеет.\n\n— Площадь —\nБоб (@Боб) читает объявление.\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n\n— Башня —\nЭлис (@Элис) ждёт в зале."
+	want := "Раунд 2\n\nОсень в Мире густеет.\n\n— Ночной дозор (Рыночная площадь) —\nБоб (@Боб) читает объявление.\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n\n— Вольные клинки (Зал Серой башни) —\nЭлис (@Элис) ждёт в зале."
 	if chron.Text != want {
 		t.Fatalf("chronicle text = %q\nwant %q", chron.Text, want)
 	}
@@ -633,7 +638,7 @@ func TestResolve_Narrator(t *testing.T) {
 	}
 	llm.json = fmt.Sprintf(`{"intents":[{"submission_id":%d,"character_id":%d,"action_type":"wait","target":"","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}]}`, sub.ID, sub.CharacterID)
 	long := strings.Repeat("Ветер гонит листья по площади. ", 200)
-	llm.narr = fmt.Sprintf(`{"chronicle":"Долгий вечер.","scenes":[{"location_id":%d,"party":"Площадь","text":"%s","event_seqs":[]},{"location_id":%d,"party":"Башня","text":"Тихо.","event_seqs":[]}]}`, square, long, hall)
+	llm.narr = fmt.Sprintf(`{"chronicle":"Долгий вечер.","scenes":[{"scene_id":1,"text":"%s","event_seqs":[]},{"scene_id":2,"text":"Тихо.","event_seqs":[]}]}`, long)
 	w.tick(t, 10*time.Minute)
 	input = llm.inputs[len(llm.inputs)-1]
 	if !strings.Contains(input, `"previous":["Осень в Мире густеет."]`) {
@@ -646,7 +651,7 @@ func TestResolve_Narrator(t *testing.T) {
 			parts = append(parts, m)
 		}
 	}
-	if len(parts) != 3 || parts[1].Part != 2 || !strings.HasPrefix(parts[1].Text, "Раунд 3 (продолжение)\n") || len([]rune(parts[0].Text)) > partLimit || !strings.Contains(parts[2].Text, "— Башня —\nТихо.") {
+	if len(parts) != 3 || parts[1].Part != 2 || !strings.HasPrefix(parts[1].Text, "Раунд 3 (продолжение)\n") || len([]rune(parts[0].Text)) > partLimit || !strings.Contains(parts[2].Text, "— Вольные клинки (Зал Серой башни) —\nТихо.") {
 		t.Fatalf("parts = %d: %+v", len(parts), parts)
 	}
 }

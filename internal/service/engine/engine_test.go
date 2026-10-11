@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"taletogether/internal/model"
@@ -248,9 +249,14 @@ func TestScenario_S12_LockedDoor(t *testing.T) {
 }
 
 // TestHelp: помощь добавляет очко к параметру цели в той же локации; не себе и не издалека.
+// TestHelp: помощь +1 к параметру цели только внутри группы (пункт 19); другая группа, другая локация и сам себе — отказ.
 func TestHelp(t *testing.T) {
 	t.Parallel()
-	res := Resolve(cellar(model.ModeBalanced), []model.Intent{
+	snap := cellar(model.ModeBalanced)
+	watch, other := model.PartyID(1), model.PartyID(2)
+	snap.Parties = []model.SnapshotParty{{ID: watch, Name: "Ночной дозор"}, {ID: other, Name: "Странники"}}
+	snap.Characters[0].PartyID, snap.Characters[1].PartyID, snap.Characters[2].PartyID = &watch, &watch, &other
+	res := Resolve(snap, []model.Intent{
 		{SubmissionID: 1, CharacterID: 12, ActionType: model.ActionHelp, Target: "Вор"},
 		{SubmissionID: 2, CharacterID: 11, ActionType: model.ActionInteract, Target: "дверь", ApproachIdx: ptr(1)},
 		{SubmissionID: 3, CharacterID: 13, ActionType: model.ActionHelp, Target: "Вор"},
@@ -262,6 +268,12 @@ func TestHelp(t *testing.T) {
 	}
 	if by[1].Status != model.ResultResolved || by[2].Check.Param != 9 || by[2].Check.ChancePct != 90 || by[3].Status != model.ResultRejected || by[4].Status != model.ResultRejected {
 		t.Fatalf("results = %+v", res.Results)
+	}
+	// Та же локация, другая группа: отказ с объяснением.
+	snap.Characters[1].PartyID = &other
+	res = Resolve(snap, []model.Intent{{SubmissionID: 1, CharacterID: 12, ActionType: model.ActionHelp, Target: "Вор"}}, 5)
+	if res.Results[0].Status != model.ResultRejected || !strings.Contains(res.Results[0].Reason, "только участнику своей группы") {
+		t.Fatalf("cross-party help = %+v", res.Results[0])
 	}
 }
 

@@ -17,9 +17,10 @@ import (
 	"taletogether/internal/service/visibility"
 )
 
-// snapshot собирает снимок v2: персонажи с характеристиками, локации с объектами, заявки.
+// snapshot собирает снимок: персонажи с характеристиками и группой, локации с объектами, заявки; группы, лимиты и
+// резерв идентификаторов дописывает `snapshotParties` при заморозке.
 func snapshot(g model.Game, chars []model.Character, locations []model.Location, subs []model.Submission, def model.CharacterModelDef) model.RoundSnapshot {
-	snap := model.RoundSnapshot{SchemaVersion: 2, Mode: g.Mode, RulesVersion: g.RulesVersion, Characters: []model.SnapshotCharacter{}, Locations: []model.SnapshotLocation{}, Submissions: []model.SnapshotSubmission{}}
+	snap := model.RoundSnapshot{SchemaVersion: model.SnapshotSchemaVersion, Mode: g.Mode, RulesVersion: g.RulesVersion, Characters: []model.SnapshotCharacter{}, Locations: []model.SnapshotLocation{}, Submissions: []model.SnapshotSubmission{}}
 	for _, c := range chars {
 		maxHP, err := rules.HP(def, c.Attributes)
 		if err != nil || maxHP <= 0 {
@@ -82,7 +83,13 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 	if err := engine.Apply(&state, result.Events); err != nil {
 		return err
 	}
+	if err := s.saveParties(ctx, g, r.SeasonID, r.Snapshot, &state, chars); err != nil {
+		return err
+	}
 	if err := s.saveState(ctx, g, r.Snapshot, &state, now); err != nil {
+		return err
+	}
+	if err := s.syncParties(ctx, g, r.SeasonID); err != nil {
 		return err
 	}
 	m.Events = len(result.Events)
@@ -207,7 +214,8 @@ func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r 
 	return &res.Narration
 }
 
-// saveState записывает изменившихся персонажей и локации; значения берутся только из свёртки событий.
+// saveState записывает изменившихся персонажей (включая группу после `party_split`) и локации; значения берутся
+// только из свёртки событий.
 func (s *Service) saveState(ctx context.Context, g model.Game, before *model.RoundSnapshot, after *model.RoundSnapshot, now time.Time) error {
 	for i, c := range after.Characters {
 		prev := before.Characters[i]
@@ -219,7 +227,7 @@ func (s *Service) saveState(ctx context.Context, g model.Game, before *model.Rou
 			t := now
 			diedAt = &t
 		}
-		state := model.Character{ID: c.ID, LocationID: c.LocationID, HP: c.HP, Conditions: c.Conditions, Knowledge: c.Knowledge, Status: c.Status, MissedRounds: c.MissedRounds, DeathRoundsLeft: c.DeathRoundsLeft, DiedAt: diedAt}
+		state := model.Character{ID: c.ID, LocationID: c.LocationID, PartyID: c.PartyID, HP: c.HP, Conditions: c.Conditions, Knowledge: c.Knowledge, Status: c.Status, MissedRounds: c.MissedRounds, DeathRoundsLeft: c.DeathRoundsLeft, DiedAt: diedAt}
 		if c.Status == model.CharacterDead && prev.Status != model.CharacterDead {
 			window := 24 * 60
 			if from, ok := clockMinutes(g.PlayFrom); ok {

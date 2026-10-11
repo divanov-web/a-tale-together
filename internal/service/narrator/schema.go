@@ -3,9 +3,10 @@ package narrator
 import "encoding/json"
 
 // PromptVersion — версия промпта рассказчика, пишется в `llm_runs.prompt_version` и `rounds.narration`.
-const PromptVersion = "narrator/v2"
+const PromptVersion = "narrator/v3"
 
-// Schema — JSON-схема ответа модели: общий текст раунда и блок на сцену с упомянутыми событиями (docs/llm/round-calls.md).
+// Schema — JSON-схема ответа модели: общий текст раунда и блок на сцену (`scene_id` из входа: группа в локации или
+// персонажи без группы) с упомянутыми событиями (docs/llm/round-calls.md). Локацию и подпись сцены подставляет код.
 var Schema = json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -15,12 +16,11 @@ var Schema = json.RawMessage(`{
       "items": {
         "type": "object",
         "properties": {
-          "location_id": {"type": "integer"},
-          "party": {"type": "string"},
+          "scene_id": {"type": "integer"},
           "text": {"type": "string"},
           "event_seqs": {"type": "array", "items": {"type": "integer"}}
         },
-        "required": ["location_id", "party", "text", "event_seqs"],
+        "required": ["scene_id", "text", "event_seqs"],
         "additionalProperties": false
       }
     }
@@ -36,8 +36,7 @@ type response struct {
 }
 
 type rawScene struct {
-	LocationID int64   `json:"location_id"`
-	Party      string  `json:"party"`
-	Text       string  `json:"text"`
-	EventSeqs  []int64 `json:"event_seqs"`
+	SceneID   int     `json:"scene_id"`
+	Text      string  `json:"text"`
+	EventSeqs []int64 `json:"event_seqs"`
 }

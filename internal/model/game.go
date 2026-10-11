@@ -202,6 +202,7 @@ type GenreTemplate struct {
 	Locations      []LocationTemplate `json:"locations,omitempty"`
 	OpeningScene   string             `json:"opening_scene"`
 	Items          []ItemTemplate     `json:"items"`
+	PartyNames     []string           `json:"party_names,omitempty"` // имена групп по умолчанию (пункт 19); исчерпаны — «Группа N»
 }
 
 // Genre — запись справочника жанров.

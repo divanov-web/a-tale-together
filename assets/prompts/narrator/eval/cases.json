@@ -2077,7 +2077,7 @@
   },
   {
    "name": "party_held",
-   "comment": "удержание группы объясняется сюжетом, лимит не упоминается",
+   "comment": "удержание группы объясняется сюжетом, лимит не упоминается, лидер не называется",
    "params": {
     "mode": "balanced",
     "round_no": 7,
@@ -2087,11 +2087,19 @@
       "type": "party_held",
       "visibility": "location",
       "location_id": 2,
-      "character_id": 14,
       "payload": {
-       "character_id": 14,
+       "party_id": 1,
+       "party": "Ночной дозор",
        "reason": "party_limit",
-       "wanted": "в коридор"
+       "from": 2,
+       "from_name": "Подвал башни",
+       "held": [
+        {
+         "character_id": 14,
+         "nickname": "Паладин",
+         "wanted": "Зал башни"
+        }
+       ]
       }
      }
     ],
@@ -2115,7 +2123,7 @@
     },
     "previous": [],
     "state": {
-     "schema_version": 2,
+     "schema_version": 3,
      "mode": "balanced",
      "locations": [
       {
@@ -2226,7 +2234,8 @@
          "key": "lockpicks",
          "title": "Отмычки"
         }
-       ]
+       ],
+       "party_id": 1
       },
       {
        "id": 12,
@@ -2246,7 +2255,8 @@
        },
        "skills": {
         "melee": 3
-       }
+       },
+       "party_id": 1
       },
       {
        "id": 13,
@@ -2265,7 +2275,8 @@
        "skills": {
         "awareness": 3,
         "persuasion": 2
-       }
+       },
+       "party_id": 1
       },
       {
        "id": 14,
@@ -2283,7 +2294,8 @@
        },
        "skills": {
         "melee": 2
-       }
+       },
+       "party_id": 1
       },
       {
        "id": 15,
@@ -2293,6 +2305,12 @@
        "max_hp": 6,
        "location_id": 1,
        "conditions": []
+      }
+     ],
+     "parties": [
+      {
+       "id": 1,
+       "name": "Ночной дозор"
       }
      ]
     }

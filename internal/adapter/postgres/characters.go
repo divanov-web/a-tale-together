@@ -98,7 +98,7 @@ func (s *Store) ListCharacters(ctx context.Context, game model.GameID, season mo
 	return out, nil
 }
 
-// SaveCharacterState сохраняет изменяемое движком состояние: локация, HP, состояния, знания, статус, пропуски, смерть.
+// SaveCharacterState сохраняет изменяемое движком состояние: локация, группа, HP, состояния, знания, статус, пропуски, смерть.
 func (s *Store) SaveCharacterState(ctx context.Context, game model.GameID, c model.Character) error {
 	conditions, knowledge := c.Conditions, c.Knowledge
 	if conditions == nil {
@@ -107,9 +107,9 @@ func (s *Store) SaveCharacterState(ctx context.Context, game model.GameID, c mod
 	if knowledge == nil {
 		knowledge = []string{}
 	}
-	const q = `UPDATE characters SET location_id = $3, hp = $4, conditions = $5, knowledge = $6, status = $7, missed_rounds = $8, death_rounds_left = $9, died_at = $10, updated_at = now()
+	const q = `UPDATE characters SET location_id = $3, hp = $4, conditions = $5, knowledge = $6, status = $7, missed_rounds = $8, death_rounds_left = $9, died_at = $10, party_id = $11, updated_at = now()
 WHERE game_id = $1 AND id = $2`
-	if _, err := s.db(ctx).Exec(ctx, q, game, c.ID, c.LocationID, c.HP, conditions, knowledge, c.Status, c.MissedRounds, c.DeathRoundsLeft, c.DiedAt); err != nil {
+	if _, err := s.db(ctx).Exec(ctx, q, game, c.ID, c.LocationID, c.HP, conditions, knowledge, c.Status, c.MissedRounds, c.DeathRoundsLeft, c.DiedAt, c.PartyID); err != nil {
 		return fmt.Errorf("postgres.SaveCharacterState: %w", err)
 	}
 	return nil
