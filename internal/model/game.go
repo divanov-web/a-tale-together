@@ -53,7 +53,7 @@ type GameSettings struct {
 // Кворум раунда по умолчанию и в режиме разработки.
 const (
 	MaxRoundPlayersDefault   = 20 // внутренняя настройка разработчика, не параметр мира
-	MaxPartiesDefault        = 3  // групп в сезоне и, следовательно, занятых локаций (ADR-0017)
+	MaxPartiesDefault        = 4  // групп в сезоне (решение руководителя 2026-10-11: 4) и, следовательно, занятых локаций (ADR-0017)
 	MinRoundAnswersDefault   = 2
 	PauseAfterSkippedDefault = 3 // автопауза после трёх пропущенных подряд раундов (B11)
 	MinRoundAnswersDev       = 1

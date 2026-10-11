@@ -86,7 +86,7 @@ func TestRound_PartySplitAndLeader(t *testing.T) {
 	w.tick(t, 10*time.Minute)
 	info, _ := w.svc.Info(ctx, w.game)
 	snap := info.Last.Snapshot
-	if len(snap.Parties) != 1 || snap.MaxParties != 3 || len(snap.NewPartyIDs) != 2 || len(snap.PartyNames) == 0 || snap.SchemaVersion != model.SnapshotSchemaVersion {
+	if len(snap.Parties) != 1 || snap.MaxParties != 4 || len(snap.NewPartyIDs) != 3 || len(snap.PartyNames) == 0 || snap.SchemaVersion != model.SnapshotSchemaVersion {
 		t.Fatalf("snapshot parties = %+v, new ids %v", snap.Parties, snap.NewPartyIDs)
 	}
 	parties, chars := partiesOf(t, w)

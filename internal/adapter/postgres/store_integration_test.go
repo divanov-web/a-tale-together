@@ -160,7 +160,7 @@ func TestGameFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create game tx: %v", err)
 	}
-	if game.PlayFrom != "10:00" || game.PlayTo != "22:00" || game.Settings.MaxParties != 3 {
+	if game.PlayFrom != "10:00" || game.PlayTo != "22:00" || game.Settings.MaxParties != 4 {
 		t.Fatalf("game round trip = %+v", game)
 	}
 	if _, err := s.CreateGame(ctx, model.Game{ChatID: chat.ID, GenreID: genre.ID, Title: "Второй", Status: model.GameDraft, Timezone: "UTC", RoundMinutes: 15, JoinCode: "ZZZZ2345", CreatedByUserID: owner.ID}); err == nil {
