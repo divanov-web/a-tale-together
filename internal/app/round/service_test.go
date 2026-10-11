@@ -229,23 +229,32 @@ func TestTick_FreezeSnapshotAndActivity(t *testing.T) {
 	if msgs[2].Text != "«Мир» — раунд 1 — итоги\n• тихий раунд: никто ничего заметного не сделал" {
 		t.Fatalf("closed text = %q", msgs[2].Text)
 	}
-	// Статусы: Элис active (0 пропусков), Боб waiting (2 пропуска), Кэт inactive (3 пропуска).
+	// Статусы: Элис active (0 пропусков), Боб waiting (2 пропуска), Кэт leaving (3 пропуска — порог, один раунд; B13).
 	want := map[string]struct {
 		status model.CharacterStatus
 		missed int
-	}{"Элис": {model.CharacterActive, 0}, "Боб": {model.CharacterWaiting, 2}, "Кэт": {model.CharacterInactive, 3}}
+	}{"Элис": {model.CharacterActive, 0}, "Боб": {model.CharacterWaiting, 2}, "Кэт": {model.CharacterLeaving, 3}}
 	for _, c := range w.chars {
 		got, _ := w.store.GetCharacter(ctx, w.game.ID, c.SeasonID, c.UserID)
 		if got.Status != want[c.Nickname].status || got.MissedRounds != want[c.Nickname].missed {
 			t.Fatalf("%s = %s/%d; want %+v", c.Nickname, got.Status, got.MissedRounds, want[c.Nickname])
 		}
 	}
-	// Возврат заявкой.
-	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[2], "вернулась"); err != nil {
+	// Ещё один пропуск: Кэт inactive, в снимке статус для рассказчика уже «вне повествования».
+	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "действую"); err != nil {
 		t.Fatal(err)
 	}
 	w.tick(t, 10*time.Minute)
 	got, _ := w.store.GetCharacter(ctx, w.game.ID, w.chars[2].SeasonID, w.chars[2].UserID)
+	if got.Status != model.CharacterInactive || got.MissedRounds != 4 {
+		t.Fatalf("inactive character = %s/%d", got.Status, got.MissedRounds)
+	}
+	// Возврат заявкой после inactive: active, пропуски обнулены, отметка returned.
+	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[2], "вернулась"); err != nil {
+		t.Fatal(err)
+	}
+	w.tick(t, 10*time.Minute)
+	got, _ = w.store.GetCharacter(ctx, w.game.ID, w.chars[2].SeasonID, w.chars[2].UserID)
 	if got.Status != model.CharacterActive || got.MissedRounds != 0 {
 		t.Fatalf("returned character = %+v", got)
 	}
@@ -675,7 +684,7 @@ func TestFreeze_EntryMarks(t *testing.T) {
 			t.Fatalf("round 1 entry of %s = %q", c.Nickname, c.Entry)
 		}
 	}
-	// Элис пропустила раунд 1 → inactive (порог 1). Новый персонаж Дэн вступает перед раундом 2.
+	// Элис пропустила раунд 1 → leaving (порог 1); её заявка даёт отметку returned. Новый персонаж Дэн вступает перед раундом 2.
 	u, _ := w.store.UpsertUser(ctx, model.TelegramUser{ID: 99, Username: "dan"})
 	_ = w.store.AddMember(ctx, model.GameMember{GameID: w.game.ID, UserID: u.ID, Role: model.RolePlayer, Status: model.MemberActive})
 	dan, err := w.store.CreateCharacter(ctx, model.Character{GameID: w.game.ID, SeasonID: w.chars[0].SeasonID, UserID: u.ID, ModelID: 1, Nickname: "Дэн", Archetype: "rogue", Status: model.CharacterActive, FactionID: w.chars[0].FactionID,
@@ -709,5 +718,34 @@ func TestTagMentions(t *testing.T) {
 	}
 	if got := tagMentions("нет никого", nil); got != "нет никого" {
 		t.Errorf("no tags = %q", got)
+	}
+}
+
+// TestActivity: пропуски → waiting, на пороге один раунд leaving, дальше inactive; заявка возвращает active из любого статуса (B13).
+func TestActivity(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		status model.CharacterStatus
+		missed int
+		acted  bool
+		want   model.CharacterStatus
+		wantN  int
+	}{
+		{model.CharacterActive, 0, false, model.CharacterWaiting, 1},
+		{model.CharacterWaiting, 1, false, model.CharacterWaiting, 2},
+		{model.CharacterWaiting, 2, false, model.CharacterLeaving, 3},
+		{model.CharacterLeaving, 3, false, model.CharacterInactive, 4},
+		{model.CharacterInactive, 4, false, model.CharacterInactive, 5},
+		{model.CharacterLeaving, 3, true, model.CharacterActive, 0},
+		{model.CharacterInactive, 7, true, model.CharacterActive, 0},
+	}
+	for _, c := range cases {
+		got, n := activity(model.Character{Status: c.status, MissedRounds: c.missed}, c.acted, 3)
+		if got != c.want || n != c.wantN {
+			t.Errorf("activity(%s/%d, acted=%v) = %s/%d; want %s/%d", c.status, c.missed, c.acted, got, n, c.want, c.wantN)
+		}
+	}
+	if got, n := activity(model.Character{Status: model.CharacterActive}, false, 1); got != model.CharacterLeaving || n != 1 {
+		t.Errorf("threshold 1: %s/%d", got, n)
 	}
 }

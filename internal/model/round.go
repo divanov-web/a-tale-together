@@ -114,7 +114,7 @@ func (s *RoundSnapshot) LocationByName(name string) (*SnapshotLocation, bool) {
 // Отметки входа персонажа в историю (B1): рассказчик вводит нового персонажа в сцену и возвращает отсутствовавшего.
 const (
 	EntryNew      = "new"      // первый замороженный раунд персонажа
-	EntryReturned = "returned" // заявка после статуса `inactive`
+	EntryReturned = "returned" // заявка после статуса `leaving` или `inactive`
 )
 
 // SnapshotCharacter — персонаж в снимке раунда.

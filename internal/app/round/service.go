@@ -598,7 +598,7 @@ func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r mo
 		c := &chars[i]
 		if !seen[c.ID] {
 			entries[c.ID] = model.EntryNew
-		} else if c.Status == model.CharacterInactive && acted[c.ID] {
+		} else if (c.Status == model.CharacterLeaving || c.Status == model.CharacterInactive) && acted[c.ID] {
 			entries[c.ID] = model.EntryReturned
 		}
 		if c.Status == model.CharacterDead {
@@ -694,15 +694,19 @@ func frozenData(r model.Round, chars []model.SnapshotCharacter, subs []model.Sub
 	return map[string]any{"seed": r.Seed, "submissions": list, "characters": statuses}
 }
 
-// activity — статус персонажа после раунда: заявка возвращает в `active`, пропуски ведут в `waiting`, затем `inactive`
-// (docs/game/character.md, «Статус»). События `character_sidelined` / `character_returned` — пункт 07.
+// activity — статус персонажа после раунда: заявка возвращает в `active`, пропуски ведут в `waiting`, на пороге
+// `inactive_after_rounds` — один раунд `leaving` (рассказчик выводит персонажа из сюжета), дальше `inactive`
+// (docs/game/character.md, «Статус»; B13). Пропущенный без кворума раунд сюда не доходит, статусы не меняет.
 func activity(c model.Character, acted bool, inactiveAfter int) (model.CharacterStatus, int) {
 	if acted {
 		return model.CharacterActive, 0
 	}
 	missed := c.MissedRounds + 1
-	if missed >= inactiveAfter {
+	switch {
+	case missed > inactiveAfter:
 		return model.CharacterInactive, missed
+	case missed == inactiveAfter:
+		return model.CharacterLeaving, missed
 	}
 	return model.CharacterWaiting, missed
 }

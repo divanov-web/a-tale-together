@@ -121,6 +121,14 @@ func TestBuildInput(t *testing.T) {
 	if entry := BuildInput(Params{State: &st, Def: def()}); entry.Scenes[1].Characters[0].Entry != "returned" || !strings.Contains(entry.Encode(), `"entry":"returned"`) {
 		t.Errorf("entry mark missing: %+v", entry.Scenes[0].Characters)
 	}
+	// B13: `leaving` в сцене остаётся с этим статусом, `inactive` исключается как `dead`.
+	st = tower()
+	st.Characters[1].Status = model.CharacterLeaving
+	st.Characters[2].Status = model.CharacterInactive
+	absent := BuildInput(Params{State: &st, Def: def()})
+	if len(absent.Scenes) != 1 || absent.Scenes[0].LocationID != 2 || len(absent.Scenes[0].Characters) != 2 || absent.Scenes[0].Characters[1].Status != "leaving" || strings.Contains(absent.Encode(), "Маг") {
+		t.Errorf("leaving/inactive scenes = %+v", absent.Scenes)
+	}
 	if len(in.Scenes[0].Exits) != 1 || len(cellar.Objects) != 1 || cellar.Objects[0].State != "открыто" {
 		t.Errorf("exits/objects = %+v / %+v", in.Scenes[0].Exits, cellar.Objects)
 	}

@@ -98,6 +98,8 @@ func StatusWords(st model.CharacterStatus) string {
 	switch st {
 	case model.CharacterWaiting:
 		return "выжидает"
+	case model.CharacterLeaving:
+		return "покидает повествование"
 	case model.CharacterInactive:
 		return "выбыл из повествования"
 	case model.CharacterDead:

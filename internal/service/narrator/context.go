@@ -114,7 +114,7 @@ type approachIn struct {
 }
 
 // BuildInput собирает контекст вызова 2 (docs/llm/round-calls.md): сцены по локациям с присутствующими персонажами
-// (без выбывших), их описания как данные, видимые объекты и выходы; события только public и location, числа броска —
+// (без выбывших: `inactive` и `dead` в сцены не попадают, уход описывается в раунде статуса `leaving`), их описания как данные, видимые объекты и выходы; события только public и location, числа броска —
 // в режиме «механика»; подходы следующего раунда без шансов (их код припишет сам). Сцена без персонажей не нужна.
 func BuildInput(p Params) Input {
 	in := Input{Scenes: []scene{}, Events: []event{}, Approaches: []approachIn{}}
@@ -124,7 +124,7 @@ func BuildInput(p Params) Input {
 	}
 	present := map[model.LocationID][]sceneCharacter{}
 	for _, c := range p.State.Characters {
-		if c.LocationID == nil || c.Status == model.CharacterDead {
+		if c.LocationID == nil || c.Status.Absent() {
 			continue
 		}
 		conds := []string{}

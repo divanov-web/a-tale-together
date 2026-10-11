@@ -1382,8 +1382,8 @@
    ]
   },
   {
-   "name": "inactive_and_waiting",
-   "comment": "Кузнец inactive выводится из сюжета, Вор waiting присутствует без действий; без слов о пропусках",
+   "name": "leaving_and_waiting",
+   "comment": "Кузнец leaving выводится из сюжета, Вор waiting присутствует без действий, Паладин inactive в сцены не попадает и не упоминается; без слов о пропусках",
    "params": {
     "mode": "balanced",
     "round_no": 7,
@@ -1557,7 +1557,7 @@
       {
        "id": 12,
        "nickname": "Кузнец",
-       "status": "inactive",
+       "status": "leaving",
        "hp": 8,
        "max_hp": 8,
        "location_id": 2,
@@ -1596,7 +1596,7 @@
       {
        "id": 14,
        "nickname": "Паладин",
-       "status": "active",
+       "status": "inactive",
        "hp": 8,
        "max_hp": 8,
        "location_id": 1,
@@ -1631,7 +1631,8 @@
     "пропуск",
     "неактив",
     "заявк",
-    "игрок"
+    "игрок",
+    "Паладин"
    ]
   },
   {

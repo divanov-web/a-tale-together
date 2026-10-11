@@ -479,7 +479,7 @@ func TestRound_StatusTransitionsAndWindow(t *testing.T) {
 	}
 	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 1, заявки до 13:15")
 
-	// Три раунда подряд только Элис: Боб waiting → waiting → inactive; заявка возвращает его в active.
+	// Три раунда подряд только Элис: Боб waiting → waiting → leaving (порог, один раунд; B13); заявка возвращает его в active.
 	for i := 0; i < 3; i++ {
 		mustContain(t, h.send(alice, private(alice), "/act иду"), "Заявка принята")
 		h.clock.advance(15 * time.Minute)
@@ -488,7 +488,7 @@ func TestRound_StatusTransitionsAndWindow(t *testing.T) {
 		}
 		want := "waiting"
 		if i == 2 {
-			want = "inactive"
+			want = "leaving"
 		}
 		mustContain(t, h.send(bob, private(bob), "/character"), want)
 	}

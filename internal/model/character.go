@@ -80,13 +80,19 @@ type CharacterModel struct {
 // CharacterStatus — статус персонажа по активности (docs/game/character.md).
 type CharacterStatus string
 
-// Статусы персонажа; dead — выбыл по режиму смерти до возврата (docs/game/death.md).
+// Статусы персонажа: waiting — 1–2 пропуска, присутствует без действий; leaving — ровно `inactive_after_rounds` пропусков,
+// один раунд: рассказчик выводит персонажа из сюжета; inactive — дальше, в контекст рассказчика не попадает (B13);
+// dead — выбыл по режиму смерти до возврата (docs/game/death.md).
 const (
 	CharacterActive   CharacterStatus = "active"
 	CharacterWaiting  CharacterStatus = "waiting"
+	CharacterLeaving  CharacterStatus = "leaving"
 	CharacterInactive CharacterStatus = "inactive"
 	CharacterDead     CharacterStatus = "dead"
 )
+
+// Absent — персонаж вне повествования: выведен за пропуски или выбыл по смерти; в сцены рассказчика не попадает.
+func (s CharacterStatus) Absent() bool { return s == CharacterInactive || s == CharacterDead }
 
 // ItemBonus — бонус предмета к навыку: кубики к пулу проверки.
 type ItemBonus struct {
