@@ -25,8 +25,9 @@
   "locations": ["см. models/location.md"],
   "opening_scene": "В {{world_title}} наступает осень. {{faction_good}} объявил награду за пропавшего гонца, {{faction_evil}} молчит, а на рынке шепчутся о свете в старой башне...",
   "items": [
-    {"key": "sword", "title": "Меч", "tags": ["weapon", "melee"], "bonus": {"skill": "melee", "dice": 1}},
-    {"key": "lockpicks", "title": "Отмычки", "tags": ["tool"], "bonus": {"skill": "thievery", "dice": 1}}
+    {"key": "sword", "title": "Меч", "tags": ["weapon", "melee"]},
+    {"key": "lockpicks", "title": "Отмычки", "tags": ["tool"]},
+    {"key": "master_lockpicks", "title": "Мастерские отмычки", "tags": ["tool"], "bonus": {"skill": "thievery", "points": 1}}
   ],
   "names": {"npc": ["Марта", "старый Йорг", "брат Теодор"], "places": ["Серая башня", "трактир «Три свечи»"]}
 }

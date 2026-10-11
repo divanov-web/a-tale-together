@@ -1,45 +1,68 @@
 # Модель персонажа: базовая (фэнтези)
 
-Код `basic_fantasy`, `rules_version` 0. Используется жанром [фэнтези](genre.md). Поведение: [персонаж](../character.md), [испытания](../checks.md).
+Код `basic_fantasy`, `rules_version` 1. Используется жанром [фэнтези](genre.md). Поведение: [персонаж](../character.md), [испытания](../checks.md). Числа откалиброваны под «Прямой шанс»: профильный архетип проходит обычное испытание сложности 5 с шансом 80 %, слабый — 20 %.
 
 ## Состав
 | Часть | Содержание |
 |---|---|
-| Характеристики | `strength` Сила, `agility` Ловкость, `wits` Разум, `will` Воля; 2–4 на старте, сумма 12 |
-| Навыки | `thievery` воровство (Ловкость), `awareness` внимательность (Разум), `persuasion` убеждение (Воля), `survival` выживание (Разум), `stealth` скрытность (Ловкость), `melee` бой (Сила); 0–3, на старте 6 очков, не более 3 в один |
-| Архетипы | `warrior`, `rogue`, `mage`, `diplomat`, `ranger`: рекомендуемое распределение и стартовый инвентарь; используются автораспределением |
+| Характеристики | `strength` Сила, `agility` Ловкость, `wits` Разум, `will` Воля; 2–5 на старте, сумма 14 |
+| Навыки | `athletics` атлетика (Сила), `melee` бой (Сила), `thievery` воровство (Ловкость), `stealth` скрытность (Ловкость), `awareness` внимательность (Разум), `survival` выживание (Разум), `persuasion` убеждение (Воля); 0–3, на старте 6 очков, не более 3 в один; неназванный навык равен нулю |
+| Архетипы | `warrior`, `rogue`, `mage`, `diplomat`, `ranger`: распределение и стартовый инвентарь; используются автораспределением |
 | HP | `4 + strength` |
-| Инвентарь | до 6 предметов |
+| Инвентарь | до 6 предметов; стартовые предметы без бонуса к проверкам, они обосновывают доступность подходов |
+
+| Архетип | Сила | Ловкость | Разум | Воля | HP | Навыки | Роль |
+|---|---|---|---|---|---|---|---|
+| Воин | 5 | 3 | 2 | 4 | 9 | атлетика 3, бой 3 | физические препятствия и бой |
+| Плут | 2 | 5 | 4 | 3 | 6 | воровство 3, скрытность 3 | замки и скрытность |
+| Маг | 2 | 3 | 5 | 4 | 6 | внимательность 3, убеждение 2, выживание 1 | скрытые детали, надписи, механизмы |
+| Дипломат | 3 | 2 | 4 | 5 | 7 | убеждение 3, внимательность 2, выживание 1 | разговоры и сведения |
+| Следопыт | 4 | 3 | 5 | 2 | 8 | выживание 3, скрытность 2, бой 1 | следы и выживание |
+
+Матрица шансов при сложности 5 (параметр = характеристика + навык):
+
+| Испытание | Воин | Плут | Маг | Дипломат | Следопыт |
+|---|---|---|---|---|---|
+| физическое усилие (Сила / атлетика) | 80 % | 20 % | 20 % | 30 % | 40 % |
+| боевое действие (Сила / бой) | 80 % | 20 % | 20 % | 30 % | 50 % |
+| взлом замка (Ловкость / воровство) | 30 % | 80 % | 30 % | 20 % | 30 % |
+| поиск скрытых деталей (Разум / внимательность) | 20 % | 40 % | 80 % | 60 % | 50 % |
+| сведения разговором (Воля / убеждение) | 40 % | 30 % | 60 % | 80 % | 20 % |
+| чтение следов (Разум / выживание) | 20 % | 40 % | 60 % | 50 % | 80 % |
+| скрытное действие (Ловкость / скрытность) | 30 % | 80 % | 30 % | 20 % | 50 % |
+
+Бой и скрытность — ориентир для пункта 12; в стартовых сценах таких подходов нет.
 
 ## Пример `definition`
 ```json
 {
   "schema_version": 1,
   "attributes": [
-    {"key": "strength", "title": "Сила", "min": 2, "max": 4},
-    {"key": "agility", "title": "Ловкость", "min": 2, "max": 4},
-    {"key": "wits", "title": "Разум", "min": 2, "max": 4},
-    {"key": "will", "title": "Воля", "min": 2, "max": 4}
+    {"key": "strength", "title": "Сила", "min": 2, "max": 5},
+    {"key": "agility", "title": "Ловкость", "min": 2, "max": 5},
+    {"key": "wits", "title": "Разум", "min": 2, "max": 5},
+    {"key": "will", "title": "Воля", "min": 2, "max": 5}
   ],
-  "attribute_points": 12,
+  "attribute_points": 14,
   "skills": [
+    {"key": "athletics", "title": "Атлетика", "attribute": "strength"},
+    {"key": "melee", "title": "Бой", "attribute": "strength"},
     {"key": "thievery", "title": "Воровство", "attribute": "agility"},
-    {"key": "awareness", "title": "Внимательность", "attribute": "wits"},
-    {"key": "persuasion", "title": "Убеждение", "attribute": "will"},
-    {"key": "survival", "title": "Выживание", "attribute": "wits"},
     {"key": "stealth", "title": "Скрытность", "attribute": "agility"},
-    {"key": "melee", "title": "Бой", "attribute": "strength"}
+    {"key": "awareness", "title": "Внимательность", "attribute": "wits"},
+    {"key": "survival", "title": "Выживание", "attribute": "wits"},
+    {"key": "persuasion", "title": "Убеждение", "attribute": "will"}
   ],
   "skill_points": 6,
   "skill_max": 3,
   "hp_formula": "4 + strength",
   "inventory_limit": 6,
   "archetypes": [
-    {"key": "warrior", "title": "Воин", "attributes": {"strength": 4, "agility": 3, "wits": 2, "will": 3}, "skills": {"melee": 3, "survival": 2, "awareness": 1}, "items": ["sword", "shield"]},
-    {"key": "rogue", "title": "Плут", "attributes": {"strength": 2, "agility": 4, "wits": 3, "will": 3}, "skills": {"thievery": 3, "stealth": 2, "awareness": 1}, "items": ["dagger", "lockpicks"]},
-    {"key": "mage", "title": "Маг", "attributes": {"strength": 2, "agility": 2, "wits": 4, "will": 4}, "skills": {"awareness": 3, "persuasion": 2, "survival": 1}, "items": ["staff", "tome"]},
-    {"key": "diplomat", "title": "Дипломат", "attributes": {"strength": 2, "agility": 3, "wits": 3, "will": 4}, "skills": {"persuasion": 3, "awareness": 2, "thievery": 1}, "items": ["seal", "coin_purse"]},
-    {"key": "ranger", "title": "Следопыт", "attributes": {"strength": 3, "agility": 4, "wits": 3, "will": 2}, "skills": {"survival": 3, "stealth": 2, "melee": 1}, "items": ["bow", "rope"]}
+    {"key": "warrior", "title": "Воин", "attributes": {"strength": 5, "agility": 3, "wits": 2, "will": 4}, "skills": {"athletics": 3, "melee": 3}, "items": ["sword", "shield"]},
+    {"key": "rogue", "title": "Плут", "attributes": {"strength": 2, "agility": 5, "wits": 4, "will": 3}, "skills": {"thievery": 3, "stealth": 3}, "items": ["dagger", "lockpicks"]},
+    {"key": "mage", "title": "Маг", "attributes": {"strength": 2, "agility": 3, "wits": 5, "will": 4}, "skills": {"awareness": 3, "persuasion": 2, "survival": 1}, "items": ["staff", "tome"]},
+    {"key": "diplomat", "title": "Дипломат", "attributes": {"strength": 3, "agility": 2, "wits": 4, "will": 5}, "skills": {"persuasion": 3, "awareness": 2, "survival": 1}, "items": ["seal", "coin_purse"]},
+    {"key": "ranger", "title": "Следопыт", "attributes": {"strength": 4, "agility": 3, "wits": 5, "will": 2}, "skills": {"survival": 3, "stealth": 2, "melee": 1}, "items": ["bow", "rope"]}
   ]
 }
 ```

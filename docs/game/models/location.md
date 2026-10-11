@@ -32,9 +32,9 @@
     {
       "key": "cellar_door", "title": "запертая дверь", "state": "locked",
       "approaches": [
-        {"action": "interact", "attribute": "strength", "skill": null, "difficulty": 2, "on_success": {"state": "broken"}, "on_fail": {"condition": "exhausted"}},
-        {"action": "interact", "attribute": "agility", "skill": "thievery", "difficulty": 1, "on_success": {"state": "open"}},
-        {"action": "explore", "attribute": "wits", "skill": "awareness", "difficulty": 3, "on_success": {"reveal": "hidden_lever"}}
+        {"action": "interact", "attribute": "strength", "skill": "athletics", "difficulty": 4, "on_success": {"state": "broken"}, "on_fail": {"condition": "exhausted"}},
+        {"action": "interact", "attribute": "agility", "skill": "thievery", "difficulty": 4, "on_success": {"state": "open"}},
+        {"action": "explore", "attribute": "wits", "skill": "awareness", "difficulty": 4, "on_success": {"reveal": "hidden_lever"}}
       ]
     },
     {"key": "hidden_lever", "title": "потайной рычаг", "state": "hidden", "visible_when": {"revealed": true}, "approaches": [{"action": "interact", "attribute": null, "skill": null, "difficulty": 0, "on_success": {"object": "cellar_door", "state": "open"}}]}
@@ -42,4 +42,4 @@
 }
 ```
 
-Сложность в `approaches` — базовая; движок прибавляет `difficulty` локации и показывает игроку итог и шанс.
+Сложность в `approaches` — базовая; движок прибавляет `difficulty` локации, показывает в группе итог, а игроку — его шанс по параметру ([испытания](../checks.md)). Обычный подход — 5 итого: в локации с надбавкой 1 база 4.
