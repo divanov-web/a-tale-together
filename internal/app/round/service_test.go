@@ -651,13 +651,18 @@ func TestResolve_Narrator(t *testing.T) {
 	}
 }
 
-func TestDeadline_RoundsUpToMinute(t *testing.T) {
+func TestDeadline_RoundsDownToMinute(t *testing.T) {
 	base := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
-	if got := deadline(base.Add(20*time.Second), 5); !got.Equal(base.Add(6 * time.Minute)) {
+	if got := deadline(base.Add(20*time.Second), 5); !got.Equal(base.Add(5 * time.Minute)) {
 		t.Errorf("deadline with seconds = %v", got)
 	}
 	if got := deadline(base, 5); !got.Equal(base.Add(5 * time.Minute)) {
 		t.Errorf("deadline on the minute = %v", got)
+	}
+	// Следующий раунд открыт через 40 с после дедлайна предыдущего: шаг между дедлайнами остаётся ровно 5 минут.
+	prev := base.Add(5 * time.Minute)
+	if got := deadline(prev.Add(40*time.Second), 5); !got.Equal(prev.Add(5 * time.Minute)) {
+		t.Errorf("deadline after resolution = %v", got)
 	}
 }
 

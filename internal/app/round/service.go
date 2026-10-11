@@ -711,14 +711,12 @@ func activity(c model.Character, acted bool, inactiveAfter int) (model.Character
 	return model.CharacterWaiting, missed
 }
 
-// deadline — дедлайн раунда: `now` + длительность, округлённые вверх до целой минуты, чтобы раунд заканчивался
-// в :00 секунд (замечание руководителя B7); планировщик с шагом 10 с закрывает его в пределах шага.
+// deadline — дедлайн раунда: `now` + длительность, округлённые вниз до целой минуты, чтобы раунд заканчивался
+// в :00 секунд (B7), а следующий раунд, открытый через несколько секунд после разрешения предыдущего, держал
+// ровный шаг в `round_minutes` между дедлайнами (решение руководителя 2026-10-11, B12). Планировщик с шагом 10 с
+// закрывает раунд в пределах шага.
 func deadline(now time.Time, minutes int) time.Time {
-	d := now.Add(time.Duration(minutes) * time.Minute)
-	if t := d.Truncate(time.Minute); !t.Equal(d) {
-		return t.Add(time.Minute)
-	}
-	return d
+	return now.Add(time.Duration(minutes) * time.Minute).Truncate(time.Minute)
 }
 
 // openNext открывает следующий раунд, если момент внутри игрового окна (или force), иначе назначает `next_round_at`
