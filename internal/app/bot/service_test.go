@@ -316,16 +316,16 @@ func TestGame_CreateSetupAndStatus(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "5"), "от 10 до 60", "Повторите ответ")
 	mustContain(t, h.send(owner, private(owner), "20"), "Часовой пояс")
 	mustContain(t, h.send(owner, private(owner), "-"), "Игровое окно")
-	mustContain(t, h.send(owner, private(owner), "10:00-22:00"), "Число раундов")
-	mustContain(t, h.send(owner, private(owner), "30"), "Кворум раунда", "Сейчас: 2")
+	mustContain(t, h.send(owner, private(owner), "10:00-22:00"), "Кворум раунда", "Сейчас: 2")
 	mustContain(t, h.send(owner, private(owner), "3"), "Фракция добра")
 	mustContain(t, h.send(owner, private(owner), "Орден"), "Фракция зла")
 	final := h.send(owner, private(owner), "-")
 	mustContain(t, final, "Настройка завершена", "Мир «Хроники Серой башни» — черновик", "Раунд: 20 мин", "окно: 10:00–22:00",
-		"Границы: 30 раундов", "Кворум: 3", "Игроки: 1\n", "Орден (good)", "Гильдия теней (evil)")
+		"Границы: до /finish", "Кворум: 3", "Игроки: 1\n", "Орден (good)", "Гильдия теней (evil)")
 
 	mustContain(t, h.send(alice, groupChat, "/status"), "Мир «Хроники Серой башни»")
 	mustContain(t, h.send(owner, private(owner), "/set ends_at 2026-12-31"), "Сохранено")
+	mustContain(t, h.send(owner, private(owner), "/set max_rounds 30"), "Сохранено")
 	mustContain(t, h.send(alice, groupChat, "/status"), "до 2026-12-31, 30 раундов")
 	mustContain(t, h.send(owner, private(owner), "/set bogus 1"), "неизвестный параметр")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 0"), "кворум раунда от 1 до 20")
@@ -912,14 +912,10 @@ func TestButtons_SetupDialog(t *testing.T) {
 	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 3 || got[0] != "@play_window нет" {
 		t.Fatalf("play_window keyboard = %v", got)
 	}
-	mustContain(t, h.press(owner, private(owner), 33, "@play_window нет"), "Число раундов")
-	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 6 || got[0] != "@max_rounds 0" || got[3] != "@max_rounds 30" {
-		t.Fatalf("max_rounds keyboard = %v", got)
-	}
-	mustContain(t, h.press(owner, private(owner), 34, "@max_rounds 10"), "Кворум раунда")
-	mustContain(t, h.press(owner, private(owner), 35, "@min_answers 2"), "Фракция добра")
-	mustContain(t, h.press(owner, private(owner), 36, "@faction_good -"), "Фракция зла")
-	mustContain(t, h.press(owner, private(owner), 37, "@faction_evil -"), "Настройка завершена", "Раунд: 20 мин", "Часовой пояс: Asia/Yekaterinburg", "Игровое окно: без окна", "Границы: 10 раундов", "Кворум: 2")
+	mustContain(t, h.press(owner, private(owner), 33, "@play_window нет"), "Кворум раунда")
+	mustContain(t, h.press(owner, private(owner), 34, "@min_answers 2"), "Фракция добра")
+	mustContain(t, h.press(owner, private(owner), 35, "@faction_good -"), "Фракция зла")
+	mustContain(t, h.press(owner, private(owner), 36, "@faction_evil -"), "Настройка завершена", "Раунд: 20 мин", "Часовой пояс: Asia/Yekaterinburg", "Игровое окно: без окна", "Границы: до /finish", "Кворум: 2")
 }
 
 // TestButtons_ActOption (ADR-0015): под личным «раунд открыт» кнопки вариантов, нажатие подаёт заявку с названием

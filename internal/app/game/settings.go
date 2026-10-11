@@ -27,7 +27,7 @@ var Params = []Param{
 	{Key: "timezone", Title: "Часовой пояс", Hint: "например Europe/Moscow"},
 	{Key: "play_window", Title: "Игровое окно", Hint: "HH:MM-HH:MM по часовому поясу игры или «нет»"},
 	{Key: "ends_at", Title: "Дата окончания рассказа", Hint: "ГГГГ-ММ-ДД или «нет»", Advanced: true}, // по умолчанию «нет»
-	{Key: "max_rounds", Title: "Число раундов", Hint: "число или 0 без границы"},
+	{Key: "max_rounds", Title: "Число раундов", Hint: "число или 0 без границы", Advanced: true},     // по умолчанию 0; в диалог вернётся с завершением игры рассказчиком (G13)
 	{Key: "min_answers", Title: "Кворум раунда", Hint: "заявок от 1 до 20; если меньше, раунд пропускается"},
 	{Key: "faction_good", Title: "Фракция добра", Hint: "имя по сюжету до 40 символов"},
 	{Key: "faction_evil", Title: "Фракция зла", Hint: "имя по сюжету до 40 символов"},

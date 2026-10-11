@@ -120,8 +120,6 @@ func (s *Service) setupAnswers(ctx context.Context, key string) ([][2]string, in
 		return nums(setupTimezones...), 2, nil
 	case "play_window":
 		return [][2]string{{"Без окна", "нет"}}, 1, nil
-	case "max_rounds":
-		return append([][2]string{{"Без границы", "0"}}, nums("10", "20", "30")...), 4, nil
 	case "min_answers":
 		return nums("1", "2", "3", "5"), 4, nil
 	}
