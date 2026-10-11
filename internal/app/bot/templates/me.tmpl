@@ -1,7 +1,9 @@
 Вы: {{.Mention}} (id {{.TelegramID}})
 Личка: {{if .Started}}открыта{{else}}не открыта (отправьте /start в личку боту){{end}}
+
 Чаты, где вы владелец или модератор:{{if not .Chats}} нет{{end}}
 {{range .Chats}}• {{.Title}} — {{.Role}}
-{{end}}Игры:{{if not .Games}} нет{{end}}
+{{end}}
+Игры:{{if not .Games}} нет{{end}}
 {{range .Games}}• {{.Title}} ({{.Status}}, {{.Role}}){{if .Current}} — текущая{{end}}: {{if .Character}}персонаж {{.Character}}{{else}}персонажа нет{{end}}
 {{end}}

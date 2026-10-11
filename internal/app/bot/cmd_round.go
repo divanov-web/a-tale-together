@@ -143,14 +143,22 @@ func truncate(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
-// roundNext — /next в группе (только dev): закрыть текущий раунд и открыть следующий.
+// roundNext — /next в группе (только dev): закрыть текущий раунд и открыть следующий; ответ учитывает, что после
+// закрытия игра могла завершиться по границе рассказа или встать на паузу после пропущенных раундов (B11).
 func (s *Service) roundNext(ctx context.Context, req *request) error {
 	g, err := s.games.OfChat(ctx, req.chat.ID)
 	if err != nil {
 		return err
 	}
-	if _, err := s.rounds.Next(ctx, g, req.user.ID); err != nil {
+	g, err = s.rounds.Next(ctx, g, req.user.ID)
+	if err != nil {
 		return err
+	}
+	switch g.Status {
+	case model.GamePaused:
+		return s.reply(ctx, req.in, "Раунд закрыт. Игра на паузе после пропущенных подряд раундов, возобновить: /pause")
+	case model.GameFinished:
+		return s.reply(ctx, req.in, "Раунд закрыт, игра завершена.")
 	}
 	return s.reply(ctx, req.in, "Раунд закрыт, следующий открыт.")
 }

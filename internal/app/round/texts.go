@@ -13,6 +13,9 @@ import (
 	"taletogether/internal/service/rules"
 )
 
+// Формат сообщений игроку (B16): заголовок отдельной строкой, пустая строка между заголовком, телом, списками и
+// подсказкой; списки через «•» с новой строки. Эталоны каждого текста — в texts_test.go.
+
 // SkippedText — сообщение о пропуске раунда без кворума; на время разработки отправляется в группу
 // (решение руководителя 2026-10-10), в prod раунд пропускается молча.
 const SkippedText = "Недостаточное количество участников. Раунд пропущен"
@@ -43,24 +46,24 @@ func openingScene(g model.Game, template string, factions []model.Faction) strin
 	if strings.TrimSpace(text) == "" {
 		text = "История начинается."
 	}
-	return fmt.Sprintf("«%s» — начало истории\n%s", g.Title, text)
+	return fmt.Sprintf("«%s» — начало истории\n\n%s", g.Title, text)
 }
 
 func roundOpenText(g model.Game, r model.Round, carried int, now time.Time) string {
-	text := fmt.Sprintf("%s открыт. Заявки до %s: /act <текст> в личке с ботом, одна на раунд.", header(g, r.RoundNo), FormatTime(g, r.DeadlineAt, now))
+	text := fmt.Sprintf("%s открыт\nЗаявки до %s: /act <текст> в личке с ботом, одна на раунд.", header(g, r.RoundNo), FormatTime(g, r.DeadlineAt, now))
 	if carried > 0 {
-		text += fmt.Sprintf(" Перенесено заявок из пропущенного раунда: %d.", carried)
+		text += fmt.Sprintf("\nПеренесено заявок из пропущенного раунда: %d.", carried)
 	}
 	return text
 }
 
 func roundSkippedText(g model.Game, r model.Round) string {
-	return fmt.Sprintf("%s. %s.", header(g, r.RoundNo), SkippedText)
+	return fmt.Sprintf("%s\n%s.", header(g, r.RoundNo), SkippedText)
 }
 
 // roundFailedText — сообщение о раунде, который не удалось разрешить (ADR-0013); заявки переходят в следующий.
 func roundFailedText(g model.Game, r model.Round) string {
-	return fmt.Sprintf("%s не удалось разрешить: сбой на стороне бота. Заявки перенесены в следующий раунд.", header(g, r.RoundNo))
+	return fmt.Sprintf("%s не удалось разрешить\nСбой на стороне бота. Заявки перенесены в следующий раунд.", header(g, r.RoundNo))
 }
 
 // finishedText — финальная хроника шаблоном: причина, число раундов, итог каждого персонажа.
@@ -70,9 +73,9 @@ func finishedText(g model.Game, rounds int, reason string, chars []model.Charact
 		names[l.ID] = l.Name
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "«%s» — история завершена\n%s. Раундов сыграно: %d.", g.Title, upperFirst(reason), rounds)
+	fmt.Fprintf(&b, "«%s» — история завершена\n\n%s. Раундов сыграно: %d.", g.Title, upperFirst(reason), rounds)
 	if len(chars) > 0 {
-		b.WriteString("\nПерсонажи:")
+		b.WriteString("\n\nПерсонажи:")
 	}
 	for _, c := range chars {
 		maxHP, err := rules.HP(def, c.Attributes)
@@ -85,7 +88,11 @@ func finishedText(g model.Game, rounds int, reason string, chars []model.Charact
 				where = n
 			}
 		}
-		fmt.Fprintf(&b, "\n• %s — %s, HP %d/%d, %s", c.Nickname, narrator.StatusWords(c.Status), c.HP, maxHP, where)
+		status := ""
+		if w := narrator.StatusWords(c.Status); w != "" {
+			status = w + ", "
+		}
+		fmt.Fprintf(&b, "\n• %s — %sHP %d/%d, %s", c.Nickname, status, c.HP, maxHP, where)
 	}
 	return b.String()
 }
@@ -98,22 +105,39 @@ func upperFirst(s string) string {
 	return strings.ToUpper(string(r[0])) + string(r[1:])
 }
 
-func pausedText(g model.Game) string {
-	return fmt.Sprintf("«%s» — игра на паузе. Раунды не открываются; возобновить: /pause.", g.Title)
+func pausedText() string {
+	return "Игра на паузе\nРаунды не открываются. Возобновить: /pause."
+}
+
+// autoPausedText — автоматическая пауза после пропущенных подряд раундов (B11).
+func autoPausedText(skipped int) string {
+	return fmt.Sprintf("Игра на паузе\n%s подряд без кворума. Возобновить: /pause.", upperFirst(roundsWord(skipped)))
+}
+
+// roundsWord — число с существительным «раунд» в нужной форме.
+func roundsWord(n int) string {
+	word := "раундов"
+	switch {
+	case n%10 == 1 && n%100 != 11:
+		word = "раунд"
+	case n%10 >= 2 && n%10 <= 4 && (n%100 < 10 || n%100 >= 20):
+		word = "раунда"
+	}
+	return fmt.Sprintf("%d %s", n, word)
 }
 
 func resumedText(g model.Game, r *model.Round, next *time.Time, now time.Time) string {
 	if r != nil {
-		return fmt.Sprintf("%s продолжается. Заявки до %s.", header(g, r.RoundNo), FormatTime(g, r.DeadlineAt, now))
+		return fmt.Sprintf("%s продолжается\nЗаявки до %s.", header(g, r.RoundNo), FormatTime(g, r.DeadlineAt, now))
 	}
 	if next != nil {
-		return fmt.Sprintf("«%s» — игра возобновлена. Следующий раунд в %s.", g.Title, FormatTime(g, *next, now))
+		return fmt.Sprintf("Игра возобновлена\nСледующий раунд в %s.", FormatTime(g, *next, now))
 	}
-	return fmt.Sprintf("«%s» — игра возобновлена.", g.Title)
+	return "Игра возобновлена"
 }
 
 func firstRoundLaterText(g model.Game, next time.Time, now time.Time) string {
-	return fmt.Sprintf("«%s» — раунды открываются в игровое окно %s–%s. Первый раунд в %s.", g.Title, g.PlayFrom, g.PlayTo, FormatTime(g, next, now))
+	return fmt.Sprintf("Игра запущена\nРаунды открываются в игровое окно %s–%s. Первый раунд в %s.", g.PlayFrom, g.PlayTo, FormatTime(g, next, now))
 }
 
 // chronicleText — шаблонная хроника без модели (сбой или отсутствие рассказчика): публичные и локационные события словами.
@@ -129,13 +153,14 @@ func chronicleText(g model.Game, r model.Round, events []model.Event, state *mod
 	if len(lines) == 0 {
 		lines = append(lines, "• тихий раунд: никто ничего заметного не сделал")
 	}
-	return fmt.Sprintf("%s — итоги\n%s", header(g, r.RoundNo), strings.Join(lines, "\n"))
+	return fmt.Sprintf("%s — итоги\n\n%s", header(g, r.RoundNo), strings.Join(lines, "\n"))
 }
 
-// noticeText — уведомление о заявке игроку (с названием мира: у игрока может быть несколько игр): статус, исход, проверка (числа по режиму), приватные события персонажа.
-func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model.Event, preset rules.ModePreset) string {
+// noticeText — уведомление о заявке игроку (с названием мира: у игрока может быть несколько игр): статус, исход,
+// проверка (числа по режиму), приватные события персонажа, варианты следующего раунда по его локации (B15).
+func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model.Event, preset rules.ModePreset, options string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "«%s» — раунд %d — ваш итог\nЗаявка «%s»: ", g.Title, r.RoundNo, truncateText(res.Intent.RawText, 80))
+	fmt.Fprintf(&b, "«%s» — раунд %d — ваш итог\n\nЗаявка «%s»: ", g.Title, r.RoundNo, truncateText(res.Intent.RawText, 80))
 	switch res.Status {
 	case model.ResultResolved:
 		b.WriteString(res.Summary)
@@ -178,8 +203,61 @@ func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model
 	if len(facts) > 0 {
 		b.WriteString("\n" + strings.Join(facts, "\n"))
 	}
-	b.WriteString("\nСледующая заявка: /act <текст> после открытия раунда.")
+	if options != "" {
+		b.WriteString("\n\n" + options)
+	}
+	b.WriteString("\n\nСледующая заявка: /act <текст> после открытия раунда.")
 	return b.String()
+}
+
+// roundOpenPersonalText — личное «раунд открыт» с вариантами (B15) персонажам, не получившим уведомление о заявке.
+func roundOpenPersonalText(g model.Game, r model.Round, options string, now time.Time) string {
+	text := fmt.Sprintf("«%s» — раунд %d открыт\n\nЗаявки до %s: напишите, что делает персонаж, или /act <текст>. Одна заявка на раунд.", g.Title, r.RoundNo, FormatTime(g, r.DeadlineAt, now))
+	if options != "" {
+		text += "\n\n" + options
+	}
+	return text
+}
+
+// optionsFor — блок вариантов персонажа по его локации (B15): подход, параметр персонажа, итоговая сложность и шанс
+// в процентах; в «повествовании» шанс словами. Заголовок title дополняется названием локации. Пусто без локации или подходов.
+func optionsFor(c model.SnapshotCharacter, state *model.RoundSnapshot, opts []narrator.Option, mode model.GameMode, title string) string {
+	if c.LocationID == nil {
+		return ""
+	}
+	var lines []string
+	for _, o := range opts {
+		if o.LocationID != *c.LocationID {
+			continue
+		}
+		if o.Attribute == "" {
+			lines = append(lines, "• "+o.Title+" (без броска)")
+			continue
+		}
+		stat := o.Attribute
+		if o.Skill != "" {
+			stat += "/" + strings.ToLower(o.Skill)
+		}
+		var ch narrator.Chance
+		for _, x := range o.Chances {
+			if x.Nickname == c.Nickname {
+				ch = x
+			}
+		}
+		if mode == model.ModeNarrative {
+			lines = append(lines, fmt.Sprintf("• %s (%s): %s", o.Title, stat, rules.ChanceWords(ch.Pct)))
+		} else {
+			lines = append(lines, fmt.Sprintf("• %s (%s): параметр %d, сложность %d, шанс %d%%", o.Title, stat, ch.Param, o.Difficulty, ch.Pct))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	where := ""
+	if l, ok := state.Location(*c.LocationID); ok {
+		where = " (" + l.Name + ")"
+	}
+	return fmt.Sprintf("%s%s:\n%s", title, where, strings.Join(lines, "\n"))
 }
 
 func payloadStr(ev model.Event, key string) string {

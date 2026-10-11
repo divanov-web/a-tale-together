@@ -44,7 +44,7 @@ func (s *Service) Finish(ctx context.Context, game model.Game, actor model.UserI
 			if err := s.store.UpdateRound(ctx, open); err != nil {
 				return err
 			}
-			if err := s.close(ctx, g, chat, open, now, 1); err != nil {
+			if _, err := s.close(ctx, g, chat, open, now, 1); err != nil {
 				return err
 			}
 			closed = open.RoundNo
@@ -177,6 +177,7 @@ func (s *Service) Reset(ctx context.Context, game model.Game, actor model.UserID
 		}
 		g.Status = model.GameDraft
 		g.NextRoundAt = nil
+		g.SkippedStreak = 0
 		if err := s.store.UpdateGame(ctx, g); err != nil {
 			return err
 		}

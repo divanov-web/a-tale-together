@@ -160,7 +160,7 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 		if err != nil {
 			return "", false, err
 		}
-		return "Персонаж создан!\n\n" + card + "\nЖдите старта игры: хроника появится в групповом чате, личные итоги — здесь.", true, nil
+		return "Персонаж создан!\n\n" + strings.TrimRight(card, "\n") + "\n\nЖдите старта игры: хроника появится в групповом чате, личные итоги — здесь.", true, nil
 	default:
 		return "", false, fmt.Errorf("bot.characterStep: unknown step %q", d.Step)
 	}

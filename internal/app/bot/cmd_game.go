@@ -142,7 +142,7 @@ func paramsHelp() string {
 		if p.Advanced {
 			mark = "; только командой"
 		}
-		fmt.Fprintf(&b, "%s — %s (%s%s)\n", p.Key, p.Title, p.Hint, mark)
+		fmt.Fprintf(&b, "• %s — %s (%s%s)\n", p.Key, p.Title, p.Hint, mark)
 	}
 	return b.String()
 }

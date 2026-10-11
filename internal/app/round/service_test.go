@@ -113,7 +113,7 @@ func TestBegin_OpensFirstRoundAndScene(t *testing.T) {
 	if len(msgs) != 2 || msgs[0].Kind != model.OutboxScene || msgs[1].Kind != model.OutboxRoundOpen || msgs[1].RoundID == nil || *msgs[1].RoundID != r.ID {
 		t.Fatalf("outbox = %+v", msgs)
 	}
-	if msgs[0].TelegramChatID != -100 || msgs[0].Text != "«Мир» — начало истории\nВ Мир наступает осень." {
+	if msgs[0].TelegramChatID != -100 || msgs[0].Text != "«Мир» — начало истории\n\nВ Мир наступает осень." {
 		t.Fatalf("scene = %+v", msgs[0])
 	}
 	if _, err := w.svc.Begin(ctx, g, 1); !errors.Is(err, ErrAlreadyStarted) {
@@ -167,7 +167,7 @@ func TestTick_SkipWithoutQuorumAndCarrySubmissions(t *testing.T) {
 		t.Fatalf("outbox = %+v", msgs)
 	}
 	// Пропуск и открытие — одно сообщение (B4).
-	if msgs[2].Text != "Раунд 1. Недостаточное количество участников. Раунд пропущен.\nРаунд 2 открыт. Заявки до 12:20: /act <текст> в личке с ботом, одна на раунд. Перенесено заявок из пропущенного раунда: 1." {
+	if msgs[2].Text != "Раунд 1\nНедостаточное количество участников. Раунд пропущен.\n\nРаунд 2 открыт\nЗаявки до 12:20: /act <текст> в личке с ботом, одна на раунд.\nПеренесено заявок из пропущенного раунда: 1." {
 		t.Fatalf("open text = %q", msgs[2].Text)
 	}
 	// Персонажи при пропуске не наказываются.
@@ -226,7 +226,7 @@ func TestTick_FreezeSnapshotAndActivity(t *testing.T) {
 			t.Fatalf("outbox[%d] kind = %s; want %s", i, msgs[i].Kind, k)
 		}
 	}
-	if msgs[2].Text != "Раунд 1 — итоги\n• тихий раунд: никто ничего заметного не сделал" {
+	if msgs[2].Text != "Раунд 1 — итоги\n\n• тихий раунд: никто ничего заметного не сделал" {
 		t.Fatalf("closed text = %q", msgs[2].Text)
 	}
 	// Статусы: Элис active (0 пропусков), Боб waiting (2 пропуска), Кэт leaving (3 пропуска — порог, один раунд; B13).
@@ -588,10 +588,10 @@ func TestResolve_Narrator(t *testing.T) {
 	}
 	msgs := w.outbox(t)
 	fallback := msgs[2]
-	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "Раунд 1 — итоги\n• Элис (@Элис) уходит из «Рыночная площадь» в «Зал Серой башни»") {
+	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "Раунд 1 — итоги\n\n• Элис (@Элис) уходит из «Рыночная площадь» в «Зал Серой башни»") {
 		t.Fatalf("fallback chronicle = %q", fallback.Text)
 	}
-	if !strings.Contains(fallback.Text, "— Рыночная площадь (Боб, Кэт) —\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)") {
+	if !strings.Contains(fallback.Text, "— Рыночная площадь (Боб, Кэт) —\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)") {
 		t.Fatalf("fallback options = %q", fallback.Text)
 	}
 	// Второй раунд: рассказчик отвечает; в его контексте сцены, события и выжимки нет (прошлой хроники не было).
@@ -622,7 +622,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if chron.ID == 0 {
 		t.Fatalf("chronicle message for round 2 missing: %+v", w.outbox(t))
 	}
-	want := "Раунд 2\nОсень в Мире густеет.\n\n— Площадь —\nБоб (@Боб) читает объявление.\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n\n— Башня —\nЭлис (@Элис) ждёт в зале."
+	want := "Раунд 2\n\nОсень в Мире густеет.\n\n— Площадь —\nБоб (@Боб) читает объявление.\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n\n— Башня —\nЭлис (@Элис) ждёт в зале."
 	if chron.Text != want {
 		t.Fatalf("chronicle text = %q\nwant %q", chron.Text, want)
 	}

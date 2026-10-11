@@ -127,7 +127,7 @@ func TestTick_FailsAfterMaxAttempts(t *testing.T) {
 	}
 	msgs := w.outbox(t)
 	if len(msgs) != 4 || msgs[2].Kind != model.OutboxRoundClosed || msgs[2].RoundID == nil || *msgs[2].RoundID != r1.ID ||
-		msgs[2].Text != "Раунд 1 не удалось разрешить: сбой на стороне бота. Заявки перенесены в следующий раунд." {
+		msgs[2].Text != "Раунд 1 не удалось разрешить\nСбой на стороне бота. Заявки перенесены в следующий раунд." {
 		t.Fatalf("outbox = %+v", msgs)
 	}
 	if !strings.Contains(msgs[3].Text, "Перенесено заявок из пропущенного раунда: 1") {
@@ -175,7 +175,7 @@ func TestFinish(t *testing.T) {
 	}
 	msgs := w.outbox(t)
 	final := msgs[len(msgs)-1]
-	if final.Kind != model.OutboxSystem || !strings.HasPrefix(final.Text, "«Мир» — история завершена\nИгру завершил администратор. Раундов сыграно: 1.\nПерсонажи:\n• Элис — ") {
+	if final.Kind != model.OutboxSystem || !strings.HasPrefix(final.Text, "«Мир» — история завершена\n\nИгру завершил администратор. Раундов сыграно: 1.\n\nПерсонажи:\n• Элис — HP 6/6, Зал Серой башни\n• Боб — выжидает, ") {
 		t.Fatalf("final text = %q", final.Text)
 	}
 	if !strings.Contains(final.Text, "Зал Серой башни") || !strings.Contains(final.Text, "HP 6/6") {

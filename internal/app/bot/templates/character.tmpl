@@ -1,11 +1,16 @@
-{{.Nickname}} — {{.Archetype}}, фракция «{{.Faction}}», статус {{.Status}}
-Игра «{{.Game}}»; локация: {{.Location}}{{if .Death}}; {{.Death}}{{end}}
-HP {{.HP}}{{if .Conditions}}; состояния: {{.Conditions}}{{end}}
+{{.Nickname}} — {{.Archetype}}
+Фракция: «{{.Faction}}»
+Статус: {{.Status}}{{if .Death}} ({{.Death}}){{end}}
+Игра: «{{.Game}}»
+Локация: {{.Location}}
+HP: {{.HP}}
+Состояния: {{if .Conditions}}{{.Conditions}}{{else}}нет{{end}}
 Характеристики: {{.Attributes}}
 Навыки: {{.Skills}}
 Инвентарь: {{if .Inventory}}{{.Inventory}}{{else}}пусто{{end}}
 Открытое описание: {{if .PublicBio}}{{.PublicBio}}{{else}}нет (/bio <текст>){{end}}
 Скрытое описание: {{if .SecretBio}}{{.SecretBio}}{{else}}нет (/secret <текст>){{end}}
+
 Знания:{{if not .Knowledge}} пока нет{{end}}
 {{range .Knowledge}}• {{.}}
 {{end}}

@@ -14,8 +14,9 @@ import (
 // partLimit — символов в одной части игрового сообщения: лимит Telegram с запасом на подпись продолжения.
 const partLimit = model.TelegramTextMaxLen - 96
 
-// chronicleMessage — текст хроники в группу: подпись мира и раунда, общий текст и блоки по сценам от рассказчика
-// (или шаблонные строки событий), к каждой сцене — подходы следующего раунда со сложностью и шансами, посчитанные кодом.
+// chronicleMessage — текст хроники в группу: подпись раунда, общий текст и блоки по сценам от рассказчика
+// (или шаблонные строки событий), к каждой сцене — подходы следующего раунда со сложностью, посчитанные кодом;
+// заголовок, общий текст, сцены и «Варианты» разделены пустой строкой (B16).
 func chronicleMessage(g model.Game, r model.Round, events []model.Event, state *model.RoundSnapshot, opts []narrator.Option) string {
 	byLocation := map[model.LocationID][]narrator.Option{}
 	for _, o := range opts {
@@ -25,7 +26,7 @@ func chronicleMessage(g model.Game, r model.Round, events []model.Event, state *
 	if n := r.Narration; n != nil {
 		b.WriteString(header(g, r.RoundNo))
 		if n.Chronicle != "" {
-			b.WriteString("\n" + n.Chronicle)
+			b.WriteString("\n\n" + n.Chronicle)
 		}
 		for _, sc := range n.Scenes {
 			label := sc.Party
@@ -37,7 +38,7 @@ func chronicleMessage(g model.Game, r model.Round, events []model.Event, state *
 				b.WriteString("\n" + sc.Text)
 			}
 			if line := narrator.OptionsText(byLocation[sc.LocationID], g.Mode); line != "" {
-				b.WriteString("\n" + line)
+				b.WriteString("\n\n" + line)
 			}
 		}
 		return b.String()
@@ -54,7 +55,7 @@ func chronicleMessage(g model.Game, r model.Round, events []model.Event, state *
 				present = append(present, c.Nickname)
 			}
 		}
-		fmt.Fprintf(&b, "\n\n— %s (%s) —\n%s", l.Name, strings.Join(present, ", "), line)
+		fmt.Fprintf(&b, "\n\n— %s (%s) —\n\n%s", l.Name, strings.Join(present, ", "), line)
 	}
 	return b.String()
 }

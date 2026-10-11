@@ -15,6 +15,7 @@ import (
 
 	applm "taletogether/internal/app/llm"
 	"taletogether/internal/model"
+	"taletogether/internal/service/narrator"
 )
 
 // Store — хранилище раундов; реализует `adapter/postgres`. Транзакция через контекст (ADR-0008).
@@ -170,6 +171,7 @@ func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID
 			return err
 		}
 		g.Status = model.GameActive
+		g.SkippedStreak = 0
 		if err := s.enqueue(ctx, g, chat, nil, model.OutboxScene, openingScene(g, genre.Template.OpeningScene, factions)); err != nil {
 			return err
 		}
@@ -216,11 +218,14 @@ func (s *Service) Pause(ctx context.Context, game model.Game, actor model.UserID
 			if err := s.store.UpdateGame(ctx, g); err != nil {
 				return err
 			}
-			if err := s.enqueue(ctx, g, chat, nil, model.OutboxSystem, pausedText(g)); err != nil {
+			s.journal(ctx, g, chat.TelegramChatID, model.Round{}, "paused", map[string]any{"reason": "manual"})
+			if err := s.enqueue(ctx, g, chat, nil, model.OutboxSystem, pausedText()); err != nil {
 				return err
 			}
 		case model.GamePaused:
 			g.Status = model.GameActive
+			g.SkippedStreak = 0 // после возобновления пропуски считаются заново (B11)
+			s.journal(ctx, g, chat.TelegramChatID, model.Round{}, "resumed", nil)
 			open, err := s.store.OpenRound(ctx, g.ID)
 			switch {
 			case err == nil:
@@ -470,6 +475,7 @@ func (s *Service) noteFailure(ctx context.Context, id model.GameID, now time.Tim
 		if err := s.enqueue(ctx, g, chat, &open.ID, model.OutboxRoundClosed, roundFailedText(g, open)); err != nil {
 			return err
 		}
+		g.SkippedStreak = 0
 		return s.afterClose(ctx, &g, chat, open.RoundNo, false)
 	})
 }
@@ -488,8 +494,14 @@ func (s *Service) advance(ctx context.Context, g *model.Game, now time.Time, for
 			g.NextRoundAt = &open.DeadlineAt
 			return s.store.UpdateGame(ctx, *g)
 		}
-		if err := s.close(ctx, *g, chat, open, now, quorum(*g)); err != nil {
+		skipped, err := s.close(ctx, *g, chat, open, now, quorum(*g))
+		if err != nil {
 			return err
+		}
+		if skipped {
+			g.SkippedStreak++
+		} else {
+			g.SkippedStreak = 0
 		}
 		closed = open.RoundNo
 	case errors.Is(err, model.ErrNotFound):
@@ -504,8 +516,9 @@ func (s *Service) advance(ctx context.Context, g *model.Game, now time.Time, for
 	return s.afterClose(ctx, g, chat, closed, force)
 }
 
-// afterClose открывает следующий раунд от текущего момента (игроки получают полный раунд после долгого разрешения)
-// или завершает игру по границе рассказа (`max_rounds`, `ends_at`).
+// afterClose открывает следующий раунд от текущего момента (игроки получают полный раунд после долгого разрешения),
+// завершает игру по границе рассказа (`max_rounds`, `ends_at`) или ставит её на паузу после
+// `settings.pause_after_skipped` пропущенных подряд раундов (B11).
 func (s *Service) afterClose(ctx context.Context, g *model.Game, chat model.Chat, closed int, force bool) error {
 	now := s.clock.Now()
 	if reason := boundary(*g, closed, now); reason != "" {
@@ -514,8 +527,27 @@ func (s *Service) afterClose(ctx context.Context, g *model.Game, chat model.Chat
 		}
 		return s.finish(ctx, g, chat, now, closed, reason)
 	}
+	if n := g.Settings.PauseAfterSkipped; n > 0 && g.SkippedStreak >= n {
+		return s.pauseAfterSkipped(ctx, g, chat, closed)
+	}
 	_, err := s.openNext(ctx, g, chat, now, force)
 	return err
+}
+
+// pauseAfterSkipped — автоматическая пауза (B11): статус `paused`, таймер снят, сообщение о пропуске (dev) и о паузе
+// в группу, журнал `paused` с причиной `skipped_rounds`. Снимается как ручная: `/pause`, счётчик обнуляется.
+func (s *Service) pauseAfterSkipped(ctx context.Context, g *model.Game, chat model.Chat, closed int) error {
+	if err := s.announceSkipped(ctx, g, chat); err != nil {
+		return err
+	}
+	g.Status = model.GamePaused
+	g.NextRoundAt = nil
+	if err := s.store.UpdateGame(ctx, *g); err != nil {
+		return err
+	}
+	s.logger.Info("game paused after skipped rounds", slog.Int64("game_id", int64(g.ID)), slog.Int("skipped", g.SkippedStreak))
+	s.journal(ctx, *g, chat.TelegramChatID, model.Round{RoundNo: closed}, "paused", map[string]any{"reason": "skipped_rounds", "skipped": g.SkippedStreak})
+	return s.enqueue(ctx, *g, chat, nil, model.OutboxSystem, autoPausedText(g.SkippedStreak))
 }
 
 // skippedNote — сообщение о пропуске последнего раунда для группы; пусто вне dev (`AnnounceSkipped`) или если
@@ -558,25 +590,30 @@ func quorum(g model.Game) int {
 	return g.Settings.MinRoundAnswers
 }
 
-// close замораживает раунд (снимок, seed, статусы персонажей по пропускам) или пропускает его без кворума;
-// затем разрешает в той же транзакции. Длительность шагов попадает в метрики раунда.
-func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r model.Round, now time.Time, quorum int) error {
+// close замораживает раунд (снимок, seed, статусы персонажей по пропускам) или пропускает его без кворума
+// (возвращает true); затем разрешает в той же транзакции. Длительность шагов попадает в метрики раунда.
+func (s *Service) close(ctx context.Context, g model.Game, chat model.Chat, r model.Round, now time.Time, quorum int) (bool, error) {
 	started := s.clock.Now()
 	subs, err := s.store.ListSubmissions(ctx, g.ID, r.ID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	r.ClosedAt = &now
 	if len(subs) < quorum {
 		r.Status = model.RoundSkipped
 		r.SkipReason = fmt.Sprintf("заявок %d из %d", len(subs), quorum)
 		if err := s.store.UpdateRound(ctx, r); err != nil {
-			return err
+			return false, err
 		}
 		s.logger.Info("round skipped", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.String("reason", r.SkipReason))
 		s.journal(ctx, g, chat.TelegramChatID, r, "skipped", map[string]any{"reason": r.SkipReason})
-		return nil // сообщение о пропуске (dev) уходит вместе с анонсом следующего раунда, см. openNext
+		return true, nil // сообщение о пропуске (dev) уходит вместе с анонсом следующего раунда, см. openNext
 	}
+	return false, s.freeze(ctx, g, chat, r, subs, now, started)
+}
+
+// freeze — заморозка раунда при кворуме: статусы персонажей, снимок, seed, затем разрешение.
+func (s *Service) freeze(ctx context.Context, g model.Game, chat model.Chat, r model.Round, subs []model.Submission, now, started time.Time) error {
 	chars, err := s.store.ListCharacters(ctx, g.ID, r.SeasonID)
 	if err != nil {
 		return err
@@ -767,9 +804,62 @@ func (s *Service) openNext(ctx context.Context, g *model.Game, chat model.Chat, 
 	s.journal(ctx, *g, chat.TelegramChatID, r, "opened", map[string]any{"deadline_at": r.DeadlineAt, "carried": carried})
 	text := roundOpenText(*g, r, carried, now)
 	if note := s.skippedNote(*g, last); note != "" {
-		text = note + "\n" + text // одно сообщение: пропуск и открытие (B4)
+		text = note + "\n\n" + text // одно сообщение: пропуск и открытие (B4)
 	}
-	return true, s.enqueue(ctx, *g, chat, &r.ID, model.OutboxRoundOpen, text)
+	if err := s.enqueue(ctx, *g, chat, &r.ID, model.OutboxRoundOpen, text); err != nil {
+		return false, err
+	}
+	return true, s.notifyOpen(ctx, *g, last, r, now)
+}
+
+// notifyOpen — личное «раунд N открыт» с вариантами по локации (B15) персонажам, которые не получили уведомление
+// о заявке только что опубликованного раунда: без заявки в нём, после пропуска, на старте игры или после паузы.
+// Выбывшие (`inactive`, `dead`) и игроки без открытой лички пропускаются.
+func (s *Service) notifyOpen(ctx context.Context, g model.Game, last, r model.Round, now time.Time) error {
+	notified := map[model.CharacterID]bool{}
+	if last.ID != 0 && last.Status == model.RoundPublished {
+		actions, err := s.store.ListResolvedActions(ctx, g.ID, last.ID)
+		if err != nil {
+			return err
+		}
+		for _, a := range actions {
+			notified[a.CharacterID] = true
+		}
+	}
+	chars, err := s.store.ListCharacters(ctx, g.ID, r.SeasonID)
+	if err != nil {
+		return err
+	}
+	locations, err := s.store.ListLocations(ctx, g.ID)
+	if err != nil {
+		return err
+	}
+	def, err := s.characterDef(ctx, g)
+	if err != nil {
+		return err
+	}
+	state := snapshot(g, chars, locations, nil, def)
+	opts := narrator.Options(&state, def, g.Mode)
+	for _, c := range state.Characters {
+		if notified[c.ID] || c.Status.Absent() {
+			continue
+		}
+		user, err := s.store.GetUser(ctx, c.UserID)
+		if errors.Is(err, model.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if user.StartedAt == nil {
+			continue
+		}
+		text := roundOpenPersonalText(g, r, optionsFor(c, &state, opts, g.Mode, "Варианты для вас"), now)
+		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: user.PrivateChat(), Kind: model.OutboxPrivateOpen, Part: 1, Text: text, SendAfter: s.clock.Now()}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) enqueue(ctx context.Context, g model.Game, chat model.Chat, round *model.RoundID, kind model.OutboxKind, text string) error {

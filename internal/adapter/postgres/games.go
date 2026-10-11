@@ -14,7 +14,7 @@ import (
 func gameCols(a string) string {
 	return fmt.Sprintf("%[1]sid, %[1]schat_id, %[1]sgenre_id, %[1]sformat, %[1]smode, %[1]stitle, %[1]sstatus, %[1]stimezone, "+
 		"coalesce(to_char(%[1]splay_from, 'HH24:MI'), ''), coalesce(to_char(%[1]splay_to, 'HH24:MI'), ''), %[1]sround_minutes, %[1]ssettings, "+
-		"%[1]srules_version, %[1]sllm_profile_id, %[1]sjoin_code, %[1]screated_by_user_id, %[1]snext_round_at, %[1]screated_at, %[1]supdated_at", a)
+		"%[1]srules_version, %[1]sllm_profile_id, %[1]sjoin_code, %[1]screated_by_user_id, %[1]snext_round_at, %[1]sskipped_streak, %[1]screated_at, %[1]supdated_at", a)
 }
 
 var gameColumns = gameCols("")
@@ -22,7 +22,7 @@ var gameColumns = gameCols("")
 func scanGame(row pgx.Row) (model.Game, error) {
 	var g model.Game
 	err := row.Scan(&g.ID, &g.ChatID, &g.GenreID, &g.Format, &g.Mode, &g.Title, &g.Status, &g.Timezone, &g.PlayFrom, &g.PlayTo,
-		&g.RoundMinutes, &g.Settings, &g.RulesVersion, &g.LLMProfileID, &g.JoinCode, &g.CreatedByUserID, &g.NextRoundAt, &g.CreatedAt, &g.UpdatedAt)
+		&g.RoundMinutes, &g.Settings, &g.RulesVersion, &g.LLMProfileID, &g.JoinCode, &g.CreatedByUserID, &g.NextRoundAt, &g.SkippedStreak, &g.CreatedAt, &g.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Game{}, model.ErrNotFound
 	}
@@ -43,15 +43,15 @@ RETURNING ` + gameColumns
 	return out, nil
 }
 
-// UpdateGame сохраняет изменяемые поля игры: жанр, формат, режим, название, статус, окно, раунд, настройки.
+// UpdateGame сохраняет изменяемые поля игры: жанр, формат, режим, название, статус, окно, раунд, настройки, таймер и счётчик пропусков.
 func (s *Store) UpdateGame(ctx context.Context, g model.Game) error {
 	const q = `
 UPDATE games SET genre_id = $2, format = $3, mode = $4, title = $5, status = $6, timezone = $7,
     play_from = NULLIF($8, '')::time, play_to = NULLIF($9, '')::time, round_minutes = $10, settings = $11,
-    rules_version = $12, next_round_at = $13, updated_at = now()
+    rules_version = $12, next_round_at = $13, skipped_streak = $14, updated_at = now()
 WHERE id = $1`
 	if _, err := s.db(ctx).Exec(ctx, q, g.ID, g.GenreID, g.Format, g.Mode, g.Title, g.Status, g.Timezone, g.PlayFrom, g.PlayTo,
-		g.RoundMinutes, g.Settings, g.RulesVersion, g.NextRoundAt); err != nil {
+		g.RoundMinutes, g.Settings, g.RulesVersion, g.NextRoundAt, g.SkippedStreak); err != nil {
 		return fmt.Errorf("postgres.UpdateGame: %w", err)
 	}
 	return nil

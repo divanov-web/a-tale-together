@@ -1,13 +1,26 @@
 Мир «{{.Title}}» — {{.Status}}
-Жанр: {{.Genre}}; формат: {{.Format}}; режим: {{.Mode}}; сезон {{.SeasonNo}}; правила v{{.RulesVersion}}
-Раунд: {{.RoundMinutes}} мин; кворум {{.MinAnswers}}; часовой пояс {{.Timezone}}; окно: {{.PlayWindow}}
+
+Жанр: {{.Genre}}
+Формат: {{.Format}}
+Режим: {{.Mode}}
+Сезон: {{.SeasonNo}}
+Правила: v{{.RulesVersion}}
+Раунд: {{.RoundMinutes}} мин
+Кворум: {{.MinAnswers}}
+Часовой пояс: {{.Timezone}}
+Игровое окно: {{.PlayWindow}}
 Границы: {{.Limits}}
-Игроки: {{.MembersCount}}; персонажей: {{.CharactersCount}}
+Игроки: {{.MembersCount}}
+Персонажей: {{.CharactersCount}}
+
 Фракции:
 {{range .Factions}}• {{.Title}} ({{.Code}}): {{.Count}}
-{{end}}Персонажи:{{if not .Characters}} пока нет{{end}}
+{{end}}
+Персонажи:{{if not .Characters}} пока нет{{end}}
 {{range .Characters}}• {{.Nickname}} — {{.Archetype}}, {{.Faction}}, {{.Status}}
-{{end}}{{if .CurrentRound}}Текущий раунд: {{.CurrentRound}}
+{{end}}
+{{if .CurrentRound}}Текущий раунд: {{.CurrentRound}}
 {{end}}{{if .LastRound}}Предыдущий раунд: {{.LastRound}}
 {{end}}Следующий раунд: {{.NextRound}}
+
 Приглашение: {{.JoinLink}}

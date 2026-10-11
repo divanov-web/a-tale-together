@@ -211,6 +211,7 @@ const (
 	OutboxSystem      OutboxKind = "system"       // пауза, возобновление, служебные уведомления игры
 	OutboxChronicle   OutboxKind = "chronicle"    // хроника раунда в группу; длинная делится на части (part 1..N)
 	OutboxPrivate     OutboxKind = "private"      // уведомление о заявке игроку в личку
+	OutboxPrivateOpen OutboxKind = "private_open" // личное «раунд открыт» с вариантами персонажам без уведомления о заявке (B15)
 )
 
 // TelegramTextMaxLen — лимит текста одного сообщения Telegram; игровые тексты длиннее делятся на части при постановке в outbox.

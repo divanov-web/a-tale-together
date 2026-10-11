@@ -263,14 +263,15 @@ func (s *Service) mentions(ctx context.Context, state *model.RoundSnapshot) (map
 }
 
 // publish ставит в outbox хронику (рассказчика или шаблонную) с подходами следующего раунда, частями по лимиту
-// Telegram, и уведомление о заявке каждому подавшему её.
+// Telegram, и уведомление о заявке каждому подавшему её с вариантами следующего раунда по его локации (B15).
 func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r model.Round, state *model.RoundSnapshot, result engine.Result, def model.CharacterModelDef, m *model.RoundMetrics) error {
 	preset := rules.Preset(g.Mode)
 	mentions, err := s.mentions(ctx, state)
 	if err != nil {
 		return err
 	}
-	chronicle := tagMentions(chronicleMessage(g, r, visibility.Public(result.Events), state, narrator.Options(state, def, g.Mode)), mentions)
+	opts := narrator.Options(state, def, g.Mode)
+	chronicle := tagMentions(chronicleMessage(g, r, visibility.Public(result.Events), state, opts), mentions)
 	for i, part := range splitParts(chronicle, header(g, r.RoundNo)+" (продолжение)\n", partLimit) {
 		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: chat.TelegramChatID, Kind: model.OutboxChronicle, Part: i + 1, Text: part, SendAfter: s.clock.Now()}); err != nil {
 			return err
@@ -294,7 +295,7 @@ func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r 
 			continue
 		}
 		own := visibility.Filter(result.Events, visibility.Viewer{CharacterID: c.ID, LocationID: c.LocationID})
-		text := noticeText(g, r, res, own, preset)
+		text := noticeText(g, r, res, own, preset, optionsFor(*c, state, opts, g.Mode, fmt.Sprintf("Варианты на раунд %d", r.RoundNo+1)))
 		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: user.PrivateChat(), Kind: model.OutboxPrivate, Part: 1, Text: text, SendAfter: s.clock.Now()}); err != nil {
 			return err
 		}

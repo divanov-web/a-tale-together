@@ -48,6 +48,7 @@ type GameSettings struct {
 	AllowResubmit       bool       `json:"allow_resubmit"`        // разрешить менять заявку до дедлайна (не чаще раза в минуту); по умолчанию запрещено (решение руководителя 2026-10-10); настройка разработчика
 	DeathMode           DeathMode  `json:"death_mode,omitempty"`  // режим смерти (docs/game/death.md); реализуется только fake; настройка разработчика
 	DeathDays           int        `json:"death_days,omitempty"`  // срок выбытия при ненастоящей смерти, дней; настройка разработчика
+	PauseAfterSkipped   int        `json:"pause_after_skipped"`   // пропущенных без кворума раундов подряд до автоматической паузы; 0 — выключено; настройка разработчика, админу не показывается (B11)
 }
 
 // Кворум раунда по умолчанию и в режиме разработки.
@@ -55,6 +56,7 @@ const (
 	MaxRoundPlayersDefault    = 20 // внутренняя настройка разработчика, не параметр мира
 	MaxActiveLocationsDefault = 4  // то же: лимит активных локаций мира
 	MinRoundAnswersDefault    = 2
+	PauseAfterSkippedDefault  = 3 // автопауза после трёх пропущенных подряд раундов (B11)
 	MinRoundAnswersDev        = 1
 	MinRoundMinutes           = 10 // продуктовый минимум длительности раунда
 	MinRoundMinutesDev        = 2  // песочница: короткие раунды для прогонов; не 1, дедлайн округляется вниз до минуты (B12)
@@ -74,6 +76,7 @@ func DefaultGameSettings() GameSettings {
 		MinRoundAnswers:     MinRoundAnswersDefault,
 		DeathMode:           DeathFake,
 		DeathDays:           DeathDaysDefault,
+		PauseAfterSkipped:   PauseAfterSkippedDefault,
 	}
 }
 
@@ -96,6 +99,7 @@ type Game struct {
 	JoinCode        string
 	CreatedByUserID UserID
 	NextRoundAt     *time.Time
+	SkippedStreak   int // пропущенных без кворума раундов подряд; обнуляется заявками в раунде, возобновлением и сбросом (B11)
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

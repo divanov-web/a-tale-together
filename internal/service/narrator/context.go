@@ -227,9 +227,10 @@ type Option struct {
 	Chances     []Chance
 }
 
-// Chance — шанс персонажа на подход, в процентах (в группу не выводится, для личных подсказок).
+// Chance — параметр и шанс персонажа на подход, в процентах (в группу не выводится, для личных подсказок; B15).
 type Chance struct {
 	Nickname string
+	Param    int
 	Pct      int
 }
 
@@ -279,7 +280,8 @@ func Options(state *model.RoundSnapshot, def model.CharacterModelDef, mode model
 					}
 					opt.Difficulty = rules.Difficulty(preset, ap.Difficulty, l.Difficulty)
 					for _, c := range chars {
-						opt.Chances = append(opt.Chances, Chance{Nickname: c.Nickname, Pct: rules.ChancePct(rules.Param(c, ap.Attribute, ap.Skill, 0), opt.Difficulty)})
+						param := rules.Param(c, ap.Attribute, ap.Skill, 0)
+						opt.Chances = append(opt.Chances, Chance{Nickname: c.Nickname, Param: param, Pct: rules.ChancePct(param, opt.Difficulty)})
 					}
 				}
 				out = append(out, opt)
