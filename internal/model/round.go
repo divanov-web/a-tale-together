@@ -122,6 +122,7 @@ type SnapshotCharacter struct {
 	ID              CharacterID     `json:"id"`
 	UserID          UserID          `json:"user_id"`
 	Nickname        string          `json:"nickname"`
+	Gender          Gender          `json:"gender,omitempty"` // пол персонажа (B18); пусто — не указан
 	Status          CharacterStatus `json:"status"`
 	Entry           string          `json:"entry,omitempty"` // вход в историю в этом раунде: EntryNew, EntryReturned или пусто
 	MissedRounds    int             `json:"missed_rounds"`

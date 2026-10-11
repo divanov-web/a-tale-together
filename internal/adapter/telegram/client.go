@@ -140,6 +140,26 @@ func (c *Client) SetCommands(ctx context.Context, private, group []model.BotComm
 	return nil
 }
 
+// SetMemberCommands регистрирует меню команд одному участнику конкретного чата (область `chat_member`, B20);
+// пустой список снимает его (deleteMyCommands), и участник видит меню группы для всех.
+func (c *Client) SetMemberCommands(ctx context.Context, chat model.TelegramChatID, user model.TelegramUserID, cmds []model.BotCommand) error {
+	scope := &models.BotCommandScopeChatMember{ChatID: int64(chat), UserID: int64(user)}
+	if len(cmds) == 0 {
+		if _, err := c.bot.DeleteMyCommands(ctx, &bot.DeleteMyCommandsParams{Scope: scope}); err != nil {
+			return fmt.Errorf("telegram.SetMemberCommands: delete: %w", err)
+		}
+		return nil
+	}
+	out := make([]models.BotCommand, 0, len(cmds))
+	for _, bc := range cmds {
+		out = append(out, models.BotCommand{Command: bc.Name, Description: bc.Description})
+	}
+	if _, err := c.bot.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: out, Scope: scope}); err != nil {
+		return fmt.Errorf("telegram.SetMemberCommands: %w", err)
+	}
+	return nil
+}
+
 // onUpdate превращает update в model.Incoming или model.ChatMemberChange и передаёт обработчику; остальные update игнорирует.
 func (c *Client) onUpdate(ctx context.Context, _ *bot.Bot, u *models.Update) {
 	if u.MyChatMember != nil {

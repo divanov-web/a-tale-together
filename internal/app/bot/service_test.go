@@ -24,6 +24,13 @@ type fakeTelegram struct {
 	sent   map[model.TelegramChatID][]string
 	admins map[model.TelegramUserID]bool
 	menu   [][]model.BotCommand
+	member map[memberScope][]model.BotCommand // меню участников чатов (B20); nil — снято
+}
+
+// memberScope — область меню «участник чата».
+type memberScope struct {
+	chat model.TelegramChatID
+	user model.TelegramUserID
 }
 
 func (f *fakeTelegram) SendText(_ context.Context, chat model.TelegramChatID, text string) error {
@@ -38,6 +45,27 @@ func (f *fakeTelegram) IsChatAdmin(_ context.Context, _ model.TelegramChatID, us
 func (f *fakeTelegram) SetCommands(_ context.Context, private, group []model.BotCommand) error {
 	f.menu = [][]model.BotCommand{private, group}
 	return nil
+}
+
+func (f *fakeTelegram) SetMemberCommands(_ context.Context, chat model.TelegramChatID, user model.TelegramUserID, cmds []model.BotCommand) error {
+	if f.member == nil {
+		f.member = map[memberScope][]model.BotCommand{}
+	}
+	f.member[memberScope{chat, user}] = cmds
+	return nil
+}
+
+// memberMenu — имена команд меню участника чата; nil, если меню снято или не ставилось.
+func (f *fakeTelegram) memberMenu(chat model.TelegramChatID, user model.TelegramUserID) []string {
+	cmds, ok := f.member[memberScope{chat, user}]
+	if !ok || cmds == nil {
+		return nil
+	}
+	names := make([]string, 0, len(cmds))
+	for _, c := range cmds {
+		names = append(names, c.Name)
+	}
+	return names
 }
 
 // last — последний текст, отправленный в чат.
@@ -276,12 +304,12 @@ func TestCharacter_CreateAutoAndManual(t *testing.T) {
 	h := newHarness(t)
 	code := h.createGame()
 
-	card := h.joinAndCreate(alice, code, "1", "Элис", "воин", "1", "Высокая и шумная", "-")
-	mustContain(t, card, "Персонаж создан", "Элис — Воин\nФракция: «Орден Рассвета»", "HP: 9", "Сила 5, Ловкость 3, Разум 2, Воля 4",
+	card := h.joinAndCreate(alice, code, "1", "Элис", "2", "воин", "1", "Высокая и шумная", "-")
+	mustContain(t, card, "Персонаж создан", "Элис — Воин\nПол: женский\nФракция: «Орден Рассвета»", "HP: 9", "Сила 5, Ловкость 3, Разум 2, Воля 4",
 		"Атлетика 3, Бой 3", "Меч, Щит", "Открытое описание: Высокая и шумная", "Скрытое описание: нет")
 
-	card = h.joinAndCreate(bob, code, "Гильдия теней", "Боб", "2", "2", "2 5 4 3", "воровство 3 скрытность 2 бой 1", "-", "Боится воды")
-	mustContain(t, card, "Боб — Плут\nФракция: «Гильдия теней»", "HP: 6", "Бой 1, Воровство 3, Скрытность 2", "Кинжал, Отмычки", "Скрытое описание: Боится воды")
+	card = h.joinAndCreate(bob, code, "Гильдия теней", "Боб", "1", "2", "2", "2 5 4 3", "воровство 3 скрытность 2 бой 1", "-", "Боится воды")
+	mustContain(t, card, "Боб — Плут\nПол: мужской\nФракция: «Гильдия теней»", "HP: 6", "Бой 1, Воровство 3, Скрытность 2", "Кинжал, Отмычки", "Скрытое описание: Боится воды")
 
 	mustContain(t, h.send(alice, private(alice), "/character"), "Элис — Воин")
 	mustContain(t, h.send(alice, private(alice), "/bio Теперь тихая"), "сохранено")
@@ -289,14 +317,14 @@ func TestCharacter_CreateAutoAndManual(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/create"), "уже есть")
 	mustContain(t, h.send(alice, private(alice), "/start join_"+code), "Вы уже в игре")
 	mustContain(t, h.send(alice, private(alice), "/me"), "@alice", "персонаж Элис", "Личка: открыта")
-	mustContain(t, h.send(owner, groupChat, "/status"), "Игроки: 3\n", "Персонажей: 2", "Орден Рассвета (good): 1", "Элис — warrior")
+	mustContain(t, h.send(owner, groupChat, "/status"), "Игроки: 3\n", "Персонажей: 2", "Орден Рассвета (good): 1", "Элис — warrior, женский, Орден Рассвета", "Боб — rogue, мужской")
 }
 
 func TestCharacter_ValidationInDialog(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	code := h.createGame()
-	h.joinAndCreate(alice, code, "1", "Элис", "1", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
 
 	reply := h.send(bob, private(bob), "/join "+code)
 	mustContain(t, reply, "Выберите фракцию")
@@ -304,7 +332,9 @@ func TestCharacter_ValidationInDialog(t *testing.T) {
 	mustContain(t, h.send(bob, private(bob), "evil"), "Никнейм")
 	mustContain(t, h.send(bob, private(bob), "элис"), "Никнейм уже занят")
 	mustContain(t, h.send(bob, private(bob), "Б"), "от 2 до 30")
-	mustContain(t, h.send(bob, private(bob), "Боб"), "Архетип")
+	mustContain(t, h.send(bob, private(bob), "Боб"), "Пол персонажа: 1 — мужской, 2 — женский, 3 — не указывать")
+	mustContain(t, h.send(bob, private(bob), "0"), "ответьте 1 (мужской), 2 (женский) или 3 (не указывать)")
+	mustContain(t, h.send(bob, private(bob), "не указывать"), "Архетип")
 	mustContain(t, h.send(bob, private(bob), "бард"), "выберите архетип")
 	mustContain(t, h.send(bob, private(bob), "маг"), "Распределение")
 	mustContain(t, h.send(bob, private(bob), "2"), "Характеристики, сумма 14", "Например: 5 3 2 4")
@@ -357,15 +387,66 @@ func TestCommands_MenuByContext(t *testing.T) {
 		return fmt.Sprint(out)
 	}
 	privateMenu, groupMenu := names(h.tg.menu[0]), names(h.tg.menu[1])
-	if !strings.Contains(privateMenu, "character") || strings.Contains(privateMenu, "mod") || strings.Contains(privateMenu, "start") {
+	if !strings.Contains(privateMenu, "character") || strings.Contains(privateMenu, "mod") || strings.Contains(privateMenu, "start") || strings.Contains(privateMenu, "ping") || strings.Contains(privateMenu, "llm") {
 		t.Fatalf("private menu = %s", privateMenu)
 	}
-	if !strings.Contains(groupMenu, "create") || strings.Contains(groupMenu, "character") {
+	// B20: меню группы для всех — только команды игры здесь и сейчас; /help по-прежнему перечисляет всё.
+	if groupMenu != "[help status act]" {
 		t.Fatalf("group menu = %s", groupMenu)
 	}
-	mustContain(t, h.send(alice, private(alice), "/help"), "в личке", "/join", "/cancel")
-	mustContain(t, h.send(alice, groupChat, "/help"), "в группе", "/create — создать мир")
+	if adminMenu := names(h.svc.Menu(ctxGroup, true)); adminMenu != "[help chat mod owner create begin pause finish status act next replay round reset]" {
+		t.Fatalf("admin menu = %s", adminMenu)
+	}
+	mustContain(t, h.send(alice, private(alice), "/help"), "в личке", "/join", "/cancel", "/ping")
+	mustContain(t, h.send(alice, groupChat, "/help"), "в группе", "/create — создать мир", "/begin", "/ping")
 	mustContain(t, h.send(alice, private(alice), "/help"), "/create — создать персонажа")
+}
+
+// TestCommands_ManagerMenu (B20): владелец и модераторы получают меню группы с административными командами в своём
+// чате: при добавлении бота, регистрации чата командой, старте бота, `/mod add`, `/owner`; снятие — `/mod remove`
+// и у бывшего владельца.
+func TestCommands_ManagerMenu(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	admin := "[help chat mod owner create begin pause finish status act next replay round reset]"
+	h.addBot(owner)
+	if got := fmt.Sprint(h.tg.memberMenu(groupChat, owner.ID)); got != admin {
+		t.Fatalf("owner menu after add = %s", got)
+	}
+	if got := h.tg.memberMenu(groupChat, alice.ID); got != nil {
+		t.Fatalf("alice menu = %v", got)
+	}
+	h.send(bob, private(bob), "/start")
+	h.send(owner, groupChat, "/mod add @bob")
+	if got := fmt.Sprint(h.tg.memberMenu(groupChat, bob.ID)); got != admin {
+		t.Fatalf("moderator menu = %s", got)
+	}
+	h.send(owner, groupChat, "/mod remove @bob")
+	if got := h.tg.memberMenu(groupChat, bob.ID); got != nil {
+		t.Fatalf("removed moderator menu = %v", got)
+	}
+	h.send(owner, groupChat, "/owner @bob")
+	if got := fmt.Sprint(h.tg.memberMenu(groupChat, bob.ID)); got != admin {
+		t.Fatalf("new owner menu = %s", got)
+	}
+	if got := h.tg.memberMenu(groupChat, owner.ID); got != nil {
+		t.Fatalf("former owner menu = %v", got)
+	}
+	// Старт бота: меню всем владельцам и модераторам зарегистрированных чатов.
+	h.tg.member = nil
+	if err := h.svc.RegisterMenu(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(h.tg.memberMenu(groupChat, bob.ID)); got != admin {
+		t.Fatalf("owner menu after restart = %s", got)
+	}
+	// Регистрация чата первой командой администратора группы Telegram.
+	h2 := newHarness(t)
+	h2.tg.admins[owner.ID] = true
+	h2.send(owner, groupChat, "/chat")
+	if got := fmt.Sprint(h2.tg.memberMenu(groupChat, owner.ID)); got != admin {
+		t.Fatalf("owner menu after command registration = %s", got)
+	}
 }
 
 // outboxTexts — тексты очереди исходящих игры в порядке постановки.
@@ -402,8 +483,8 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 
 	mustContain(t, h.send(alice, groupChat, "/begin"), "Нет прав")
 	mustContain(t, h.send(owner, groupChat, "/begin"), "нет персонажей")
-	h.joinAndCreate(alice, code, "1", "Элис", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
 	mustContain(t, h.send(alice, private(alice), "/act иду в башню"), "Игра не запущена")
 	mustContain(t, h.send(alice, private(alice), "иду в башню"), "Я понимаю только команды") // B17: игра не идёт — текст не заявка
 
@@ -494,8 +575,8 @@ func TestRound_PauseAfterSkipped(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 2"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
 	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
@@ -520,8 +601,8 @@ func TestRound_StatusTransitionsAndWindow(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set play_window 13:00-14:00"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
 
 	// Старт вне окна: первый раунд в начале окна.
 	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
@@ -599,8 +680,8 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
 	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Рыночная площадь", "Знания: пока нет")
 	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята: раунд 1")
@@ -654,8 +735,8 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 2"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
 	mustContain(t, h.send(owner, groupChat, "/round"), "Раунда с таким номером нет")
 	mustContain(t, h.send(owner, groupChat, "/finish"), "Игра не запущена")
 	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
@@ -685,7 +766,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	code2 := h.createGame()
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
-	h.joinAndCreate(alice, code2, "1", "Элис", "1", "1", "-", "-")
+	h.joinAndCreate(alice, code2, "1", "Элис", "ж", "1", "1", "-", "-")
 	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")

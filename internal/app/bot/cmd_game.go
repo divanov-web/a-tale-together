@@ -83,10 +83,14 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 		titles[f.ID] = f.Title
 		factions = append(factions, factionRow{Title: f.Title, Code: string(f.Code), Count: counts[f.ID]})
 	}
-	type charRow struct{ Nickname, Archetype, Faction, Status string }
+	type charRow struct{ Nickname, Archetype, Gender, Faction, Status string }
 	var chars []charRow
 	for _, c := range st.Characters {
-		chars = append(chars, charRow{Nickname: c.Nickname, Archetype: c.Archetype, Faction: titles[c.FactionID], Status: string(c.Status)})
+		gender := ""
+		if c.Gender != "" {
+			gender = c.Gender.Word()
+		}
+		chars = append(chars, charRow{Nickname: c.Nickname, Archetype: c.Archetype, Gender: gender, Faction: titles[c.FactionID], Status: string(c.Status)})
 	}
 	window := "без окна"
 	if g.PlayFrom != "" {

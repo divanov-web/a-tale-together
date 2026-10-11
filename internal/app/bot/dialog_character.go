@@ -15,6 +15,7 @@ import (
 const (
 	stepFaction      = "faction"
 	stepNickname     = "nickname"
+	stepGender       = "gender"
 	stepArchetype    = "archetype"
 	stepDistribution = "distribution"
 	stepAttributes   = "attributes"
@@ -27,6 +28,7 @@ const (
 type characterData struct {
 	Faction    model.FactionCode `json:"faction"`
 	Nickname   string            `json:"nickname"`
+	Gender     model.Gender      `json:"gender,omitempty"`
 	Archetype  string            `json:"archetype"`
 	Attributes map[string]int    `json:"attributes,omitempty"`
 	Skills     map[string]int    `json:"skills,omitempty"`
@@ -84,6 +86,13 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 			return "", false, err
 		}
 		data.Nickname = answer
+		next = stepGender
+	case stepGender:
+		gender, ok := parseGender(answer)
+		if !ok {
+			return "", false, fmt.Errorf("%w: ответьте 1 (мужской), 2 (женский) или 3 (не указывать)", game.ErrBadValue)
+		}
+		data.Gender = gender
 		next = stepArchetype
 	case stepArchetype:
 		a, ok := rules.FindArchetype(def, answer)
@@ -150,7 +159,7 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 			data.SecretBio = answer
 		}
 		c, err := s.games.CreateCharacter(ctx, g, req.user, model.CharacterDraft{
-			FactionCode: data.Faction, Nickname: data.Nickname, Archetype: data.Archetype,
+			FactionCode: data.Faction, Nickname: data.Nickname, Gender: data.Gender, Archetype: data.Archetype,
 			Attributes: data.Attributes, Skills: data.Skills, PublicBio: data.PublicBio, SecretBio: data.SecretBio,
 		})
 		if err != nil {
@@ -193,6 +202,8 @@ func (s *Service) characterQuestion(ctx context.Context, g model.Game, step stri
 		return b.String(), nil
 	case stepNickname:
 		return fmt.Sprintf("Никнейм персонажа (от %d до %d символов, уникален в игре):", game.NicknameMin, game.NicknameMax), nil
+	case stepGender:
+		return "Пол персонажа: 1 — мужской, 2 — женский, 3 — не указывать.", nil
 	case stepArchetype:
 		return "Архетип (номер или название):\n" + archetypesHelp(def), nil
 	case stepDistribution:
@@ -241,6 +252,19 @@ func exampleSkills(def model.CharacterModelDef) string {
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// parseGender разбирает ответ шага пола: номер, слово или сокращение; «не указывать» — пустое значение.
+func parseGender(text string) (model.Gender, bool) {
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "1", "м", "муж", "мужской", "мужчина", "male", "m":
+		return model.GenderMale, true
+	case "2", "ж", "жен", "женский", "женщина", "female", "f":
+		return model.GenderFemale, true
+	case "3", "не указывать", "нет", "пропустить", setupSkip:
+		return "", true
+	}
+	return "", false
 }
 
 // findFaction находит фракцию по номеру, коду или названию.

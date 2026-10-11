@@ -86,7 +86,7 @@ func (s *Service) renderCharacter(ctx context.Context, g model.Game, c model.Cha
 	}
 	return templates.Render("character", map[string]any{
 		"Location": location, "Knowledge": knowledge, "Death": death,
-		"Nickname": c.Nickname, "Archetype": archetype, "Faction": faction, "Status": string(c.Status), "Game": g.Title,
+		"Nickname": c.Nickname, "Gender": c.Gender.Word(), "Archetype": archetype, "Faction": faction, "Status": string(c.Status), "Game": g.Title,
 		"HP": c.HP, "Conditions": strings.Join(c.Conditions, ", "), "Attributes": strings.Join(attrs, ", "),
 		"Skills": strings.Join(skills, ", "), "Inventory": strings.Join(items, ", "), "PublicBio": c.PublicBio, "SecretBio": c.SecretBio,
 	})

@@ -33,7 +33,7 @@ func snapshot(g model.Game, chars []model.Character, locations []model.Location,
 			knowledge = []string{}
 		}
 		snap.Characters = append(snap.Characters, model.SnapshotCharacter{
-			ID: c.ID, UserID: c.UserID, Nickname: c.Nickname, Status: c.Status, MissedRounds: c.MissedRounds, DeathRoundsLeft: c.DeathRoundsLeft,
+			ID: c.ID, UserID: c.UserID, Nickname: c.Nickname, Gender: c.Gender, Status: c.Status, MissedRounds: c.MissedRounds, DeathRoundsLeft: c.DeathRoundsLeft,
 			HP: c.HP, MaxHP: maxHP, FactionID: c.FactionID, PartyID: c.PartyID, LocationID: c.LocationID, Conditions: conditions,
 			Attributes: c.Attributes, Skills: c.Skills, Inventory: c.Inventory, Knowledge: knowledge,
 		})
@@ -295,7 +295,7 @@ func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r 
 			continue
 		}
 		own := visibility.Filter(result.Events, visibility.Viewer{CharacterID: c.ID, LocationID: c.LocationID})
-		text := noticeText(g, r, res, own, preset, optionsFor(*c, state, opts, g.Mode, fmt.Sprintf("Варианты на раунд %d", r.RoundNo+1)))
+		text := noticeText(g, r, res, own, preset, optionsFor(*c, state, opts, fmt.Sprintf("Варианты на раунд %d", r.RoundNo+1)))
 		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: user.PrivateChat(), Kind: model.OutboxPrivate, Part: 1, Text: text, SendAfter: s.clock.Now()}); err != nil {
 			return err
 		}

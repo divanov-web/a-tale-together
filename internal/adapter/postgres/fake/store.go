@@ -351,6 +351,20 @@ func (s *Store) ListModerators(_ context.Context, chat model.ChatID) ([]model.Us
 	return out, nil
 }
 
+// ListActiveChats — см. postgres.Store.
+func (s *Store) ListActiveChats(_ context.Context) ([]model.Chat, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []model.Chat
+	for _, c := range s.chats {
+		if c.BotStatus != model.BotLeft {
+			out = append(out, c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
 // ChatsOfUser — см. postgres.Store.
 func (s *Store) ChatsOfUser(_ context.Context, user model.UserID) ([]model.Chat, error) {
 	s.mu.Lock()

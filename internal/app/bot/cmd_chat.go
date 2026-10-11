@@ -52,11 +52,13 @@ func (s *Service) chatMod(ctx context.Context, req *request) error {
 		if err := s.chats.AddModerator(ctx, req.chat, req.user.ID, target); err != nil {
 			return err
 		}
+		s.syncMemberMenu(ctx, req.chat, target)
 		return s.reply(ctx, req.in, target.Mention()+" назначен модератором чата.")
 	case "remove":
 		if err := s.chats.RemoveModerator(ctx, req.chat, req.user.ID, target); err != nil {
 			return err
 		}
+		s.syncMemberMenu(ctx, req.chat, target)
 		return s.reply(ctx, req.in, target.Mention()+" больше не модератор чата.")
 	}
 	return s.reply(ctx, req.in, "Формат: /mod add @user или /mod remove @user")
@@ -77,6 +79,9 @@ func (s *Service) chatOwner(ctx context.Context, req *request) error {
 	if err := s.chats.SetOwner(ctx, req.chat, req.user.ID, target); err != nil {
 		return err
 	}
+	req.chat.OwnerUserID = target.ID
+	s.syncMemberMenu(ctx, req.chat, target)
+	s.syncMemberMenu(ctx, req.chat, req.user) // бывший владелец теряет меню, если он не модератор
 	return s.reply(ctx, req.in, "Владелец чата теперь "+target.Mention()+".")
 }
 

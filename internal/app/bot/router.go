@@ -25,6 +25,8 @@ type command struct {
 	groupDesc   string // описание для меню группы, если отличается (команда с разным действием по контексту)
 	run         func(ctx context.Context, req *request) error
 	needsChat   bool // в группе нужен зарегистрированный чат (req.chat)
+	adminOnly   bool // в меню группы только владельцу и модераторам чата (B20); в /help видна всем
+	hidden      bool // ни в одном меню Telegram; в /help видна
 }
 
 // describe — описание команды для контекста.
@@ -57,14 +59,14 @@ func (s *Service) registry() []command {
 		{name: "start", contexts: ctxPrivate, description: "открыть личку; с кодом — войти в игру", run: s.start},
 		{name: "help", contexts: ctxAny, description: "список команд", run: s.help},
 		{name: "me", contexts: ctxPrivate, description: "кто я: чаты и игры", run: s.me},
-		{name: "ping", contexts: ctxAny, description: "проверка: версия и время сервера", run: s.ping},
-		{name: "chat", contexts: ctxGroup, description: "владелец, модераторы, текущая игра", run: s.chatInfo, needsChat: true},
-		{name: "mod", contexts: ctxGroup, description: "add|remove @user — модераторы чата (владелец)", run: s.chatMod, needsChat: true},
-		{name: "owner", contexts: ctxGroup, description: "@user — передать владение чатом", run: s.chatOwner, needsChat: true},
-		{name: "create", contexts: ctxAny, description: "создать персонажа в текущей игре", groupDesc: "создать мир в этом чате", run: s.create, needsChat: true},
-		{name: "begin", contexts: ctxGroup, description: "начать кампанию: стартовая сцена и первый раунд", run: s.gameBegin, needsChat: true},
-		{name: "pause", contexts: ctxGroup, description: "пауза и возобновление игры", run: s.gamePause, needsChat: true},
-		{name: "finish", contexts: ctxGroup, description: "завершить игру: последний раунд и финальная хроника", run: s.gameFinish, needsChat: true},
+		{name: "ping", contexts: ctxAny, description: "проверка: версия и время сервера", run: s.ping, hidden: true},
+		{name: "chat", contexts: ctxGroup, description: "владелец, модераторы, текущая игра", run: s.chatInfo, needsChat: true, adminOnly: true},
+		{name: "mod", contexts: ctxGroup, description: "add|remove @user — модераторы чата (владелец)", run: s.chatMod, needsChat: true, adminOnly: true},
+		{name: "owner", contexts: ctxGroup, description: "@user — передать владение чатом", run: s.chatOwner, needsChat: true, adminOnly: true},
+		{name: "create", contexts: ctxAny, description: "создать персонажа в текущей игре", groupDesc: "создать мир в этом чате", run: s.create, needsChat: true, adminOnly: true},
+		{name: "begin", contexts: ctxGroup, description: "начать кампанию: стартовая сцена и первый раунд", run: s.gameBegin, needsChat: true, adminOnly: true},
+		{name: "pause", contexts: ctxGroup, description: "пауза и возобновление игры", run: s.gamePause, needsChat: true, adminOnly: true},
+		{name: "finish", contexts: ctxGroup, description: "завершить игру: последний раунд и финальная хроника", run: s.gameFinish, needsChat: true, adminOnly: true},
 		{name: "status", contexts: ctxAny, description: "состояние игры, раунд и причина простоя", run: s.gameStatus, needsChat: true},
 		{name: "act", contexts: ctxAny, description: "<текст> — заявка на текущий раунд", groupDesc: "<текст> — открытая заявка на текущий раунд", run: s.act, needsChat: true},
 		{name: "set", contexts: ctxPrivate, description: "<параметр> <значение> — настройка игры", run: s.gameSet},
@@ -74,13 +76,13 @@ func (s *Service) registry() []command {
 		{name: "bio", contexts: ctxPrivate, description: "<текст> — открытое описание персонажа до 100 символов", run: s.characterBio},
 		{name: "secret", contexts: ctxPrivate, description: "<текст> — скрытое описание персонажа до 100 символов", run: s.characterSecret},
 		{name: "cancel", contexts: ctxPrivate, description: "прервать диалог", run: s.cancel},
-		{name: "llm", contexts: ctxPrivate, description: "профили LLM (владелец бота): use|add|test", run: s.llmCommand},
+		{name: "llm", contexts: ctxPrivate, description: "профили LLM (владелец бота): use|add|test", run: s.llmCommand, hidden: true},
 	}
 	if s.settings.Env == "dev" {
-		cmds = append(cmds, command{name: "next", contexts: ctxGroup, description: "закрыть раунд и открыть следующий (только dev)", run: s.roundNext, needsChat: true},
-			command{name: "replay", contexts: ctxGroup, description: "<номер> — воспроизвести раунд по снимку и seed (только dev)", run: s.roundReplay, needsChat: true},
-			command{name: "round", contexts: ctxGroup, description: "[номер] — карточка раунда: заявки, итоги, попытки, метрики (только dev)", run: s.roundDetail, needsChat: true},
-			command{name: "reset", contexts: ctxGroup, description: "сбросить игру в черновик, персонажи остаются (только dev)", run: s.gameReset, needsChat: true})
+		cmds = append(cmds, command{name: "next", contexts: ctxGroup, description: "закрыть раунд и открыть следующий (только dev)", run: s.roundNext, needsChat: true, adminOnly: true},
+			command{name: "replay", contexts: ctxGroup, description: "<номер> — воспроизвести раунд по снимку и seed (только dev)", run: s.roundReplay, needsChat: true, adminOnly: true},
+			command{name: "round", contexts: ctxGroup, description: "[номер] — карточка раунда: заявки, итоги, попытки, метрики (только dev)", run: s.roundDetail, needsChat: true, adminOnly: true},
+			command{name: "reset", contexts: ctxGroup, description: "сбросить игру в черновик, персонажи остаются (только dev)", run: s.gameReset, needsChat: true, adminOnly: true})
 	}
 	return cmds
 }
@@ -94,13 +96,29 @@ func (s *Service) lookup(name string) (command, bool) {
 	return command{}, false
 }
 
-// Commands возвращает команды контекста для меню и /help.
+// Commands — все команды контекста для /help (без /start: его подставляет сам Telegram).
 func (s *Service) Commands(c cmdContext) []model.BotCommand {
 	var out []model.BotCommand
 	for _, cmd := range s.commands {
 		if cmd.contexts&c != 0 && cmd.name != "start" {
 			out = append(out, model.BotCommand{Name: cmd.name, Description: cmd.describe(c)})
 		}
+	}
+	return out
+}
+
+// Menu — команды контекста для меню Telegram (B20): без скрытых; в группе административные (`adminOnly`) только
+// при admin — это меню владельца и модераторов чата, остальным остаются команды игры здесь и сейчас.
+func (s *Service) Menu(c cmdContext, admin bool) []model.BotCommand {
+	var out []model.BotCommand
+	for _, cmd := range s.commands {
+		if cmd.contexts&c == 0 || cmd.name == "start" || cmd.hidden {
+			continue
+		}
+		if c == ctxGroup && cmd.adminOnly && !admin {
+			continue
+		}
+		out = append(out, model.BotCommand{Name: cmd.name, Description: cmd.describe(c)})
 	}
 	return out
 }

@@ -76,27 +76,36 @@ func (s *Service) BotStatusChanged(ctx context.Context, ch model.ChatMemberChang
 }
 
 // Ensure возвращает чат группы, регистрируя его по первой команде: владельцем становится автор,
-// если он администратор группы Telegram (isAdmin); иначе ErrUnknown.
-func (s *Service) Ensure(ctx context.Context, in model.Incoming, author model.User, isAdmin func(ctx context.Context) (bool, error)) (model.Chat, error) {
-	c, err := s.store.GetChatByTelegramID(ctx, in.ChatID)
+// если он администратор группы Telegram (isAdmin); иначе ErrUnknown. created — чат зарегистрирован этим вызовом.
+func (s *Service) Ensure(ctx context.Context, in model.Incoming, author model.User, isAdmin func(ctx context.Context) (bool, error)) (c model.Chat, created bool, err error) {
+	c, err = s.store.GetChatByTelegramID(ctx, in.ChatID)
 	if err == nil {
-		return c, nil
+		return c, false, nil
 	}
 	if !errors.Is(err, model.ErrNotFound) {
-		return model.Chat{}, fmt.Errorf("chat.Ensure: %w", err)
+		return model.Chat{}, false, fmt.Errorf("chat.Ensure: %w", err)
 	}
 	admin, err := isAdmin(ctx)
 	if err != nil {
-		return model.Chat{}, fmt.Errorf("chat.Ensure: admin check: %w", err)
+		return model.Chat{}, false, fmt.Errorf("chat.Ensure: admin check: %w", err)
 	}
 	if !admin {
-		return model.Chat{}, ErrUnknown
+		return model.Chat{}, false, ErrUnknown
 	}
 	c, err = s.store.CreateChat(ctx, model.Chat{TelegramChatID: in.ChatID, Type: in.ChatType, OwnerUserID: author.ID, BotStatus: model.BotMember})
 	if err != nil {
-		return model.Chat{}, fmt.Errorf("chat.Ensure: %w", err)
+		return model.Chat{}, false, fmt.Errorf("chat.Ensure: %w", err)
 	}
 	s.logger.Info("chat registered by command", slog.Int64("chat_id", int64(c.ID)), slog.Int64("owner_user_id", int64(author.ID)))
+	return c, true, nil
+}
+
+// OfTelegram возвращает зарегистрированный чат по идентификатору Telegram.
+func (s *Service) OfTelegram(ctx context.Context, id model.TelegramChatID) (model.Chat, error) {
+	c, err := s.store.GetChatByTelegramID(ctx, id)
+	if err != nil {
+		return model.Chat{}, fmt.Errorf("chat.OfTelegram: %w", err)
+	}
 	return c, nil
 }
 

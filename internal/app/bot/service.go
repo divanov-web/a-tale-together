@@ -24,6 +24,7 @@ type Store interface {
 	MarkStarted(ctx context.Context, id model.UserID) error
 	GetUserByUsername(ctx context.Context, username string) (model.User, error)
 	ChatsOfUser(ctx context.Context, user model.UserID) ([]model.Chat, error)
+	ListActiveChats(ctx context.Context) ([]model.Chat, error)
 }
 
 // Dialogs — состояние диалогов в личке; реализует `adapter/postgres`.
@@ -38,6 +39,7 @@ type Telegram interface {
 	SendText(ctx context.Context, chat model.TelegramChatID, text string) error
 	IsChatAdmin(ctx context.Context, chat model.TelegramChatID, user model.TelegramUserID) (bool, error)
 	SetCommands(ctx context.Context, private, group []model.BotCommand) error
+	SetMemberCommands(ctx context.Context, chat model.TelegramChatID, user model.TelegramUserID, cmds []model.BotCommand) error
 }
 
 // Clock — источник времени; в тестах подменяется.
@@ -98,12 +100,50 @@ func New(s Settings, store Store, dialogs Dialogs, tg Telegram, chats *chat.Serv
 	return svc
 }
 
-// RegisterMenu отправляет меню команд по контекстам в Telegram.
+// RegisterMenu отправляет в Telegram меню команд по контекстам: личка, группа для всех участников и меню владельца
+// и модераторов каждого зарегистрированного чата (B20). Ошибки меню отдельных чатов только в лог.
 func (s *Service) RegisterMenu(ctx context.Context) error {
-	if err := s.tg.SetCommands(ctx, s.Commands(ctxPrivate), s.Commands(ctxGroup)); err != nil {
+	if err := s.tg.SetCommands(ctx, s.Menu(ctxPrivate, false), s.Menu(ctxGroup, false)); err != nil {
 		return fmt.Errorf("bot.RegisterMenu: %w", err)
 	}
+	chats, err := s.store.ListActiveChats(ctx)
+	if err != nil {
+		return fmt.Errorf("bot.RegisterMenu: %w", err)
+	}
+	for _, c := range chats {
+		s.syncChatMenus(ctx, c)
+	}
 	return nil
+}
+
+// syncChatMenus выставляет меню владельца и модераторов чата всем, у кого есть права (B20).
+func (s *Service) syncChatMenus(ctx context.Context, c model.Chat) {
+	info, err := s.chats.Info(ctx, c)
+	if err != nil {
+		s.logger.Warn("chat menu not synced", slog.Int64("chat_id", int64(c.ID)), slog.Any("err", err))
+		return
+	}
+	s.syncMemberMenu(ctx, c, info.Owner)
+	for _, m := range info.Moderators {
+		s.syncMemberMenu(ctx, c, m)
+	}
+}
+
+// syncMemberMenu по текущим правам пользователя в чате ставит ему меню владельца и модераторов или снимает его,
+// возвращая меню группы для всех (B20). Ошибка Telegram только в лог: права проверяет код при выполнении команды.
+func (s *Service) syncMemberMenu(ctx context.Context, c model.Chat, u model.User) {
+	can, err := s.chats.CanManage(ctx, c, u.ID)
+	if err != nil {
+		s.logger.Warn("member menu not synced", slog.Int64("chat_id", int64(c.ID)), slog.Int64("user_id", int64(u.ID)), slog.Any("err", err))
+		return
+	}
+	var cmds []model.BotCommand
+	if can {
+		cmds = s.Menu(ctxGroup, true)
+	}
+	if err := s.tg.SetMemberCommands(ctx, c.TelegramChatID, u.TelegramID, cmds); err != nil {
+		s.logger.Warn("member menu not set", slog.Int64("chat_id", int64(c.ID)), slog.Int64("user_id", int64(u.ID)), slog.Any("err", err))
+	}
 }
 
 // HandleChatMember обрабатывает добавление и удаление бота в группе.
@@ -118,6 +158,11 @@ func (s *Service) HandleChatMember(ctx context.Context, ch model.ChatMemberChang
 	}
 	if err := s.chats.BotStatusChanged(ctx, ch); err != nil {
 		return fmt.Errorf("bot.HandleChatMember: %w", err)
+	}
+	if ch.NewStatus != model.BotLeft {
+		if c, err := s.chats.OfTelegram(ctx, ch.ChatID); err == nil {
+			s.syncChatMenus(ctx, c)
+		}
 	}
 	return nil
 }
@@ -176,11 +221,14 @@ func (s *Service) Handle(ctx context.Context, in model.Incoming) error {
 		return s.reply(ctx, in, cmd.hint())
 	}
 	if !in.IsPrivate() && cmd.needsChat {
-		c, err := s.chats.Ensure(ctx, in, user, func(ctx context.Context) (bool, error) {
+		c, created, err := s.chats.Ensure(ctx, in, user, func(ctx context.Context) (bool, error) {
 			return s.tg.IsChatAdmin(ctx, in.ChatID, in.From.ID)
 		})
 		if err != nil {
 			return s.fail(ctx, req, err)
+		}
+		if created {
+			s.syncMemberMenu(ctx, c, user) // владелец, зарегистрировавший чат командой, сразу получает меню (B20)
 		}
 		req.chat = c
 	}

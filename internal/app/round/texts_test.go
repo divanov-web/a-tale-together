@@ -77,8 +77,8 @@ func TestTexts_Notice(t *testing.T) {
 	}
 }
 
-// TestTexts_OptionsFor — личные варианты по локации персонажа (B15): параметр, сложность и шанс; словами в «повествовании»;
-// пусто без локации или подходов.
+// TestTexts_OptionsFor — личные варианты по локации персонажа (B15): параметр, сложность и шанс в процентах в любом
+// режиме (B19); пусто без локации или подходов.
 func TestTexts_OptionsFor(t *testing.T) {
 	t.Parallel()
 	w := towerWorld(t)
@@ -93,10 +93,11 @@ func TestTexts_OptionsFor(t *testing.T) {
 	opts := narrator.Options(&state, def, model.ModeBalanced)
 	alice := state.Characters[0]
 	want := "Варианты для вас (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%"
-	if got := optionsFor(alice, &state, opts, model.ModeBalanced, "Варианты для вас"); got != want {
+	if got := optionsFor(alice, &state, opts, "Варианты для вас"); got != want {
 		t.Errorf("balanced =\n%q\nwant\n%q", got, want)
 	}
-	if got := optionsFor(alice, &state, narrator.Options(&state, def, model.ModeNarrative), model.ModeNarrative, "Варианты на раунд 2"); got != "Варианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): легко" {
+	// B19: в «повествовании» личный шанс тоже в процентах, сложность берётся из вариантов этого режима.
+	if got := optionsFor(alice, &state, narrator.Options(&state, def, model.ModeNarrative), "Варианты на раунд 2"); got != "Варианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%" {
 		t.Errorf("narrative = %q", got)
 	}
 	// Подвал: сложность локации 1, у плута без атлетики и воровства шансы 20 % и 30 %.
@@ -108,11 +109,11 @@ func TestTexts_OptionsFor(t *testing.T) {
 	}
 	state.Characters[0].LocationID = &cellar
 	opts = narrator.Options(&state, def, model.ModeBalanced)
-	if got := optionsFor(state.Characters[0], &state, opts, model.ModeBalanced, "Варианты для вас"); got != "Варианты для вас (Подвал башни):\n• выбить (Сила/атлетика): параметр 2, сложность 5, шанс 20%\n• отпереть (Ловкость/воровство): параметр 3, сложность 5, шанс 30%" {
+	if got := optionsFor(state.Characters[0], &state, opts, "Варианты для вас"); got != "Варианты для вас (Подвал башни):\n• выбить (Сила/атлетика): параметр 2, сложность 5, шанс 20%\n• отпереть (Ловкость/воровство): параметр 3, сложность 5, шанс 30%" {
 		t.Errorf("cellar = %q", got)
 	}
 	state.Characters[0].LocationID = nil
-	if got := optionsFor(state.Characters[0], &state, opts, model.ModeBalanced, "Варианты для вас"); got != "" {
+	if got := optionsFor(state.Characters[0], &state, opts, "Варианты для вас"); got != "" {
 		t.Errorf("no location = %q", got)
 	}
 	var hall model.LocationID
@@ -122,7 +123,7 @@ func TestTexts_OptionsFor(t *testing.T) {
 		}
 	}
 	state.Characters[0].LocationID = &hall
-	if got := optionsFor(state.Characters[0], &state, narrator.Options(&state, def, model.ModeBalanced), model.ModeBalanced, "Варианты для вас"); got != "" {
+	if got := optionsFor(state.Characters[0], &state, narrator.Options(&state, def, model.ModeBalanced), "Варианты для вас"); got != "" {
 		t.Errorf("no approaches = %q", got)
 	}
 }

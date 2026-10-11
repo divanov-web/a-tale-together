@@ -125,6 +125,24 @@ func (s *Store) ListModerators(ctx context.Context, chat model.ChatID) ([]model.
 	return out, rows.Err()
 }
 
+// ListActiveChats возвращает все чаты, где бот не удалён (bot_status <> left), по возрастанию id.
+func (s *Store) ListActiveChats(ctx context.Context) ([]model.Chat, error) {
+	rows, err := s.db(ctx).Query(ctx, `SELECT `+chatColumns+` FROM chats WHERE bot_status <> 'left' ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.ListActiveChats: %w", err)
+	}
+	defer rows.Close()
+	var out []model.Chat
+	for rows.Next() {
+		c, err := scanChat(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres.ListActiveChats: scan: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // ChatsOfUser возвращает чаты с ботом, где пользователь владелец или модератор.
 func (s *Store) ChatsOfUser(ctx context.Context, user model.UserID) ([]model.Chat, error) {
 	q := `

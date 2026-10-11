@@ -109,6 +109,9 @@ func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user mod
 	if err := ValidateBio(d.SecretBio); err != nil {
 		return model.Character{}, err
 	}
+	if !d.Gender.Valid() {
+		return model.Character{}, fmt.Errorf("%w: пол — male, female или пусто", ErrBadValue)
+	}
 	genre, err := s.store.GetGenre(ctx, game.GenreID)
 	if err != nil {
 		return model.Character{}, fmt.Errorf("game.CreateCharacter: genre: %w", err)
@@ -162,7 +165,7 @@ func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user mod
 	}
 	c := model.Character{
 		GameID: game.ID, SeasonID: season.ID, UserID: user.ID, ModelID: cm.ID,
-		Nickname: strings.TrimSpace(d.Nickname), Archetype: d.Archetype,
+		Nickname: strings.TrimSpace(d.Nickname), Gender: d.Gender, Archetype: d.Archetype,
 		PublicBio: strings.TrimSpace(d.PublicBio), SecretBio: strings.TrimSpace(d.SecretBio),
 		Status: model.CharacterActive, FactionID: faction.ID, HP: hp, Conditions: []string{}, Inventory: inventory, LocationID: start, Knowledge: []string{},
 		Attributes: d.Attributes, Skills: d.Skills,

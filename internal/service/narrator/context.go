@@ -79,6 +79,7 @@ type sceneObject struct {
 
 type sceneCharacter struct {
 	Nickname   string   `json:"nickname"`
+	Gender     string   `json:"gender,omitempty"` // `male`, `female`; пусто — не указан (B18)
 	Status     string   `json:"status"`
 	Entry      string   `json:"entry,omitempty"` // `new` — впервые в истории, `returned` — вернулся после отсутствия (B1)
 	PublicBio  string   `json:"public_bio"`
@@ -133,7 +134,7 @@ func BuildInput(p Params) Input {
 			conds = append(conds, ConditionWords(cond))
 		}
 		bio := p.Bios[c.ID]
-		present[*c.LocationID] = append(present[*c.LocationID], sceneCharacter{Nickname: c.Nickname, Status: string(c.Status), Entry: c.Entry, PublicBio: bio.Public, SecretBio: bio.Secret, Conditions: conds})
+		present[*c.LocationID] = append(present[*c.LocationID], sceneCharacter{Nickname: c.Nickname, Gender: string(c.Gender), Status: string(c.Status), Entry: c.Entry, PublicBio: bio.Public, SecretBio: bio.Secret, Conditions: conds})
 	}
 	for _, l := range p.State.Locations {
 		chars := present[l.ID]

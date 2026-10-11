@@ -77,6 +77,31 @@ type CharacterModel struct {
 	Definition   CharacterModelDef
 }
 
+// Gender — пол персонажа (B18): задаётся игроком при создании, пустое значение — не указан.
+type Gender string
+
+// Значения пола персонажа.
+const (
+	GenderMale   Gender = "male"
+	GenderFemale Gender = "female"
+)
+
+// Valid сообщает, допустимо ли значение пола (включая «не указан»).
+func (g Gender) Valid() bool {
+	return g == "" || g == GenderMale || g == GenderFemale
+}
+
+// Word — пол словом для карточек: «мужской», «женский», «не указан».
+func (g Gender) Word() string {
+	switch g {
+	case GenderMale:
+		return "мужской"
+	case GenderFemale:
+		return "женский"
+	}
+	return "не указан"
+}
+
 // CharacterStatus — статус персонажа по активности (docs/game/character.md).
 type CharacterStatus string
 
@@ -116,6 +141,7 @@ type Character struct {
 	UserID          UserID
 	ModelID         CharacterModelID
 	Nickname        string
+	Gender          Gender
 	Archetype       string
 	PublicBio       string
 	SecretBio       string
@@ -140,6 +166,7 @@ type Character struct {
 type CharacterDraft struct {
 	FactionCode FactionCode
 	Nickname    string
+	Gender      Gender
 	Archetype   string
 	Attributes  map[string]int
 	Skills      map[string]int

@@ -71,6 +71,7 @@ type approach struct {
 type character struct {
 	CharacterID model.CharacterID     `json:"character_id"`
 	Nickname    string                `json:"nickname"`
+	Gender      model.Gender          `json:"gender,omitempty"` // `male`, `female`; пусто — не указан (B18)
 	Status      model.CharacterStatus `json:"status"`
 	Attributes  map[string]int        `json:"attributes"`
 	Skills      map[string]int        `json:"skills"`
@@ -104,7 +105,7 @@ func BuildInput(snap model.RoundSnapshot, def model.CharacterModelDef) Input {
 			continue
 		}
 		byLocation[*c.LocationID] = append(byLocation[*c.LocationID], character{
-			CharacterID: c.ID, Nickname: c.Nickname, Status: c.Status,
+			CharacterID: c.ID, Nickname: c.Nickname, Gender: c.Gender, Status: c.Status,
 			Attributes: nonNilMap(c.Attributes), Skills: nonZero(c.Skills), Conditions: nonNil(c.Conditions), Knowledge: lastFacts(c.Knowledge),
 		})
 	}

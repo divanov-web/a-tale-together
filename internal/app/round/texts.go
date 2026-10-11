@@ -220,8 +220,9 @@ func roundOpenPersonalText(g model.Game, r model.Round, options string, now time
 }
 
 // optionsFor — блок вариантов персонажа по его локации (B15): подход, параметр персонажа, итоговая сложность и шанс
-// в процентах; в «повествовании» шанс словами. Заголовок title дополняется названием локации. Пусто без локации или подходов.
-func optionsFor(c model.SnapshotCharacter, state *model.RoundSnapshot, opts []narrator.Option, mode model.GameMode, title string) string {
+// в процентах во всех режимах игры (B19: слова остаются публичной хронике). Заголовок title дополняется названием
+// локации. Пусто без локации или подходов.
+func optionsFor(c model.SnapshotCharacter, state *model.RoundSnapshot, opts []narrator.Option, title string) string {
 	if c.LocationID == nil {
 		return ""
 	}
@@ -244,11 +245,7 @@ func optionsFor(c model.SnapshotCharacter, state *model.RoundSnapshot, opts []na
 				ch = x
 			}
 		}
-		if mode == model.ModeNarrative {
-			lines = append(lines, fmt.Sprintf("• %s (%s): %s", o.Title, stat, rules.ChanceWords(ch.Pct)))
-		} else {
-			lines = append(lines, fmt.Sprintf("• %s (%s): параметр %d, сложность %d, шанс %d%%", o.Title, stat, ch.Param, o.Difficulty, ch.Pct))
-		}
+		lines = append(lines, fmt.Sprintf("• %s (%s): параметр %d, сложность %d, шанс %d%%", o.Title, stat, ch.Param, o.Difficulty, ch.Pct))
 	}
 	if len(lines) == 0 {
 		return ""
