@@ -49,22 +49,22 @@ func (s *Service) startCharacterCreate(ctx context.Context, user model.User, g m
 	if err != nil {
 		return err
 	}
-	return s.replyPrivate(ctx, user, "Создание персонажа в игре «"+g.Title+"». Прервать: /cancel\n\n"+q)
+	return s.replyPrivateKeyboard(ctx, user, "Создание персонажа в игре «"+g.Title+"». Прервать: /cancel\n\n"+q.text, q.kb)
 }
 
 // characterStep применяет ответ к шагу и возвращает следующий вопрос или карточку созданного персонажа.
-func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dialog, answer string) (string, bool, error) {
+func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dialog, answer string) (question, bool, error) {
 	g, err := s.dialogGame(ctx, d)
 	if err != nil {
-		return "", false, err
+		return question{}, false, err
 	}
 	var data characterData
 	if err := loadData(d, &data); err != nil {
-		return "", false, err
+		return question{}, false, err
 	}
 	cm, err := s.games.CharacterModel(ctx, g)
 	if err != nil {
-		return "", false, err
+		return question{}, false, err
 	}
 	def := cm.Definition
 	answer = strings.TrimSpace(answer)
@@ -73,37 +73,37 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 	case stepFaction:
 		factions, err := s.games.Factions(ctx, g.ID)
 		if err != nil {
-			return "", false, err
+			return question{}, false, err
 		}
 		f, ok := findFaction(factions, answer)
 		if !ok {
-			return "", false, fmt.Errorf("%w: выберите фракцию номером или названием", game.ErrBadValue)
+			return question{}, false, fmt.Errorf("%w: выберите фракцию номером или названием", game.ErrBadValue)
 		}
 		data.Faction = f.Code
 		next = stepNickname
 	case stepNickname:
 		if err := s.games.ValidateNickname(ctx, g, answer); err != nil {
-			return "", false, err
+			return question{}, false, err
 		}
 		data.Nickname = answer
 		next = stepGender
 	case stepGender:
 		gender, ok := parseGender(answer)
 		if !ok {
-			return "", false, fmt.Errorf("%w: ответьте 1 (мужской), 2 (женский) или 3 (не указывать)", game.ErrBadValue)
+			return question{}, false, fmt.Errorf("%w: ответьте 1 (мужской), 2 (женский) или 3 (не указывать)", game.ErrBadValue)
 		}
 		data.Gender = gender
 		next = stepArchetype
 	case stepArchetype:
 		a, ok := rules.FindArchetype(def, answer)
 		if !ok {
-			return "", false, fmt.Errorf("%w: выберите архетип номером или названием", game.ErrBadValue)
+			return question{}, false, fmt.Errorf("%w: выберите архетип номером или названием", game.ErrBadValue)
 		}
 		data.Archetype = a.Key
 		switch g.Mode {
 		case model.ModeNarrative:
 			if data.Attributes, data.Skills, err = rules.AutoDistribute(def, a.Key); err != nil {
-				return "", false, err
+				return question{}, false, err
 			}
 			next = stepPublicBio
 		case model.ModeMechanics:
@@ -115,38 +115,38 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 		switch strings.ToLower(answer) {
 		case "1", "авто", "автоматически":
 			if data.Attributes, data.Skills, err = rules.AutoDistribute(def, data.Archetype); err != nil {
-				return "", false, err
+				return question{}, false, err
 			}
 			next = stepPublicBio
 		case "2", "вручную", "сам", "сама":
 			next = stepAttributes
 		default:
-			return "", false, fmt.Errorf("%w: ответьте 1 (авто) или 2 (вручную)", game.ErrBadValue)
+			return question{}, false, fmt.Errorf("%w: ответьте 1 (авто) или 2 (вручную)", game.ErrBadValue)
 		}
 	case stepAttributes:
 		attrs, err := rules.ParseAttributes(def, answer)
 		if err != nil {
-			return "", false, err
+			return question{}, false, err
 		}
 		if err := rules.ValidateAttributes(def, attrs); err != nil {
-			return "", false, err
+			return question{}, false, err
 		}
 		data.Attributes = attrs
 		next = stepSkills
 	case stepSkills:
 		skills, err := rules.ParseSkills(def, answer)
 		if err != nil {
-			return "", false, err
+			return question{}, false, err
 		}
 		if err := rules.ValidateSkills(def, skills); err != nil {
-			return "", false, err
+			return question{}, false, err
 		}
 		data.Skills = skills
 		next = stepPublicBio
 	case stepPublicBio:
 		if answer != setupSkip {
 			if err := game.ValidateBio(answer); err != nil {
-				return "", false, err
+				return question{}, false, err
 			}
 			data.PublicBio = answer
 		}
@@ -154,7 +154,7 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 	case stepSecretBio:
 		if answer != setupSkip {
 			if err := game.ValidateBio(answer); err != nil {
-				return "", false, err
+				return question{}, false, err
 			}
 			data.SecretBio = answer
 		}
@@ -163,69 +163,80 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 			Attributes: data.Attributes, Skills: data.Skills, PublicBio: data.PublicBio, SecretBio: data.SecretBio,
 		})
 		if err != nil {
-			return "", false, err
+			return question{}, false, err
 		}
 		card, err := s.renderCharacter(ctx, g, c)
 		if err != nil {
-			return "", false, err
+			return question{}, false, err
 		}
-		return "Персонаж создан!\n\n" + strings.TrimRight(card, "\n") + "\n\nЖдите старта игры: хроника появится в групповом чате, личные итоги — здесь.", true, nil
+		return question{text: "Персонаж создан!\n\n" + strings.TrimRight(card, "\n") + "\n\nЖдите старта игры: хроника появится в групповом чате, личные итоги — здесь."}, true, nil
 	default:
-		return "", false, fmt.Errorf("bot.characterStep: unknown step %q", d.Step)
+		return question{}, false, fmt.Errorf("bot.characterStep: unknown step %q", d.Step)
 	}
 	if err := saveData(d, data); err != nil {
-		return "", false, err
+		return question{}, false, err
 	}
 	d.Step = next
 	q, err := s.characterQuestion(ctx, g, next)
 	return q, false, err
 }
 
-// characterQuestion — вопрос шага с подсказкой по модели персонажа.
-func (s *Service) characterQuestion(ctx context.Context, g model.Game, step string) (string, error) {
+// characterQuestion — вопрос шага с подсказкой по модели персонажа и кнопками ответов (ADR-0015): фракция, пол,
+// архетип, распределение и пропуск описаний; никнейм, характеристики и навыки вводятся текстом.
+func (s *Service) characterQuestion(ctx context.Context, g model.Game, step string) (question, error) {
 	cm, err := s.games.CharacterModel(ctx, g)
 	if err != nil {
-		return "", err
+		return question{}, err
 	}
 	def := cm.Definition
 	switch step {
 	case stepFaction:
 		factions, err := s.games.Factions(ctx, g.ID)
 		if err != nil {
-			return "", err
+			return question{}, err
 		}
 		var b strings.Builder
-		b.WriteString("Выберите фракцию (номер или название):\n")
+		b.WriteString("Выберите фракцию (кнопкой, номером или названием):\n")
+		var answers [][2]string
 		for i, f := range factions {
 			fmt.Fprintf(&b, "%d. %s — %s\n", i+1, f.Title, f.Description)
+			answers = append(answers, [2]string{f.Title, strconv.Itoa(i + 1)})
 		}
-		return b.String(), nil
+		return question{text: b.String(), kb: answerButtons(step, 1, answers...)}, nil
 	case stepNickname:
-		return fmt.Sprintf("Никнейм персонажа (от %d до %d символов, уникален в игре):", game.NicknameMin, game.NicknameMax), nil
+		return question{text: fmt.Sprintf("Никнейм персонажа (от %d до %d символов, уникален в игре):", game.NicknameMin, game.NicknameMax), kb: model.Keyboard{cancelRow()}}, nil
 	case stepGender:
-		return "Пол персонажа: 1 — мужской, 2 — женский, 3 — не указывать.", nil
+		return question{text: "Пол персонажа: 1 — мужской, 2 — женский, 3 — не указывать.",
+			kb: answerButtons(step, 3, [2]string{"Мужской", "1"}, [2]string{"Женский", "2"}, [2]string{"Не указывать", "3"})}, nil
 	case stepArchetype:
-		return "Архетип (номер или название):\n" + archetypesHelp(def), nil
+		var answers [][2]string
+		for i, a := range def.Archetypes {
+			answers = append(answers, [2]string{a.Title, strconv.Itoa(i + 1)})
+		}
+		return question{text: "Архетип (кнопкой, номером или названием):\n" + archetypesHelp(def), kb: answerButtons(step, 3, answers...)}, nil
 	case stepDistribution:
-		return "Распределение очков: 1 — автоматически по архетипу, 2 — вручную.", nil
+		return question{text: "Распределение очков: 1 — автоматически по архетипу, 2 — вручную.",
+			kb: answerButtons(step, 2, [2]string{"Автоматически", "1"}, [2]string{"Вручную", "2"})}, nil
 	case stepAttributes:
 		var names []string
 		for _, a := range def.Attributes {
 			names = append(names, fmt.Sprintf("%s (%d–%d)", a.Title, a.Min, a.Max))
 		}
-		return fmt.Sprintf("Характеристики, сумма %d. Введите числа по порядку: %s.\nНапример: %s", def.AttributePoints, strings.Join(names, ", "), exampleAttributes(def)), nil
+		return question{text: fmt.Sprintf("Характеристики, сумма %d. Введите числа по порядку: %s.\nНапример: %s", def.AttributePoints, strings.Join(names, ", "), exampleAttributes(def)), kb: model.Keyboard{cancelRow()}}, nil
 	case stepSkills:
 		var names []string
 		for _, sk := range def.Skills {
 			names = append(names, sk.Title)
 		}
-		return fmt.Sprintf("Навыки: %d очков, не более %d в один. Доступны: %s.\nВведите пары «навык значение», например: %s", def.SkillPoints, def.SkillMax, strings.Join(names, ", "), exampleSkills(def)), nil
+		return question{text: fmt.Sprintf("Навыки: %d очков, не более %d в один. Доступны: %s.\nВведите пары «навык значение», например: %s", def.SkillPoints, def.SkillMax, strings.Join(names, ", "), exampleSkills(def)), kb: model.Keyboard{cancelRow()}}, nil
 	case stepPublicBio:
-		return fmt.Sprintf("Открытое описание персонажа (до %d символов, видно всем) или «%s»:", game.BioMax, setupSkip), nil
+		return question{text: fmt.Sprintf("Открытое описание персонажа (до %d символов, видно всем) или «%s»:", game.BioMax, setupSkip),
+			kb: answerButtons(step, 1, [2]string{"Пропустить", setupSkip})}, nil
 	case stepSecretBio:
-		return fmt.Sprintf("Скрытое описание (до %d символов, видит только рассказчик) или «%s»:", game.BioMax, setupSkip), nil
+		return question{text: fmt.Sprintf("Скрытое описание (до %d символов, видит только рассказчик) или «%s»:", game.BioMax, setupSkip),
+			kb: answerButtons(step, 1, [2]string{"Пропустить", setupSkip})}, nil
 	}
-	return "", fmt.Errorf("bot.characterQuestion: unknown step %q", step)
+	return question{}, fmt.Errorf("bot.characterQuestion: unknown step %q", step)
 }
 
 // exampleAttributes — пример ответа на шаг характеристик: числа первого архетипа модели в порядке характеристик.

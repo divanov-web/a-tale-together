@@ -18,7 +18,7 @@ sudo -u postgres psql -c "create user tale with password 'tale';" -c "create dat
 ```bash
 cp .env.example .env
 ```
-Заполнить `TELEGRAM_BOT_TOKEN` (тестовый бот от BotFather), ключи провайдеров LLM по [providers.md](../llm/providers.md). `BOT_OWNER_ID` — Telegram ID владельца (из `/me`), открывает команды `/llm`; `CLAUDE_CLI_PATH` и `CLAUDE_CLI_WORKDIR` — бинарь `claude` и пустая рабочая папка провайдера `claude-cli` (папка создаётся ботом). Необязательные: `SCHEDULER_TICK` (период планировщика раундов, 10s), `OUTBOX_TICK` (период воркера доставки, 3s), `CHAT_LOG_DIR` (журнал чатов, `logs/chats`; пусто — выключен) и `CHAT_LOG_RETENTION_DAYS` (30; [chat-logs.md](chat-logs.md)). `.env` в git не попадает.
+Заполнить `TELEGRAM_BOT_TOKEN` (тестовый бот от BotFather), ключи провайдеров LLM по [providers.md](../llm/providers.md). `BOT_OWNER_ID` — Telegram ID владельца (из `/me`), открывает команды `/llm`; `CLAUDE_CLI_PATH` и `CLAUDE_CLI_WORKDIR` — бинарь `claude` и пустая рабочая папка провайдера `claude-cli` (папка создаётся ботом). Необязательные: `SCHEDULER_TICK` (период планировщика раундов, 10s), `OUTBOX_TICK` (период воркера доставки, 3s), `CHAT_LOG_DIR` (журнал чатов, `logs/chats`; пусто — выключен), `CHAT_LOG_RETENTION_DAYS` (30; [chat-logs.md](chat-logs.md)) и `GUIDE_URL` (корень руководства игрока для кнопок-ссылок под `/help`, по умолчанию GitHub репозитория; пусто — без ссылок). `.env` в git не попадает.
 
 ## Команды
 | Команда | Действие |

@@ -18,9 +18,9 @@ type Store interface {
 	FinishOutbox(ctx context.Context, m model.OutboxMessage) error
 }
 
-// Sender — отправка текста с возвратом идентификатора сообщения; реализует `adapter/telegram`.
+// Sender — отправка текста с кнопками (ADR-0015) и возвратом идентификатора сообщения; реализует `adapter/telegram`.
 type Sender interface {
-	Send(ctx context.Context, chat model.TelegramChatID, text string) (int64, error)
+	Send(ctx context.Context, chat model.TelegramChatID, text string, kb model.Keyboard) (int64, error)
 }
 
 // Clock — источник времени.
@@ -103,7 +103,7 @@ func (s *Service) Deliver(ctx context.Context) (int, error) {
 		var err error
 		if pause > 0 {
 			m.Status, m.SendAfter, m.LastError = model.OutboxPending, now.Add(pause), "отложено: лимит Telegram"
-		} else if id, sendErr := s.sender.Send(ctx, m.TelegramChatID, m.Text); sendErr != nil {
+		} else if id, sendErr := s.sender.Send(ctx, m.TelegramChatID, m.Text, m.Keyboard); sendErr != nil {
 			err = sendErr
 			m.LastError = sendErr.Error()
 			var retry *model.RetryAfterError

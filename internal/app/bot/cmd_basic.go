@@ -54,7 +54,8 @@ func (s *Service) start(ctx context.Context, req *request) error {
 	return s.reply(ctx, req.in, text)
 }
 
-// help выводит команды текущего контекста.
+// help выводит команды текущего контекста; под сообщением кнопки-ссылки на разделы руководства игрока (ADR-0015),
+// если задан корень руководства.
 func (s *Service) help(ctx context.Context, req *request) error {
 	c := ctxGroup
 	if req.in.IsPrivate() {
@@ -64,7 +65,23 @@ func (s *Service) help(ctx context.Context, req *request) error {
 	if err != nil {
 		return err
 	}
-	return s.reply(ctx, req.in, text)
+	return s.replyKeyboard(ctx, req.in, text, s.guideKeyboard())
+}
+
+// guideSections — разделы руководства игрока для кнопок /help: подпись и путь от корня руководства.
+var guideSections = [][2]string{{"Руководство: команды", "commands.md"}, {"Персонаж", "character/README.md"}, {"Испытания", "checks/checks.md"}}
+
+// guideKeyboard — кнопки-ссылки на руководство; nil без GuideURL.
+func (s *Service) guideKeyboard() model.Keyboard {
+	base := strings.TrimRight(s.settings.GuideURL, "/")
+	if base == "" {
+		return nil
+	}
+	var kb model.Keyboard
+	for _, sec := range guideSections {
+		kb = append(kb, []model.Button{{Text: sec[0], URL: base + "/" + sec[1]}})
+	}
+	return kb
 }
 
 // me показывает пользователя, чаты с правами и игры с персонажами.

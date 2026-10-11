@@ -7,7 +7,7 @@
 
 | Поле | Содержание |
 |---|---|
-| `ts`, `kind`, `chat_id` | время, вид (`in`, `out`, `llm`, `round`, `error`), чат |
+| `ts`, `kind`, `chat_id` | время, вид (`in`, `out`, `llm`, `round`, `error`), чат; у нажатия кнопки `event: callback`, `text` — данные кнопки |
 | `update_id`, `duplicate`, `user`, `command`, `text` | входящее: update, повтор, автор (`id`, `username`, `name`), команда, текст |
 | `game_id`, `round_id`, `round_no` | игра и раунд; у входящих в личке — текущая игра игрока |
 | `event` | `in`: `my_chat_member`, `rate_limited`; `round`: `opened`, `submission`, `skipped`, `frozen`, `interpreted`, `narrated`, `resolved`, `published`, `metrics`, `attempt_failed`, `failed`, `paused`, `resumed`, `finished`, `reset` |

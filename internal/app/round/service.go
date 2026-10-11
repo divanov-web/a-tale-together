@@ -855,7 +855,7 @@ func (s *Service) notifyOpen(ctx context.Context, g model.Game, last, r model.Ro
 			continue
 		}
 		text := roundOpenPersonalText(g, r, optionsFor(c, &state, opts, "Варианты для вас"), now)
-		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: user.PrivateChat(), Kind: model.OutboxPrivateOpen, Part: 1, Text: text, SendAfter: s.clock.Now()}); err != nil {
+		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: user.PrivateChat(), Kind: model.OutboxPrivateOpen, Part: 1, Text: text, Keyboard: optionsKeyboard(c, opts, r.RoundNo), SendAfter: s.clock.Now()}); err != nil {
 			return err
 		}
 	}

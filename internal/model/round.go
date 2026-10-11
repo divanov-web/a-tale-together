@@ -240,6 +240,7 @@ type OutboxMessage struct {
 	Kind              OutboxKind
 	Part              int
 	Text              string
+	Keyboard          Keyboard // кнопки под сообщением (ADR-0015); nil — без кнопок
 	Status            OutboxStatus
 	TelegramMessageID *int64
 	Attempts          int

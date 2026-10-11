@@ -21,10 +21,12 @@ import (
 
 // fakeTelegram записывает отправленные тексты по чатам; admins — кто админ в группах Telegram.
 type fakeTelegram struct {
-	sent   map[model.TelegramChatID][]string
-	admins map[model.TelegramUserID]bool
-	menu   [][]model.BotCommand
-	member map[memberScope][]model.BotCommand // меню участников чатов (B20); nil — снято
+	sent      map[model.TelegramChatID][]string
+	keyboards map[model.TelegramChatID][]model.Keyboard // клавиатура каждого отправленного сообщения; nil — без кнопок
+	cleared   []int64                                   // сообщения, с которых сняты кнопки (ADR-0015)
+	admins    map[model.TelegramUserID]bool
+	menu      [][]model.BotCommand
+	member    map[memberScope][]model.BotCommand // меню участников чатов (B20); nil — снято
 }
 
 // memberScope — область меню «участник чата».
@@ -34,8 +36,41 @@ type memberScope struct {
 }
 
 func (f *fakeTelegram) SendText(_ context.Context, chat model.TelegramChatID, text string) error {
+	return f.SendKeyboard(context.Background(), chat, text, nil)
+}
+
+func (f *fakeTelegram) SendKeyboard(_ context.Context, chat model.TelegramChatID, text string, kb model.Keyboard) error {
 	f.sent[chat] = append(f.sent[chat], text)
+	if f.keyboards == nil {
+		f.keyboards = map[model.TelegramChatID][]model.Keyboard{}
+	}
+	f.keyboards[chat] = append(f.keyboards[chat], kb)
 	return nil
+}
+
+func (f *fakeTelegram) ClearKeyboard(_ context.Context, _ model.TelegramChatID, messageID int64) error {
+	f.cleared = append(f.cleared, messageID)
+	return nil
+}
+
+// lastKeyboard — клавиатура последнего сообщения в чат; nil, если кнопок не было.
+func (f *fakeTelegram) lastKeyboard(chat model.TelegramChatID) model.Keyboard {
+	kbs := f.keyboards[chat]
+	if len(kbs) == 0 {
+		return nil
+	}
+	return kbs[len(kbs)-1]
+}
+
+// buttonData — данные всех кнопок клавиатуры по порядку.
+func buttonData(kb model.Keyboard) []string {
+	var out []string
+	for _, row := range kb {
+		for _, b := range row {
+			out = append(out, b.Data)
+		}
+	}
+	return out
 }
 
 func (f *fakeTelegram) IsChatAdmin(_ context.Context, _ model.TelegramChatID, user model.TelegramUserID) (bool, error) {
@@ -148,6 +183,28 @@ func (h *harness) send(from model.TelegramUser, chatID model.TelegramChatID, tex
 		h.t.Fatalf("Handle(%q): %v", text, err)
 	}
 	return h.tg.last(chatID)
+}
+
+// press имитирует нажатие кнопки с данными data на сообщении messageID в чате и возвращает последний ответ бота.
+func (h *harness) press(from model.TelegramUser, chatID model.TelegramChatID, messageID int64, data string) string {
+	h.t.Helper()
+	h.nextID++
+	command, args, step, text := model.ParseCallbackData(data)
+	in := model.Incoming{UpdateID: h.nextID, ChatID: chatID, ChatType: model.ChatPrivate, From: from, Text: text, Command: command, Args: args,
+		Callback: &model.Callback{ID: fmt.Sprint("q", h.nextID), MessageID: messageID, Step: step}}
+	if chatID < 0 {
+		in.ChatType = model.ChatSupergroup
+	}
+	if err := h.svc.Handle(context.Background(), in); err != nil {
+		h.t.Fatalf("Handle(callback %q): %v", data, err)
+	}
+	return h.tg.last(chatID)
+}
+
+// clearedLast — снята ли клавиатура с сообщения messageID последним действием.
+func (h *harness) clearedLast(messageID int64) bool {
+	n := len(h.tg.cleared)
+	return n > 0 && h.tg.cleared[n-1] == messageID
 }
 
 // private — чат пользователя с ботом.
@@ -481,15 +538,15 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 2"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 
-	mustContain(t, h.send(alice, groupChat, "/begin"), "Нет прав")
-	mustContain(t, h.send(owner, groupChat, "/begin"), "нет персонажей")
+	mustContain(t, h.send(alice, groupChat, "/begin yes"), "Нет прав")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "нет персонажей")
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
 	mustContain(t, h.send(alice, private(alice), "/act иду в башню"), "Игра не запущена")
 	mustContain(t, h.send(alice, private(alice), "иду в башню"), "Я понимаю только команды") // B17: игра не идёт — текст не заявка
 
-	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
-	mustContain(t, h.send(owner, groupChat, "/begin"), "уже запущена")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "уже запущена")
 	texts := h.outboxTexts()
 	if len(texts) != 2 {
 		t.Fatalf("outbox after begin = %q; want scene and round 1", texts)
@@ -577,7 +634,7 @@ func TestRound_PauseAfterSkipped(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
-	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт. Игра на паузе после пропущенных подряд раундов, возобновить: /pause")
@@ -605,7 +662,7 @@ func TestRound_StatusTransitionsAndWindow(t *testing.T) {
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
 
 	// Старт вне окна: первый раунд в начале окна.
-	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.outboxTexts()[1], "Первый раунд в 13:00")
 	mustContain(t, h.send(alice, groupChat, "/status"), "Следующий раунд: в 13:00 (игровое окно 13:00–14:00)")
 	mustContain(t, h.send(alice, private(alice), "/act рано"), "нет открытого раунда")
@@ -683,7 +740,7 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
 	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Рыночная площадь", "Знания: пока нет")
-	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята: раунд 1")
 	mustContain(t, h.send(bob, private(bob), "/act осмотреть доску"), "Заявка принята: раунд 1")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
@@ -738,16 +795,16 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
 	mustContain(t, h.send(owner, groupChat, "/round"), "Раунда с таким номером нет")
-	mustContain(t, h.send(owner, groupChat, "/finish"), "Игра не запущена")
-	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.send(owner, groupChat, "/finish yes"), "Игра не запущена")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята: раунд 1")
 	mustContain(t, h.send(owner, groupChat, "/round"), "Раунд 1 — open", "Заявок: 1; итогов: 0; событий: 0", "• Элис (pending): «идти к башне»")
 	mustContain(t, h.send(owner, groupChat, "/round x"), "Формат: /round")
-	mustContain(t, h.send(alice, groupChat, "/finish"), "Нет прав")
+	mustContain(t, h.send(alice, groupChat, "/finish yes"), "Нет прав")
 	// Завершение с открытым раундом: одна заявка разрешается без кворума, финальная хроника в группе.
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
 	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
-	mustContain(t, h.send(owner, groupChat, "/finish"), "Игра «Песочница» завершена")
+	mustContain(t, h.send(owner, groupChat, "/finish yes"), "Игра «Песочница» завершена")
 	msgs, _ := h.store.ListOutbox(context.Background(), g.ID)
 	var texts []string
 	for _, m := range msgs {
@@ -759,7 +816,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	mustContain(t, texts[len(texts)-1], "«Песочница» — история завершена", "Игру завершил администратор. Раундов сыграно: 1.", "• Элис — ", "Зал Серой башни")
 	// Завершённая игра перестаёт быть игрой чата и текущей игрой игрока: ответы «игры нет», новая игра создаётся заново.
 	mustContain(t, h.send(alice, private(alice), "/act ждать"), "Игры нет")
-	mustContain(t, h.send(owner, groupChat, "/finish"), "Игры нет")
+	mustContain(t, h.send(owner, groupChat, "/finish yes"), "Игры нет")
 	mustContain(t, h.send(owner, groupChat, "/round 1"), "Игры нет")
 	// Сброс в dev: игра в черновик, персонажи на месте, /begin работает снова.
 	h.clock.advance(time.Minute) // лимит частоты команд владельца
@@ -767,7 +824,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
 	h.joinAndCreate(alice, code2, "1", "Элис", "ж", "1", "1", "-", "-")
-	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Зал Серой башни")
@@ -776,6 +833,222 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/reset"), "сброшена в черновик")
 	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Рыночная площадь")
 	mustContain(t, h.send(alice, groupChat, "/status"), "черновик")
-	mustContain(t, h.send(owner, groupChat, "/begin"), "запущена")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 1")
+}
+
+// TestButtons_CharacterDialog (ADR-0015): вопросы диалога создания персонажа несут кнопки с ответами шага; нажатие
+// отвечает на вопрос, устаревшая кнопка не применяется, кнопка «Прервать» = /cancel, кнопка завершённого диалога не
+// становится заявкой.
+func TestButtons_CharacterDialog(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+
+	mustContain(t, h.send(alice, private(alice), "/start join_"+code), "Выберите фракцию (кнопкой, номером или названием)")
+	kb := h.tg.lastKeyboard(private(alice))
+	if got := buttonData(kb); len(got) != 3 || got[0] != "@faction 1" || got[1] != "@faction 2" || got[2] != "/cancel" || kb[0][0].Text != "Орден Рассвета" {
+		t.Fatalf("faction keyboard = %+v", kb)
+	}
+	mustContain(t, h.press(alice, private(alice), 10, "@faction 1"), "Никнейм персонажа")
+	if !h.clearedLast(10) {
+		t.Fatal("faction keyboard not cleared after press")
+	}
+	if got := buttonData(h.tg.lastKeyboard(private(alice))); len(got) != 1 || got[0] != "/cancel" {
+		t.Fatalf("nickname keyboard = %v; want only cancel", got)
+	}
+	// Повторное нажатие устаревшей кнопки: ответ не применяется, бот повторяет текущий вопрос с его кнопками.
+	mustContain(t, h.press(alice, private(alice), 10, "@faction 2"), "Кнопка устарела", "Никнейм персонажа")
+	mustContain(t, h.send(alice, private(alice), "Элис"), "Пол персонажа")
+	if got := buttonData(h.tg.lastKeyboard(private(alice))); len(got) != 4 || got[1] != "@gender 2" {
+		t.Fatalf("gender keyboard = %v", got)
+	}
+	mustContain(t, h.press(alice, private(alice), 11, "@gender 2"), "Архетип (кнопкой, номером или названием)")
+	kb = h.tg.lastKeyboard(private(alice))
+	if got := buttonData(kb); len(got) != 6 || got[0] != "@archetype 1" || got[4] != "@archetype 5" || kb[0][0].Text != "Воин" || len(kb[0]) != 3 {
+		t.Fatalf("archetype keyboard = %+v", kb)
+	}
+	mustContain(t, h.press(alice, private(alice), 12, "@archetype 1"), "Распределение очков")
+	mustContain(t, h.press(alice, private(alice), 13, "@distribution 1"), "Открытое описание")
+	if got := buttonData(h.tg.lastKeyboard(private(alice))); len(got) != 2 || got[0] != "@public_bio -" {
+		t.Fatalf("bio keyboard = %v", got)
+	}
+	mustContain(t, h.press(alice, private(alice), 14, "@public_bio -"), "Скрытое описание")
+	card := h.press(alice, private(alice), 15, "@secret_bio -")
+	mustContain(t, card, "Персонаж создан", "Элис — Воин\nПол: женский")
+	if h.tg.lastKeyboard(private(alice)) != nil {
+		t.Fatal("final card has keyboard")
+	}
+	// Кнопка завершённого диалога не заявка и не ошибка.
+	mustContain(t, h.press(alice, private(alice), 15, "@secret_bio -"), "Этот диалог уже завершён")
+
+	// «Прервать» кнопкой.
+	mustContain(t, h.send(bob, private(bob), "/start join_"+code), "Выберите фракцию")
+	mustContain(t, h.press(bob, private(bob), 20, "/cancel"), "Диалог прерван")
+	mustContain(t, h.send(bob, private(bob), "/character"), "ещё нет")
+}
+
+// TestButtons_SetupDialog (ADR-0015): диалог настройки игры проходится кнопками: «Оставить как есть», типовые
+// значения, часовые пояса и «Без окна».
+func TestButtons_SetupDialog(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.createGame()
+	kb := h.tg.lastKeyboard(private(owner))
+	if got := buttonData(kb); len(got) != 2 || got[0] != "@title -" || got[1] != "/cancel" || kb[0][0].Text != "Оставить как есть" {
+		t.Fatalf("title keyboard = %+v", kb)
+	}
+	mustContain(t, h.press(owner, private(owner), 30, "@title -"), "Длительность раунда")
+	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 6 || got[0] != "@round_minutes 10" || got[3] != "@round_minutes 60" || got[4] != "@round_minutes -" {
+		t.Fatalf("round_minutes keyboard = %v", got)
+	}
+	mustContain(t, h.press(owner, private(owner), 31, "@round_minutes 20"), "Часовой пояс")
+	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 8 || got[1] != "@timezone Europe/Moscow" {
+		t.Fatalf("timezone keyboard = %v", got)
+	}
+	mustContain(t, h.press(owner, private(owner), 32, "@timezone Asia/Yekaterinburg"), "Игровое окно")
+	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 3 || got[0] != "@play_window нет" {
+		t.Fatalf("play_window keyboard = %v", got)
+	}
+	mustContain(t, h.press(owner, private(owner), 33, "@play_window нет"), "Число раундов")
+	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 6 || got[0] != "@max_rounds 0" || got[3] != "@max_rounds 30" {
+		t.Fatalf("max_rounds keyboard = %v", got)
+	}
+	mustContain(t, h.press(owner, private(owner), 34, "@max_rounds 10"), "Кворум раунда")
+	mustContain(t, h.press(owner, private(owner), 35, "@min_answers 2"), "Фракция добра")
+	mustContain(t, h.press(owner, private(owner), 36, "@faction_good -"), "Фракция зла")
+	mustContain(t, h.press(owner, private(owner), 37, "@faction_evil -"), "Настройка завершена", "Раунд: 20 мин", "Часовой пояс: Asia/Yekaterinburg", "Игровое окно: без окна", "Границы: 10 раундов", "Кворум: 2")
+}
+
+// TestButtons_ActOption (ADR-0015): под личным «раунд открыт» кнопки вариантов, нажатие подаёт заявку с названием
+// подхода; повтор упирается в «уже принята»; кнопка закрытого раунда отвечает, что раунд закрыт; уведомление о заявке
+// несёт кнопки следующего раунда.
+func TestButtons_ActOption(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+
+	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
+	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
+	msgs, _ := h.store.ListOutbox(context.Background(), g.ID)
+	var open model.OutboxMessage
+	for _, m := range msgs {
+		if m.Kind == model.OutboxPrivateOpen && m.TelegramChatID == private(alice) {
+			open = m
+		}
+	}
+	if len(open.Keyboard) == 0 {
+		t.Fatalf("private open without keyboard: %+v", open)
+	}
+	first := open.Keyboard[0][0]
+	if first.Text != "разобрать приписку" || !strings.HasPrefix(first.Data, "/act #1:") {
+		t.Fatalf("first option button = %+v", first)
+	}
+	mustContain(t, h.press(alice, private(alice), 40, first.Data), "Заявка принята: «разобрать приписку», раунд 1")
+	if !h.clearedLast(40) {
+		t.Fatal("options keyboard not cleared")
+	}
+	mustContain(t, h.press(alice, private(alice), 40, first.Data), "уже принята, изменить её нельзя")
+	mustContain(t, h.send(nobody, private(nobody), "/act "+strings.TrimPrefix(first.Data, "/act ")), "Игры нет")
+	mustContain(t, h.send(bob, private(bob), "/act жду у колодца"), "Заявка принята: раунд 1")
+
+	// Раунд закрыт: кнопка старого сообщения устарела; уведомление Боба о заявке несёт кнопки раунда 2
+	// (у Элис подход исчерпан: приписка разобрана, вариантов в локации не осталось).
+	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
+	mustContain(t, h.press(alice, private(alice), 40, first.Data), "Кнопки этого раунда устарели")
+	msgs, _ = h.store.ListOutbox(context.Background(), g.ID)
+	var notice, aliceNotice model.OutboxMessage
+	for _, m := range msgs {
+		if m.Kind == model.OutboxPrivate && m.TelegramChatID == private(bob) {
+			notice = m
+		}
+		if m.Kind == model.OutboxPrivate && m.TelegramChatID == private(alice) {
+			aliceNotice = m
+		}
+	}
+	if len(notice.Keyboard) == 0 || !strings.HasPrefix(notice.Keyboard[0][0].Data, "/act #2:") {
+		t.Fatalf("notice keyboard = %+v (text %q)", notice.Keyboard, notice.Text)
+	}
+	// Без модели заявка по кнопке разобрана запасным разбором в подход объекта (не «ждёт»).
+	mustContain(t, aliceNotice.Text, "Заявка «разобрать приписку»: осматривает: доска объявлений", "Шанс был 20%")
+	if strings.Contains(aliceNotice.Text, "ждёт") {
+		t.Fatalf("alice notice = %+v", aliceNotice)
+	}
+	mustContain(t, h.press(bob, private(bob), 41, notice.Keyboard[0][0].Data), "Заявка принята: «разобрать приписку», раунд 2")
+	// Несуществующий подход по ссылке правильного раунда.
+	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
+	mustContain(t, h.send(alice, private(alice), "/act #3:1:nothing:0"), "Этот вариант уже недоступен")
+}
+
+// TestButtons_ConfirmBeginFinishPause (ADR-0015): /begin и /finish без аргумента спрашивают подтверждение кнопками;
+// нажатие без прав не снимает кнопки; «Отмена» отменяет; ответ о паузе несёт кнопку «Возобновить».
+func TestButtons_ConfirmBeginFinishPause(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+
+	mustContain(t, h.send(owner, groupChat, "/begin"), "Начать кампанию «Песочница»?")
+	kb := h.tg.lastKeyboard(groupChat)
+	if got := buttonData(kb); len(got) != 2 || got[0] != "/begin yes" || got[1] != "/begin no" || kb[0][0].Text != "Начать" {
+		t.Fatalf("begin keyboard = %+v", kb)
+	}
+	mustContain(t, h.press(alice, groupChat, 50, "/begin yes"), "Нет прав")
+	if len(h.tg.cleared) != 0 {
+		t.Fatal("keyboard cleared after forbidden press")
+	}
+	mustContain(t, h.press(owner, groupChat, 50, "/begin no"), "Запуск отменён")
+	if !h.clearedLast(50) {
+		t.Fatal("keyboard not cleared after cancel")
+	}
+	mustContain(t, h.send(alice, groupChat, "/status"), "черновик")
+	mustContain(t, h.press(owner, groupChat, 51, "/begin yes"), "запущена")
+	mustContain(t, h.send(alice, groupChat, "/status"), "идёт")
+
+	mustContain(t, h.send(owner, groupChat, "/pause"), "на паузе")
+	if got := buttonData(h.tg.lastKeyboard(groupChat)); len(got) != 1 || got[0] != "/pause" {
+		t.Fatalf("pause keyboard = %v", got)
+	}
+	mustContain(t, h.press(owner, groupChat, 52, "/pause"), "возобновлена")
+	if h.tg.lastKeyboard(groupChat) != nil {
+		t.Fatal("resume reply has keyboard")
+	}
+
+	mustContain(t, h.send(owner, groupChat, "/finish"), "Завершить игру «Песочница»?")
+	if got := buttonData(h.tg.lastKeyboard(groupChat)); len(got) != 2 || got[0] != "/finish yes" {
+		t.Fatalf("finish keyboard = %v", got)
+	}
+	mustContain(t, h.press(owner, groupChat, 53, "/finish no"), "Завершение отменено")
+	mustContain(t, h.press(owner, groupChat, 54, "/finish yes"), "Игра «Песочница» завершена")
+}
+
+// TestButtons_HelpAndGames (ADR-0015): под /help кнопки-ссылки на руководство (без GuideURL их нет); /games с одной
+// игрой без кнопок.
+func TestButtons_HelpAndGames(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.svc.settings.GuideURL = "https://example.org/guide/"
+	code := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	h.send(alice, private(alice), "/start join_"+code)
+	mustContain(t, h.send(alice, private(alice), "/help"), "Команды в личке")
+	kb := h.tg.lastKeyboard(private(alice))
+	if len(kb) != 3 || kb[0][0].URL != "https://example.org/guide/commands.md" || kb[0][0].Data != "" || kb[2][0].URL != "https://example.org/guide/checks/checks.md" {
+		t.Fatalf("help keyboard = %+v", kb)
+	}
+	h.svc.settings.GuideURL = ""
+	mustContain(t, h.send(alice, groupChat, "/help"), "Команды в группе")
+	if h.tg.lastKeyboard(groupChat) != nil {
+		t.Fatal("help keyboard without GuideURL")
+	}
+	mustContain(t, h.send(alice, private(alice), "/games"), "Ваши игры", "1. «Песочница»")
+	if h.tg.lastKeyboard(private(alice)) != nil {
+		t.Fatal("games keyboard with one game")
+	}
 }

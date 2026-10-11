@@ -22,28 +22,28 @@ func (s *Service) startGameSetup(ctx context.Context, user model.User, g model.G
 	if err != nil {
 		return err
 	}
-	return s.replyPrivate(ctx, user, fmt.Sprintf("Настройка мира «%s». На каждый вопрос ответьте значением или «%s», чтобы оставить как есть. Прервать: /cancel\n\n%s", g.Title, setupSkip, q))
+	return s.replyPrivateKeyboard(ctx, user, fmt.Sprintf("Настройка мира «%s». На каждый вопрос ответьте значением, кнопкой или «%s», чтобы оставить как есть. Прервать: /cancel\n\n%s", g.Title, setupSkip, q.text), q.kb)
 }
 
 // setupStep применяет ответ к параметру и задаёт следующий вопрос.
-func (s *Service) setupStep(ctx context.Context, req *request, d *model.Dialog, answer string) (string, bool, error) {
+func (s *Service) setupStep(ctx context.Context, req *request, d *model.Dialog, answer string) (question, bool, error) {
 	g, err := s.dialogGame(ctx, d)
 	if err != nil {
-		return "", false, err
+		return question{}, false, err
 	}
 	answer = strings.TrimSpace(answer)
 	if answer != setupSkip {
 		if g, err = s.games.Set(ctx, g, req.user.ID, d.Step, answer); err != nil {
-			return "", false, err
+			return question{}, false, err
 		}
 	}
 	next := s.nextParam(ctx, d.Step)
 	if next == "" {
 		status, err := s.renderStatus(ctx, g)
 		if err != nil {
-			return "", false, err
+			return question{}, false, err
 		}
-		return "Настройка завершена.\n\n" + status, true, nil
+		return question{text: "Настройка завершена.\n\n" + status}, true, nil
 	}
 	d.Step = next
 	q, err := s.setupQuestion(ctx, g, next)
@@ -70,8 +70,9 @@ func (s *Service) nextParam(ctx context.Context, current string) string {
 	return ""
 }
 
-// setupQuestion — вопрос по параметру с текущим значением.
-func (s *Service) setupQuestion(ctx context.Context, g model.Game, key string) (string, error) {
+// setupQuestion — вопрос по параметру с текущим значением и кнопками типовых значений (ADR-0015); на каждом шаге
+// кнопка «Оставить как есть».
+func (s *Service) setupQuestion(ctx context.Context, g model.Game, key string) (question, error) {
 	var p game.Param
 	for _, it := range game.Params {
 		if it.Key == key {
@@ -80,9 +81,51 @@ func (s *Service) setupQuestion(ctx context.Context, g model.Game, key string) (
 	}
 	current, err := s.paramValue(ctx, g, key)
 	if err != nil {
-		return "", err
+		return question{}, err
 	}
-	return fmt.Sprintf("%s (%s).\nСейчас: %s", p.Title, p.Hint, current), nil
+	answers, perRow, err := s.setupAnswers(ctx, key)
+	if err != nil {
+		return question{}, err
+	}
+	answers = append(answers, [2]string{"Оставить как есть", setupSkip})
+	return question{text: fmt.Sprintf("%s (%s).\nСейчас: %s", p.Title, p.Hint, current), kb: answerButtons(key, perRow, answers...)}, nil
+}
+
+// setupTimezones — часовые пояса на кнопках диалога настройки; остальные вводятся текстом.
+var setupTimezones = []string{"Europe/Kaliningrad", "Europe/Moscow", "Europe/Samara", "Asia/Yekaterinburg", "Asia/Novosibirsk", "Asia/Vladivostok"}
+
+// setupAnswers — типовые ответы параметра для кнопок и число кнопок в ряду; свободные параметры без ответов.
+func (s *Service) setupAnswers(ctx context.Context, key string) ([][2]string, int, error) {
+	nums := func(vals ...string) [][2]string {
+		out := make([][2]string, 0, len(vals))
+		for _, v := range vals {
+			out = append(out, [2]string{v, v})
+		}
+		return out
+	}
+	switch key {
+	case "genre":
+		genres, err := s.games.Genres(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+		var out [][2]string
+		for _, ge := range genres {
+			out = append(out, [2]string{ge.Title, ge.Code})
+		}
+		return out, 1, nil
+	case "round_minutes":
+		return nums("10", "20", "30", "60"), 4, nil
+	case "timezone":
+		return nums(setupTimezones...), 2, nil
+	case "play_window":
+		return [][2]string{{"Без окна", "нет"}}, 1, nil
+	case "max_rounds":
+		return append([][2]string{{"Без границы", "0"}}, nums("10", "20", "30")...), 4, nil
+	case "min_answers":
+		return nums("1", "2", "3", "5"), 4, nil
+	}
+	return nil, 1, nil
 }
 
 // paramValue — текущее значение параметра для вопроса.

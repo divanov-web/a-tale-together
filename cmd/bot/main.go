@@ -66,11 +66,11 @@ func run() error {
 		}
 	}
 
-	tg, err := telegram.New(ctx, telegram.Settings{Token: cfg.TelegramBotToken}, logger)
+	clock := systemClock{}
+	tg, err := telegram.New(ctx, telegram.Settings{Token: cfg.TelegramBotToken, Now: clock.Now}, logger)
 	if err != nil {
 		return err
 	}
-	clock := systemClock{}
 	var journal *chatlog.Writer // nil — журнал чатов выключен (ADR-0012)
 	if cfg.ChatLogDir != "" {
 		journal = chatlog.New(chatlog.Settings{Dir: cfg.ChatLogDir, Retention: time.Duration(cfg.ChatLogRetention) * 24 * time.Hour}, logger)
@@ -103,7 +103,7 @@ func run() error {
 	}
 	llm := applm.New(store, providers, clock, logger)
 	rounds.LLM = llm // интерпретатор и рассказчик: два вызова на раунд (пункты 08, 09)
-	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username(), OwnerID: model.TelegramUserID(cfg.BotOwnerID)},
+	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username(), OwnerID: model.TelegramUserID(cfg.BotOwnerID), GuideURL: cfg.GuideURL},
 		store, store, tg, chats, games, rounds, llm, clock, logger)
 	outbox := delivery.New(store, tg, clock, delivery.Settings{Interval: cfg.OutboxTick}, logger)
 	if journal != nil {

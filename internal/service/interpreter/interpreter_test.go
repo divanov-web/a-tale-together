@@ -200,6 +200,15 @@ func TestInterpret_ErrorsAndFallback(t *testing.T) {
 	if len(ints) != 3 || ints[0].ActionType != model.ActionWait || ints[0].Ambiguities[0] != "интерпретатор недоступен" || ints[2].ActionType != model.ActionMove || ints[2].Target != "вниз" {
 		t.Fatalf("fallback = %+v", ints)
 	}
+	// Заявка названием подхода (кнопка варианта, ADR-0015) разбирается в этот подход без модели.
+	byTitle := cellar()
+	loc := model.LocationID(2)
+	byTitle.Characters[0].LocationID = &loc
+	byTitle.Submissions[0].Text = " Отпереть "
+	ints = Fallback(byTitle, "интерпретатор недоступен")
+	if ints[0].ActionType != model.ActionInteract || ints[0].Target != "cellar_door" || ints[0].ApproachIdx == nil || *ints[0].ApproachIdx != 1 || len(ints[0].Ambiguities) != 0 {
+		t.Fatalf("fallback by title = %+v", ints[0])
+	}
 }
 
 // TestBuildInput_NoLeaks: скрытые выходы и объекты, выбывшие персонажи не попадают в контекст; знания обрезаны.

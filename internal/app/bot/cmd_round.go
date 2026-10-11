@@ -13,11 +13,33 @@ import (
 	"taletogether/internal/model"
 )
 
-// gameBegin — /begin в группе: запуск кампании, стартовая сцена и первый раунд уходят через outbox.
+// Ответы подтверждения для /begin и /finish (ADR-0015): без аргумента — вопрос с кнопками, `yes` — выполнить, `no` — отменить.
+const (
+	confirmYes = "yes"
+	confirmNo  = "no"
+)
+
+// confirmKeyboard — кнопки подтверждения команды группы: действие и отмена.
+func confirmKeyboard(command, action string) model.Keyboard {
+	return model.Keyboard{{
+		{Text: action, Data: model.CallbackCommand(command, confirmYes)},
+		{Text: "Отмена", Data: model.CallbackCommand(command, confirmNo)},
+	}}
+}
+
+// gameBegin — /begin в группе: без аргумента спрашивает подтверждение кнопками, `/begin yes` запускает кампанию
+// (стартовая сцена и первый раунд через outbox); права проверяет сценарий при выполнении, то есть у нажавшего.
 func (s *Service) gameBegin(ctx context.Context, req *request) error {
 	g, err := s.games.OfChat(ctx, req.chat.ID)
 	if err != nil {
 		return err
+	}
+	switch strings.ToLower(strings.TrimSpace(req.in.Args)) {
+	case confirmYes:
+	case confirmNo:
+		return s.reply(ctx, req.in, "Запуск отменён.")
+	default:
+		return s.replyKeyboard(ctx, req.in, fmt.Sprintf("Начать кампанию «%s»? Бот опубликует стартовую сцену и откроет первый раунд. Подтвердить: кнопкой или /begin yes", g.Title), confirmKeyboard("begin", "Начать"))
 	}
 	g, err = s.rounds.Begin(ctx, g, req.user.ID)
 	if err != nil {
@@ -26,7 +48,7 @@ func (s *Service) gameBegin(ctx context.Context, req *request) error {
 	return s.reply(ctx, req.in, fmt.Sprintf("Игра «%s» запущена.", g.Title))
 }
 
-// gamePause — /pause в группе: пауза или возобновление.
+// gamePause — /pause в группе: пауза или возобновление; ответ о паузе несёт кнопку «Возобновить» (ADR-0015).
 func (s *Service) gamePause(ctx context.Context, req *request) error {
 	g, err := s.games.OfChat(ctx, req.chat.ID)
 	if err != nil {
@@ -37,16 +59,25 @@ func (s *Service) gamePause(ctx context.Context, req *request) error {
 		return err
 	}
 	if paused {
-		return s.reply(ctx, req.in, fmt.Sprintf("Игра «%s» на паузе. Возобновить: /pause", g.Title))
+		return s.replyKeyboard(ctx, req.in, fmt.Sprintf("Игра «%s» на паузе. Возобновить: /pause", g.Title),
+			model.Keyboard{{{Text: "Возобновить", Data: model.CallbackCommand("pause", "")}}})
 	}
 	return s.reply(ctx, req.in, fmt.Sprintf("Игра «%s» возобновлена.", g.Title))
 }
 
-// gameFinish — /finish в группе: открытый раунд закрывается и разрешается при наличии заявок, затем финальная хроника.
+// gameFinish — /finish в группе: без аргумента спрашивает подтверждение кнопками, `/finish yes` завершает игру:
+// открытый раунд закрывается и разрешается при наличии заявок, затем финальная хроника.
 func (s *Service) gameFinish(ctx context.Context, req *request) error {
 	g, err := s.games.OfChat(ctx, req.chat.ID)
 	if err != nil {
 		return err
+	}
+	switch strings.ToLower(strings.TrimSpace(req.in.Args)) {
+	case confirmYes:
+	case confirmNo:
+		return s.reply(ctx, req.in, "Завершение отменено.")
+	default:
+		return s.replyKeyboard(ctx, req.in, fmt.Sprintf("Завершить игру «%s»? Открытый раунд будет разыгран, в группу придёт финальная хроника, вернуть игру нельзя. Подтвердить: кнопкой или /finish yes", g.Title), confirmKeyboard("finish", "Завершить"))
 	}
 	if g, err = s.rounds.Finish(ctx, g, req.user.ID); err != nil {
 		return err
@@ -185,7 +216,8 @@ func (s *Service) roundReplay(ctx context.Context, req *request) error {
 }
 
 // act — /act <текст>: заявка персонажа на открытый раунд. В личке — текущая игра пользователя, заявка скрыта;
-// в группе — игра чата, текст заявки виден всем, это выбор игрока (B14).
+// в группе — игра чата, текст заявки виден всем, это выбор игрока (B14). Аргумент `#…` — ссылка на вариант сцены
+// с кнопки под личным сообщением (ADR-0015): заявкой становится название подхода.
 func (s *Service) act(ctx context.Context, req *request) error {
 	text := strings.TrimSpace(req.in.Args)
 	if text == "" {
@@ -195,9 +227,18 @@ func (s *Service) act(ctx context.Context, req *request) error {
 	if err != nil {
 		return err
 	}
-	r, _, err := s.rounds.Submit(ctx, g, c, text)
+	var r model.Round
+	var sub model.Submission
+	if ref, ok := round.ParseOptionRef(text); ok {
+		r, sub, err = s.rounds.SubmitOption(ctx, g, c, ref)
+	} else {
+		r, sub, err = s.rounds.Submit(ctx, g, c, text)
+	}
 	if err != nil {
 		return err
+	}
+	if req.in.Callback != nil {
+		return s.reply(ctx, req.in, fmt.Sprintf("Заявка принята: «%s», раунд %d, до %s.", sub.RawText, r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
 	}
 	return s.reply(ctx, req.in, fmt.Sprintf("Заявка принята: раунд %d, до %s.", r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
 }

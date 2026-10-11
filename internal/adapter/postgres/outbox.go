@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -10,13 +11,30 @@ import (
 	"taletogether/internal/model"
 )
 
-const outboxColumns = `id, game_id, round_id, telegram_chat_id, kind, part, text, status, telegram_message_id, attempts, send_after, claimed_at, last_error, created_at, sent_at`
+const outboxColumns = `id, game_id, round_id, telegram_chat_id, kind, part, text, keyboard, status, telegram_message_id, attempts, send_after, claimed_at, last_error, created_at, sent_at`
 
 func scanOutbox(row pgx.Row) (model.OutboxMessage, error) {
 	var m model.OutboxMessage
-	err := row.Scan(&m.ID, &m.GameID, &m.RoundID, &m.TelegramChatID, &m.Kind, &m.Part, &m.Text, &m.Status, &m.TelegramMessageID,
+	var kb []byte
+	err := row.Scan(&m.ID, &m.GameID, &m.RoundID, &m.TelegramChatID, &m.Kind, &m.Part, &m.Text, &kb, &m.Status, &m.TelegramMessageID,
 		&m.Attempts, &m.SendAfter, &m.ClaimedAt, &m.LastError, &m.CreatedAt, &m.SentAt)
-	return m, err
+	if err != nil {
+		return m, err
+	}
+	if len(kb) > 0 {
+		if err := json.Unmarshal(kb, &m.Keyboard); err != nil {
+			return m, fmt.Errorf("keyboard: %w", err)
+		}
+	}
+	return m, nil
+}
+
+// keyboardJSON — клавиатура сообщения для столбца jsonb; nil — NULL.
+func keyboardJSON(kb model.Keyboard) ([]byte, error) {
+	if len(kb) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(kb)
 }
 
 // EnqueueOutbox ставит сообщение в очередь; повтор того же вида для раунда и чата молча пропускается (дедуп).
@@ -25,9 +43,13 @@ func (s *Store) EnqueueOutbox(ctx context.Context, m model.OutboxMessage) error 
 	if part == 0 {
 		part = 1
 	}
-	const q = `INSERT INTO messages_outbox (game_id, round_id, telegram_chat_id, kind, part, text, send_after)
-VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`
-	if _, err := s.db(ctx).Exec(ctx, q, m.GameID, m.RoundID, m.TelegramChatID, m.Kind, part, m.Text, m.SendAfter); err != nil {
+	kb, err := keyboardJSON(m.Keyboard)
+	if err != nil {
+		return fmt.Errorf("postgres.EnqueueOutbox: %w", err)
+	}
+	const q = `INSERT INTO messages_outbox (game_id, round_id, telegram_chat_id, kind, part, text, keyboard, send_after)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING`
+	if _, err := s.db(ctx).Exec(ctx, q, m.GameID, m.RoundID, m.TelegramChatID, m.Kind, part, m.Text, kb, m.SendAfter); err != nil {
 		return fmt.Errorf("postgres.EnqueueOutbox: %w", err)
 	}
 	return nil

@@ -199,15 +199,18 @@ func (s *Service) gamesList(ctx context.Context, req *request) error {
 	current, _ := s.games.Current(ctx, req.user)
 	var b strings.Builder
 	b.WriteString("Ваши игры:\n")
+	var kb model.Keyboard
 	for i, g := range games {
 		mark := ""
 		if g.ID == current.ID {
 			mark = " — текущая"
 		}
 		fmt.Fprintf(&b, "%d. «%s» (%s)%s\n", i+1, g.Title, statusTitle(g.Status), mark)
+		kb = append(kb, []model.Button{{Text: fmt.Sprintf("%d. %s", i+1, g.Title), Data: model.CallbackCommand("games", strconv.Itoa(i+1))}})
 	}
 	if len(games) > 1 {
-		b.WriteString("Выбрать: /games <номер>")
+		b.WriteString("Выбрать: кнопкой или /games <номер>")
+		return s.replyKeyboard(ctx, req.in, b.String(), kb) // кнопки выбора только при нескольких играх (ADR-0015)
 	}
 	return s.reply(ctx, req.in, b.String())
 }

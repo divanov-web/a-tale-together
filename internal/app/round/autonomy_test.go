@@ -70,7 +70,7 @@ type flakySender struct {
 	sent     int
 }
 
-func (f *flakySender) Send(context.Context, model.TelegramChatID, string) (int64, error) {
+func (f *flakySender) Send(context.Context, model.TelegramChatID, string, model.Keyboard) (int64, error) {
 	f.attempts++
 	switch {
 	case f.attempts == 10:

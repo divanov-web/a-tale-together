@@ -125,19 +125,53 @@ func (s *Service) call(ctx context.Context, v *validator, input string, res *Res
 	return valid, issues, nil
 }
 
-// Fallback — разбор заявок кодом при недоступной модели: типовые команды через `rules.ParseTyped`, остальное —
+// Fallback — разбор заявок кодом при недоступной модели: типовые команды через `rules.ParseTyped`, заявка, совпадающая
+// с названием подхода видимого объекта в локации персонажа (кнопка варианта, ADR-0015), — этот подход; остальное —
 // безопасное толкование `wait` с причиной (docs/architecture/round-pipeline.md, сбой шага 2).
 func Fallback(snap model.RoundSnapshot, reason string) []model.Intent {
 	out := make([]model.Intent, 0, len(snap.Submissions))
 	for _, sub := range snap.Submissions {
 		in := rules.ParseTyped(model.Submission{ID: sub.SubmissionID, CharacterID: sub.CharacterID, RawText: sub.Text})
 		if in.ActionType == "" {
-			in.ActionType = model.ActionWait
-			in.Ambiguities = append([]string{reason}, in.Ambiguities...)
+			if target, idx, action, ok := approachByTitle(snap, sub.CharacterID, sub.Text); ok {
+				in.ActionType, in.Target, in.ApproachIdx, in.Ambiguities = action, target, &idx, nil
+			} else {
+				in.ActionType = model.ActionWait
+				in.Ambiguities = append([]string{reason}, in.Ambiguities...)
+			}
 		}
 		out = append(out, in)
 	}
 	return out
+}
+
+// approachByTitle находит подход видимого объекта в локации персонажа по названию (как его показывает `narrator.Options`:
+// `Title`, иначе «действие объект»); сравнение без учёта регистра.
+func approachByTitle(snap model.RoundSnapshot, char model.CharacterID, text string) (target string, idx int, action model.ActionType, ok bool) {
+	c, found := snap.Character(char)
+	if !found || c.LocationID == nil {
+		return "", 0, "", false
+	}
+	l, found := snap.Location(*c.LocationID)
+	if !found {
+		return "", 0, "", false
+	}
+	text = strings.TrimSpace(text)
+	for _, o := range l.Objects {
+		if o.HiddenUntil && !o.Revealed {
+			continue
+		}
+		for i, ap := range o.Approaches {
+			title := ap.Title
+			if title == "" {
+				title = string(ap.Action) + " " + o.Title
+			}
+			if strings.EqualFold(title, text) {
+				return o.Key, i, ap.Action, true
+			}
+		}
+	}
+	return "", 0, "", false
 }
 
 func joinIssues(issues []issue) string {

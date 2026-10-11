@@ -25,6 +25,7 @@ type Config struct {
 	BotOwnerID       int64         `env:"BOT_OWNER_ID"`            // Telegram ID владельца бота: команды /llm
 	ChatLogDir       string        `env:"CHAT_LOG_DIR"`            // Корень журнала чатов (ADR-0012); пусто — выключен
 	ChatLogRetention int           `env:"CHAT_LOG_RETENTION_DAYS"` // Дней хранения файлов журнала; 0 — не удалять
+	GuideURL         string        `env:"GUIDE_URL"`               // Корень руководства игрока для кнопок-ссылок /help; пусто — без ссылок
 	LLM              LLM
 }
 
@@ -47,6 +48,7 @@ func Defaults() Config {
 		OutboxTick:       3 * time.Second,
 		ChatLogDir:       "logs/chats",
 		ChatLogRetention: 30,
+		GuideURL:         "https://github.com/divanov-web/a-tale-together/blob/master/guide",
 		LLM:              LLM{ClaudeCLIPath: "claude"},
 	}
 }

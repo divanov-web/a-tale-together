@@ -18,16 +18,18 @@ func (c *clock) Now() time.Time { return c.t }
 
 // sender — фейковый Telegram: падает, пока fail > 0.
 type sender struct {
-	fail int
-	sent []string
+	fail      int
+	sent      []string
+	keyboards []model.Keyboard // клавиатура каждого отправленного сообщения (nil — без кнопок)
 }
 
-func (s *sender) Send(_ context.Context, _ model.TelegramChatID, text string) (int64, error) {
+func (s *sender) Send(_ context.Context, _ model.TelegramChatID, text string, kb model.Keyboard) (int64, error) {
 	if s.fail > 0 {
 		s.fail--
 		return 0, errors.New("network")
 	}
 	s.sent = append(s.sent, text)
+	s.keyboards = append(s.keyboards, kb)
 	return int64(100 + len(s.sent)), nil
 }
 
@@ -131,7 +133,7 @@ type classifying struct {
 	sent int
 }
 
-func (s *classifying) Send(context.Context, model.TelegramChatID, string) (int64, error) {
+func (s *classifying) Send(context.Context, model.TelegramChatID, string, model.Keyboard) (int64, error) {
 	if s.err != nil {
 		return 0, s.err
 	}

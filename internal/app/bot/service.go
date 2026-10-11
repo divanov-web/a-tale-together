@@ -1,5 +1,5 @@
 // Package bot — сценарий обработки сообщений Telegram: дедупликация, лимит частоты, учёт пользователя,
-// маршрутизация команд по контексту, диалоги в личке, ответы шаблонами.
+// маршрутизация команд и нажатий кнопок по контексту (ADR-0015), диалоги в личке, ответы шаблонами.
 package bot
 
 import (
@@ -34,9 +34,21 @@ type Dialogs interface {
 	DeleteDialog(ctx context.Context, user model.UserID) error
 }
 
-// Telegram — отправка ответов и запросы к Telegram; реализует `adapter/telegram`.
+// Telegram — всё, что сценарию нужно от Telegram; реализует `adapter/telegram`.
 type Telegram interface {
+	Messenger
+	ChatAPI
+}
+
+// Messenger — ответы на команды (ADR-0006): текст, текст с кнопками и снятие кнопок после нажатия (ADR-0015).
+type Messenger interface {
 	SendText(ctx context.Context, chat model.TelegramChatID, text string) error
+	SendKeyboard(ctx context.Context, chat model.TelegramChatID, text string, kb model.Keyboard) error
+	ClearKeyboard(ctx context.Context, chat model.TelegramChatID, messageID int64) error
+}
+
+// ChatAPI — запросы о чате и меню команд (B20).
+type ChatAPI interface {
 	IsChatAdmin(ctx context.Context, chat model.TelegramChatID, user model.TelegramUserID) (bool, error)
 	SetCommands(ctx context.Context, private, group []model.BotCommand) error
 	SetMemberCommands(ctx context.Context, chat model.TelegramChatID, user model.TelegramUserID, cmds []model.BotCommand) error
@@ -58,6 +70,7 @@ type Settings struct {
 	Env         string               // dev|prod
 	BotUsername string               // Имя бота без @ для ссылок-приглашений
 	OwnerID     model.TelegramUserID // Владелец бота: команды /llm; 0 — команды недоступны
+	GuideURL    string               // Корень руководства игрока для кнопок-ссылок /help; пусто — без ссылок
 }
 
 // Service обрабатывает входящие сообщения. Ответы на команды отправляются синхронно (ADR-0006).
@@ -168,12 +181,17 @@ func (s *Service) HandleChatMember(ctx context.Context, ch model.ChatMemberChang
 }
 
 // Handle дедуплицирует update, проверяет лимиты, фиксирует пользователя и выполняет команду или шаг диалога.
+// Нажатие кнопки (ADR-0015) идёт тем же путём: данные кнопки уже разобраны в команду или ответ диалога; после
+// обработки кнопки с сообщения снимаются, кроме отказа в правах, чтобы чужое нажатие не гасило кнопку владельца.
 func (s *Service) Handle(ctx context.Context, in model.Incoming) error {
 	fresh, err := s.store.MarkUpdate(ctx, in.UpdateID)
 	if err != nil {
 		return fmt.Errorf("bot.Handle: %w", err)
 	}
 	rec := model.ChatLogRecord{Kind: model.ChatLogIn, Chat: in.ChatID, UpdateID: in.UpdateID, User: journalUser(in.From), Command: in.Command, Text: in.Text, Duplicate: !fresh}
+	if in.Callback != nil {
+		rec.Event = "callback"
+	}
 	if !fresh {
 		s.logger.Debug("duplicate update skipped", slog.Int64("update_id", in.UpdateID))
 		s.journal(ctx, rec)
@@ -203,6 +221,21 @@ func (s *Service) Handle(ctx context.Context, in model.Incoming) error {
 		return nil
 	}
 	req := &request{in: in, user: user}
+	err = s.dispatch(ctx, req)
+	if in.Callback != nil && !isRightsError(err) {
+		if cerr := s.tg.ClearKeyboard(ctx, in.ChatID, in.Callback.MessageID); cerr != nil {
+			s.logger.Warn("keyboard not cleared", slog.Int64("chat_id", int64(in.ChatID)), slog.Int64("update_id", in.UpdateID), slog.Any("err", cerr))
+		}
+	}
+	if err != nil {
+		return s.fail(ctx, req, err)
+	}
+	return nil
+}
+
+// dispatch выполняет шаг диалога или команду; ошибки сценария возвращаются как есть, ответ на них даёт Handle.
+func (s *Service) dispatch(ctx context.Context, req *request) error {
+	in := req.in
 	if in.Command == "" {
 		if !in.IsPrivate() {
 			return nil
@@ -221,21 +254,28 @@ func (s *Service) Handle(ctx context.Context, in model.Incoming) error {
 		return s.reply(ctx, in, cmd.hint())
 	}
 	if !in.IsPrivate() && cmd.needsChat {
-		c, created, err := s.chats.Ensure(ctx, in, user, func(ctx context.Context) (bool, error) {
+		c, created, err := s.chats.Ensure(ctx, in, req.user, func(ctx context.Context) (bool, error) {
 			return s.tg.IsChatAdmin(ctx, in.ChatID, in.From.ID)
 		})
 		if err != nil {
-			return s.fail(ctx, req, err)
+			return err
 		}
 		if created {
-			s.syncMemberMenu(ctx, c, user) // владелец, зарегистрировавший чат командой, сразу получает меню (B20)
+			s.syncMemberMenu(ctx, c, req.user) // владелец, зарегистрировавший чат командой, сразу получает меню (B20)
 		}
 		req.chat = c
 	}
-	if err := cmd.run(ctx, req); err != nil {
-		return s.fail(ctx, req, err)
+	return cmd.run(ctx, req)
+}
+
+// isRightsError — отказ в правах: после такого нажатия кнопки остаются на сообщении.
+func isRightsError(err error) bool {
+	for _, e := range []error{chat.ErrForbidden, game.ErrForbidden, round.ErrForbidden, errNotOwner} {
+		if errors.Is(err, e) {
+			return true
+		}
 	}
-	return nil
+	return false
 }
 
 // request — разобранный контекст команды: сообщение, пользователь, чат группы (для группового контекста).
@@ -247,26 +287,44 @@ type request struct {
 
 // reply отправляет ответ в тот же чат.
 func (s *Service) reply(ctx context.Context, in model.Incoming, text string) error {
-	rec := model.ChatLogRecord{Kind: model.ChatLogOut, Chat: in.ChatID, UpdateID: in.UpdateID, Text: text}
-	if err := s.tg.SendText(ctx, in.ChatID, text); err != nil {
-		rec.Error = err.Error()
-		s.journal(ctx, rec)
+	return s.replyKeyboard(ctx, in, text, nil)
+}
+
+// replyKeyboard отправляет ответ в тот же чат с кнопками под ним (nil — без кнопок).
+func (s *Service) replyKeyboard(ctx context.Context, in model.Incoming, text string, kb model.Keyboard) error {
+	if err := s.send(ctx, in.ChatID, in.UpdateID, text, kb); err != nil {
 		return fmt.Errorf("bot.reply: %w", err)
 	}
-	s.journal(ctx, rec)
 	return nil
 }
 
 // replyPrivate отправляет сообщение пользователю в личку.
 func (s *Service) replyPrivate(ctx context.Context, user model.User, text string) error {
-	rec := model.ChatLogRecord{Kind: model.ChatLogOut, Chat: user.PrivateChat(), Text: text}
-	if err := s.tg.SendText(ctx, user.PrivateChat(), text); err != nil {
-		rec.Error = err.Error()
-		s.journal(ctx, rec)
+	return s.replyPrivateKeyboard(ctx, user, text, nil)
+}
+
+// replyPrivateKeyboard отправляет сообщение с кнопками пользователю в личку.
+func (s *Service) replyPrivateKeyboard(ctx context.Context, user model.User, text string, kb model.Keyboard) error {
+	if err := s.send(ctx, user.PrivateChat(), 0, text, kb); err != nil {
 		return fmt.Errorf("bot.replyPrivate: %w", err)
 	}
-	s.journal(ctx, rec)
 	return nil
+}
+
+// send отправляет текст с кнопками или без и пишет исходящее в журнал чата.
+func (s *Service) send(ctx context.Context, chat model.TelegramChatID, updateID int64, text string, kb model.Keyboard) error {
+	rec := model.ChatLogRecord{Kind: model.ChatLogOut, Chat: chat, UpdateID: updateID, Text: text}
+	var err error
+	if len(kb) > 0 {
+		err = s.tg.SendKeyboard(ctx, chat, text, kb)
+	} else {
+		err = s.tg.SendText(ctx, chat, text)
+	}
+	if err != nil {
+		rec.Error = err.Error()
+	}
+	s.journal(ctx, rec)
+	return err
 }
 
 // fail превращает ошибку сценария в ответ: ожидаемые ошибки ввода и прав — текстом игроку, сбои — общим сообщением и возвратом ошибки.
@@ -288,6 +346,7 @@ var userErrors = []error{
 	game.ErrHasCharacter, game.ErrNoCharacter, game.ErrNicknameTaken, game.ErrChooseGame, game.ErrBadValue,
 	round.ErrForbidden, round.ErrAlreadyStarted, round.ErrNotActive, round.ErrPaused, round.ErrFinished, round.ErrNoCharacters,
 	round.ErrNoOpenRound, round.ErrEmpty, round.ErrTooLong, round.ErrTooFrequent, round.ErrAlreadyActed, round.ErrDead, round.ErrNoRound, round.ErrNotResolved,
+	round.ErrRoundClosed, round.ErrOptionGone,
 	applm.ErrNoProfile, applm.ErrUnknownProfile, applm.ErrUnknownProvider, applm.ErrProfileExists, applm.ErrBadValue, applm.ErrNoGame, errNotOwner,
 	rules.ErrInvalid, errUnknownUser,
 }

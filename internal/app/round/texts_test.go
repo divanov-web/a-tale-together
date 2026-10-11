@@ -127,3 +127,35 @@ func TestTexts_OptionsFor(t *testing.T) {
 		t.Errorf("no approaches = %q", got)
 	}
 }
+
+// TestOptionRef_RoundTrip — ссылка варианта для кнопки (ADR-0015): строка и разбор, обычный текст заявки не ссылка.
+func TestOptionRef_RoundTrip(t *testing.T) {
+	t.Parallel()
+	ref := OptionRef{RoundNo: 12, LocationID: 3, Object: "cellar_hatch", Idx: 1}
+	if got := ref.String(); got != "#12:3:cellar_hatch:1" {
+		t.Fatalf("String = %q", got)
+	}
+	back, ok := ParseOptionRef(" " + ref.String())
+	if !ok || back != ref {
+		t.Fatalf("ParseOptionRef = %+v, %v", back, ok)
+	}
+	for _, bad := range []string{"иду в лес", "#12:3:well", "#x:3:well:0", "#12:3::0", "#12:3:well:z"} {
+		if _, ok := ParseOptionRef(bad); ok {
+			t.Fatalf("ParseOptionRef(%q) accepted", bad)
+		}
+	}
+	loc := model.LocationID(3)
+	c := model.SnapshotCharacter{Nickname: "Элис", LocationID: &loc}
+	opts := []narrator.Option{
+		{LocationID: 3, Object: "well", Idx: 0, Title: "спуститься в колодец"},
+		{LocationID: 4, Object: "door", Idx: 0, Title: "выбить дверь"},
+		{LocationID: 3, Object: "well", Idx: 1, Title: "осмотреть ворот"},
+	}
+	kb := optionsKeyboard(c, opts, 12)
+	if len(kb) != 2 || kb[0][0].Text != "спуститься в колодец" || kb[0][0].Data != "/act #12:3:well:0" || kb[1][0].Data != "/act #12:3:well:1" {
+		t.Fatalf("optionsKeyboard = %+v", kb)
+	}
+	if optionsKeyboard(model.SnapshotCharacter{}, opts, 12) != nil {
+		t.Fatal("keyboard without location")
+	}
+}

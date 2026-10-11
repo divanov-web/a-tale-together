@@ -1,4 +1,4 @@
-// Package telegram — адаптер Telegram Bot API на go-telegram/bot (ADR-0004): long polling, отправка текста.
+// Package telegram — адаптер Telegram Bot API на go-telegram/bot (ADR-0004): long polling, отправка текста и inline-кнопок (ADR-0015).
 package telegram
 
 import (
@@ -16,7 +16,8 @@ import (
 
 // Settings — настройки подключения к Telegram.
 type Settings struct {
-	Token string // Токен бота от BotFather
+	Token string           // Токен бота от BotFather
+	Now   func() time.Time // Время получения нажатия кнопки (у callback_query нет даты); nil — time.Now
 }
 
 // Handler принимает входящие сообщения и изменения статуса бота в чатах; реализует `app/bot`.
@@ -32,14 +33,18 @@ type Client struct {
 	handler  Handler
 	logger   *slog.Logger
 	username string
+	now      func() time.Time
 }
 
 // New проверяет токен запросом getMe и готовит клиент; polling начинается в Run.
 func New(ctx context.Context, s Settings, logger *slog.Logger) (*Client, error) {
-	c := &Client{logger: logger}
+	c := &Client{logger: logger, now: s.Now}
+	if c.now == nil {
+		c.now = time.Now
+	}
 	b, err := bot.New(s.Token,
 		bot.WithSkipGetMe(),
-		bot.WithAllowedUpdates(bot.AllowedUpdates{"message", "my_chat_member"}),
+		bot.WithAllowedUpdates(bot.AllowedUpdates{"message", "my_chat_member", "callback_query"}),
 		bot.WithDefaultHandler(c.onUpdate),
 		bot.WithErrorsHandler(c.onError),
 		bot.WithDebugHandler(func(format string, args ...any) { logger.Debug(fmt.Sprintf(format, args...)) }),
@@ -70,21 +75,56 @@ func (c *Client) Run(ctx context.Context, h Handler) error {
 
 // SendText отправляет обычное текстовое сообщение (ответы на команды, ADR-0006). Длинные игровые тексты делит сценарий при постановке в outbox (ADR-0011).
 func (c *Client) SendText(ctx context.Context, chat model.TelegramChatID, text string) error {
-	if _, err := c.Send(ctx, chat, text); err != nil {
+	if _, err := c.Send(ctx, chat, text, nil); err != nil {
 		return fmt.Errorf("telegram.SendText: %w", err)
 	}
 	return nil
 }
 
-// Send отправляет текст и возвращает идентификатор сообщения Telegram; используется воркером outbox.
+// SendKeyboard отправляет текст с inline-кнопками под ним (ADR-0015); пустая клавиатура — обычное сообщение.
+func (c *Client) SendKeyboard(ctx context.Context, chat model.TelegramChatID, text string, kb model.Keyboard) error {
+	if _, err := c.Send(ctx, chat, text, kb); err != nil {
+		return fmt.Errorf("telegram.SendKeyboard: %w", err)
+	}
+	return nil
+}
+
+// Send отправляет текст с кнопками (nil — без них) и возвращает идентификатор сообщения Telegram; используется воркером outbox.
 // Ошибки классифицируются для повторов (ADR-0013): окончательный отказ Telegram → `model.ErrSendRejected`,
 // 429 → `model.RetryAfterError`, остальное (сеть, 5xx, таймаут) — временная ошибка.
-func (c *Client) Send(ctx context.Context, chat model.TelegramChatID, text string) (int64, error) {
-	m, err := c.bot.SendMessage(ctx, &bot.SendMessageParams{ChatID: int64(chat), Text: text})
+func (c *Client) Send(ctx context.Context, chat model.TelegramChatID, text string, kb model.Keyboard) (int64, error) {
+	params := &bot.SendMessageParams{ChatID: int64(chat), Text: text}
+	if len(kb) > 0 {
+		params.ReplyMarkup = markup(kb)
+	}
+	m, err := c.bot.SendMessage(ctx, params)
 	if err != nil {
 		return 0, fmt.Errorf("telegram.Send: chat %d: %w", chat, classify(err))
 	}
 	return int64(m.ID), nil
+}
+
+// ClearKeyboard снимает кнопки с отправленного сообщения после нажатия (ADR-0015). Отказ Telegram (кнопок уже нет,
+// сообщение старое или удалено) не ошибка: клавиатуры и так нет.
+func (c *Client) ClearKeyboard(ctx context.Context, chat model.TelegramChatID, messageID int64) error {
+	_, err := c.bot.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{ChatID: int64(chat), MessageID: int(messageID)})
+	if err != nil && !errors.Is(err, bot.ErrorBadRequest) {
+		return fmt.Errorf("telegram.ClearKeyboard: chat %d message %d: %w", chat, messageID, err)
+	}
+	return nil
+}
+
+// markup собирает inline-клавиатуру Telegram из модели: кнопка с данными нажатия или ссылкой.
+func markup(kb model.Keyboard) *models.InlineKeyboardMarkup {
+	rows := make([][]models.InlineKeyboardButton, 0, len(kb))
+	for _, row := range kb {
+		r := make([]models.InlineKeyboardButton, 0, len(row))
+		for _, b := range row {
+			r = append(r, models.InlineKeyboardButton{Text: b.Text, CallbackData: b.Data, URL: b.URL})
+		}
+		rows = append(rows, r)
+	}
+	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
 
 // classify сопоставляет ошибку библиотеки с сентинелами модели: отказы 400/401/403/404 и переезд чата — окончательные,
@@ -161,11 +201,23 @@ func (c *Client) SetMemberCommands(ctx context.Context, chat model.TelegramChatI
 }
 
 // onUpdate превращает update в model.Incoming или model.ChatMemberChange и передаёт обработчику; остальные update игнорирует.
+// Нажатие кнопки обрабатывается как сообщение с данными кнопки, затем запрос закрывается answerCallbackQuery без текста.
 func (c *Client) onUpdate(ctx context.Context, _ *bot.Bot, u *models.Update) {
 	if u.MyChatMember != nil {
 		ch := c.chatMemberChange(u)
 		if err := c.handler.HandleChatMember(ctx, ch); err != nil {
 			c.logger.Error("handle my_chat_member failed", slog.Int64("update_id", u.ID), slog.Any("err", err))
+		}
+		return
+	}
+	if q := u.CallbackQuery; q != nil {
+		if in, ok := c.callback(u); ok {
+			if err := c.handler.Handle(ctx, in); err != nil {
+				c.logger.Error("handle callback failed", slog.Int64("update_id", in.UpdateID), slog.Any("err", err))
+			}
+		}
+		if _, err := c.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID}); err != nil {
+			c.logger.Warn("answer callback failed", slog.Int64("update_id", u.ID), slog.Any("err", err))
 		}
 		return
 	}
@@ -201,6 +253,34 @@ func (c *Client) incoming(u *models.Update) (model.Incoming, bool) {
 	}
 	in.Command, in.Args = parseCommand(m.Text, m.Entities, c.username)
 	return in, true
+}
+
+// callback собирает model.Incoming из нажатия кнопки (ADR-0015): чат и сообщение из callback_query, команда или
+// ответ шага диалога из данных кнопки. Нажатие на недоступном сообщении (без чата) игнорируется.
+func (c *Client) callback(u *models.Update) (model.Incoming, bool) {
+	q := u.CallbackQuery
+	var chat models.Chat
+	var messageID int
+	switch {
+	case q.Message.Message != nil:
+		chat, messageID = q.Message.Message.Chat, q.Message.Message.ID
+	case q.Message.InaccessibleMessage != nil:
+		chat, messageID = q.Message.InaccessibleMessage.Chat, q.Message.InaccessibleMessage.MessageID
+	default:
+		return model.Incoming{}, false
+	}
+	command, args, step, text := model.ParseCallbackData(q.Data)
+	return model.Incoming{
+		UpdateID:   u.ID,
+		ChatID:     model.TelegramChatID(chat.ID),
+		ChatType:   model.ChatType(chat.Type),
+		From:       model.TelegramUser{ID: model.TelegramUserID(q.From.ID), Username: q.From.Username, FirstName: q.From.FirstName, LanguageCode: q.From.LanguageCode},
+		Text:       text,
+		Command:    command,
+		Args:       args,
+		ReceivedAt: c.now(),
+		Callback:   &model.Callback{ID: q.ID, MessageID: int64(messageID), Step: step},
+	}, true
 }
 
 // chatMemberChange собирает model.ChatMemberChange из update my_chat_member.
