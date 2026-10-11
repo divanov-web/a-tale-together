@@ -54,7 +54,65 @@ func (s *Service) ensureDefaultParty(ctx context.Context, g model.Game, season m
 	return nil
 }
 
-// snapshotParties дополняет снимок группами, лимитами и резервом для новых групп: идентификаторы берутся из
+// ensureParties при заморозке (ADR-0017: группа обязательна) определяет группу каждому присутствующему персонажу без
+// активной группы (вернувшийся после роспуска группы, персонаж до миграции): группа его локации, иначе новая в
+// пределах лимита, иначе ближайшая с переходом в её локацию; группы без присутствующих распускаются. Меняет chars.
+func (s *Service) ensureParties(ctx context.Context, g model.Game, season model.SeasonID, chars []model.Character, locations []model.Location, genre model.Genre) error {
+	parties, err := s.store.ListParties(ctx, g.ID, season)
+	if err != nil {
+		return err
+	}
+	active := map[model.PartyID]bool{}
+	for _, p := range parties {
+		active[p.ID] = p.Status == model.PartyActive
+	}
+	for _, stale := range party.Stale(parties, chars) {
+		stale.Status, stale.LeaderCharacterID = model.PartyDisbanded, nil
+		if err := s.store.UpdateParty(ctx, stale); err != nil {
+			return err
+		}
+		active[stale.ID] = false
+		for i := range parties {
+			if parties[i].ID == stale.ID {
+				parties[i] = stale
+			}
+		}
+	}
+	for i := range chars {
+		c := &chars[i]
+		if c.Status.Absent() || c.LocationID == nil || (c.PartyID != nil && active[*c.PartyID]) {
+			continue
+		}
+		d, ok := party.Assign(parties, locations, *c.LocationID, g.Settings.MaxParties)
+		if !ok {
+			continue
+		}
+		if d.Create {
+			taken := make([]string, 0, len(parties))
+			for _, p := range parties {
+				if p.Status == model.PartyActive {
+					taken = append(taken, p.Name)
+				}
+			}
+			id := c.ID
+			created, err := s.store.CreateParty(ctx, model.Party{GameID: g.ID, SeasonID: season, Name: party.NextName(genre.Template.PartyNames, taken), Status: model.PartyActive, LeaderCharacterID: &id, LocationID: c.LocationID})
+			if err != nil {
+				return err
+			}
+			parties = append(parties, created)
+			active[created.ID] = true
+			d.Join = created.ID
+		}
+		id, loc := d.Join, d.Location
+		c.PartyID, c.LocationID = &id, &loc
+		if err := s.store.SaveCharacterState(ctx, g.ID, *c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// snapshotParties дополняет снимок группами, лимитом и резервом для новых групп: идентификаторы берутся из
 // последовательности БД заранее (не больше свободных мест в лимите), чтобы `party_split` был воспроизводим по снимку.
 func (s *Service) snapshotParties(ctx context.Context, g model.Game, season model.SeasonID, genre model.Genre, snap *model.RoundSnapshot) error {
 	parties, err := s.store.ListParties(ctx, g.ID, season)
@@ -67,7 +125,7 @@ func (s *Service) snapshotParties(ctx context.Context, g model.Game, season mode
 			snap.Parties = append(snap.Parties, model.SnapshotParty{ID: p.ID, Name: p.Name, LeaderID: p.LeaderCharacterID})
 		}
 	}
-	snap.MaxParties, snap.MaxActiveLocations, snap.PartyNames = g.Settings.MaxParties, g.Settings.MaxActiveLocations, genre.Template.PartyNames
+	snap.MaxParties, snap.PartyNames = g.Settings.MaxParties, genre.Template.PartyNames
 	free := g.Settings.MaxParties - len(snap.Parties)
 	if g.Settings.MaxParties <= 0 {
 		free = len(snap.Characters) // без лимита: каждый персонаж может оказаться в своей группе
@@ -80,10 +138,8 @@ func (s *Service) snapshotParties(ctx context.Context, g model.Game, season mode
 	return nil
 }
 
-// saveParties записывает группы после свёртки: новые группы из `party_split` (до персонажей: внешний ключ), затем
-// локация и лидер каждой активной группы по правилу преемственности (лидер вышел, выбыл или умер → персонаж
-// администратора, иначе первый созданный из присутствующих); группа без участников распускается.
-func (s *Service) saveParties(ctx context.Context, g model.Game, season model.SeasonID, before, after *model.RoundSnapshot, chars []model.Character) error {
+// saveParties записывает новые группы из `party_split` после свёртки (до персонажей: внешний ключ).
+func (s *Service) saveParties(ctx context.Context, g model.Game, season model.SeasonID, before, after *model.RoundSnapshot) error {
 	known := map[model.PartyID]bool{}
 	for _, p := range before.Parties {
 		known[p.ID] = true
@@ -105,7 +161,9 @@ func (s *Service) saveParties(ctx context.Context, g model.Game, season model.Se
 	return nil
 }
 
-// syncParties выравнивает группы с состоянием персонажей после раунда или команды: лидер, локация, роспуск пустых.
+// syncParties выравнивает группы с состоянием персонажей после раунда: лидер по правилу преемственности (лидер
+// вышел из истории → персонаж администратора, иначе первый созданный из присутствующих), локация группы — локация
+// лидера; группа без присутствующих распускается (участники теряют группу и получат новую при возвращении).
 func (s *Service) syncParties(ctx context.Context, g model.Game, season model.SeasonID) error {
 	parties, err := s.store.ListParties(ctx, g.ID, season)
 	if err != nil {
@@ -120,15 +178,21 @@ func (s *Service) syncParties(ctx context.Context, g model.Game, season model.Se
 			continue
 		}
 		var members []model.Character
+		present := false
 		for _, c := range chars {
 			if c.PartyID != nil && *c.PartyID == p.ID {
 				members = append(members, c)
+				present = present || !c.Status.Absent()
 			}
 		}
 		updated := p
-		if len(members) == 0 {
-			updated.Status = model.PartyDisbanded
-			updated.LeaderCharacterID = nil
+		if !present {
+			updated.Status, updated.LeaderCharacterID = model.PartyDisbanded, nil
+			for _, m := range members {
+				if err := s.store.SetCharacterParty(ctx, g.ID, m.ID, nil); err != nil {
+					return err
+				}
+			}
 		} else {
 			valid := false
 			for _, m := range members {

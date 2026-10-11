@@ -39,8 +39,7 @@ type GameSettings struct {
 	EndsAt              *time.Time `json:"ends_at,omitempty"`     // граница рассказа: дата
 	MaxRounds           int        `json:"max_rounds,omitempty"`  // граница рассказа: число раундов; 0 — без границы
 	MaxRoundPlayers     int        `json:"max_round_players"`     // сколько игроков обрабатывается за раунд; остальные — в очередь (этап 6 roadmap); админу не показывается
-	MaxActiveLocations  int        `json:"max_active_locations"`  // лимит активных локаций; настройка разработчика, админу не показывается
-	MaxParties          int        `json:"max_parties"`           // лимит групп в сезоне
+	MaxParties          int        `json:"max_parties"`           // лимит групп в сезоне; группа держит одну локацию, поэтому это и лимит занятых локаций (ADR-0017)
 	MaxActiveGoals      int        `json:"max_active_goals"`      // сюжетные цели (пункт 17)
 	GoalCooldownRounds  int        `json:"goal_cooldown_rounds"`  // раундов до новой цели после отказа
 	InactiveAfterRounds int        `json:"inactive_after_rounds"` // пропусков подряд до статуса inactive
@@ -53,14 +52,14 @@ type GameSettings struct {
 
 // Кворум раунда по умолчанию и в режиме разработки.
 const (
-	MaxRoundPlayersDefault    = 20 // внутренняя настройка разработчика, не параметр мира
-	MaxActiveLocationsDefault = 4  // то же: лимит активных локаций мира
-	MinRoundAnswersDefault    = 2
-	PauseAfterSkippedDefault  = 3 // автопауза после трёх пропущенных подряд раундов (B11)
-	MinRoundAnswersDev        = 1
-	MinRoundMinutes           = 10 // продуктовый минимум длительности раунда
-	MinRoundMinutesDev        = 2  // песочница: короткие раунды для прогонов; не 1, дедлайн округляется вниз до минуты (B12)
-	MaxRoundMinutes           = 60
+	MaxRoundPlayersDefault   = 20 // внутренняя настройка разработчика, не параметр мира
+	MaxPartiesDefault        = 3  // групп в сезоне и, следовательно, занятых локаций (ADR-0017)
+	MinRoundAnswersDefault   = 2
+	PauseAfterSkippedDefault = 3 // автопауза после трёх пропущенных подряд раундов (B11)
+	MinRoundAnswersDev       = 1
+	MinRoundMinutes          = 10 // продуктовый минимум длительности раунда
+	MinRoundMinutesDev       = 2  // песочница: короткие раунды для прогонов; не 1, дедлайн округляется вниз до минуты (B12)
+	MaxRoundMinutes          = 60
 )
 
 // DefaultGameSettings — настройки нового мира по умолчанию.
@@ -68,8 +67,7 @@ func DefaultGameSettings() GameSettings {
 	return GameSettings{
 		SchemaVersion:       1,
 		MaxRoundPlayers:     MaxRoundPlayersDefault,
-		MaxActiveLocations:  MaxActiveLocationsDefault,
-		MaxParties:          3,
+		MaxParties:          MaxPartiesDefault,
 		MaxActiveGoals:      1,
 		GoalCooldownRounds:  3,
 		InactiveAfterRounds: 3,

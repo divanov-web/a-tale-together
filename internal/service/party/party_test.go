@@ -98,3 +98,35 @@ func TestNearestAndFind(t *testing.T) {
 		t.Error("active count")
 	}
 }
+
+func TestAssignAndStale(t *testing.T) {
+	t.Parallel()
+	locs := []model.Location{
+		{ID: 1, Name: "Площадь", Links: []model.LocationLink{{To: "Зал"}}},
+		{ID: 2, Name: "Зал", Links: []model.LocationLink{{To: "Площадь"}, {To: "Подвал"}}},
+		{ID: 3, Name: "Подвал", Links: []model.LocationLink{{To: "Зал"}}},
+	}
+	loc := func(id model.LocationID) *model.LocationID { return &id }
+	active := []model.Party{{ID: 5, Status: model.PartyActive, LocationID: loc(3)}, {ID: 6, Status: model.PartyActive, LocationID: loc(2)}, {ID: 7, Status: model.PartyDisbanded, LocationID: loc(1)}}
+	if d, ok := Assign(active, locs, 2, 3); !ok || d.Join != 6 || d.Location != 2 {
+		t.Errorf("same location = %+v, %v", d, ok)
+	}
+	if d, ok := Assign(active, locs, 1, 3); !ok || !d.Create || d.Location != 1 {
+		t.Errorf("create = %+v, %v", d, ok)
+	}
+	if d, ok := Assign(active, locs, 1, 2); !ok || d.Join != 6 || d.Location != 2 {
+		t.Errorf("nearest = %+v, %v", d, ok)
+	}
+	if _, ok := Assign(nil, locs, 1, 0); !ok {
+		t.Error("no limit must create")
+	}
+	if d, ok := Assign([]model.Party{{ID: 9, Status: model.PartyActive}}, locs, 1, 1); !ok || d.Join != 9 || d.Location != 1 {
+		t.Errorf("unreachable fallback = %+v, %v", d, ok)
+	}
+	chars := []model.Character{{ID: 1, PartyID: ptrParty(5), Status: model.CharacterInactive}, {ID: 2, PartyID: ptrParty(6), Status: model.CharacterWaiting}}
+	if stale := Stale(active, chars); len(stale) != 1 || stale[0].ID != 5 {
+		t.Errorf("stale = %+v", stale)
+	}
+}
+
+func ptrParty(id model.PartyID) *model.PartyID { return &id }

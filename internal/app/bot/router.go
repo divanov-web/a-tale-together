@@ -73,7 +73,7 @@ func (s *Service) registry() []command {
 		{name: "join", contexts: ctxPrivate, description: "<код> — войти в игру", run: s.join},
 		{name: "games", contexts: ctxPrivate, description: "[номер] — мои игры и выбор текущей", run: s.gamesList},
 		{name: "character", contexts: ctxPrivate, description: "мой персонаж", run: s.character},
-		{name: "party", contexts: ctxPrivate, description: "моя группа; create <имя> | join <имя> | leave", run: s.party},
+		{name: "party", contexts: ctxPrivate, description: "моя группа и остальные группы", run: s.party},
 		{name: "bio", contexts: ctxPrivate, description: "<текст> — открытое описание персонажа до 100 символов", run: s.characterBio},
 		{name: "secret", contexts: ctxPrivate, description: "<текст> — скрытое описание персонажа до 100 символов", run: s.characterSecret},
 		{name: "cancel", contexts: ctxPrivate, description: "прервать диалог", run: s.cancel},

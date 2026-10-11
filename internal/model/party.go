@@ -43,11 +43,9 @@ type SnapshotParty struct {
 	LeaderID *CharacterID `json:"leader_id,omitempty"`
 }
 
-// Причины удержания группы (`party_held`).
-const (
-	HeldPartyLimit    = "party_limit"    // активных групп уже `max_parties`
-	HeldLocationLimit = "location_limit" // разделение заняло бы больше `max_active_locations` локаций
-)
+// HeldPartyLimit — причина удержания группы (`party_held`): активных групп уже `max_parties`. Группа обязательна для
+// каждого персонажа и держит одну локацию, поэтому лимит групп ограничивает и число занятых локаций (ADR-0017).
+const HeldPartyLimit = "party_limit"
 
 // OutcomeHeld — исход заявки на перемещение участника, которого группа удержала: он идёт туда же, куда группа.
 const OutcomeHeld = "held"

@@ -188,34 +188,17 @@ func TestScenario_S14_LeaderDirection(t *testing.T) {
 	}
 }
 
-// TestScenario_S14_LocationLimit: лимит занятых локаций удерживает разделение с причиной `location_limit`
-// (одиночка остаётся на площади, группа заняла бы третью локацию); персонаж без группы перемещается свободно.
-func TestScenario_S14_LocationLimit(t *testing.T) {
+// TestScenario_S14_SoloFallback: персонаж без группы (запасной путь, группа обязательна по ADR-0017) перемещается без
+// событий групп и не влияет на разделение группы.
+func TestScenario_S14_SoloFallback(t *testing.T) {
 	t.Parallel()
 	snap := square(1)
-	snap.MaxActiveLocations = 2
 	snap.Characters = append(snap.Characters, model.SnapshotCharacter{ID: 15, Nickname: "Бродяга", Status: model.CharacterActive, LocationID: &snap.Locations[0].ID, Conditions: []string{}})
-	res := Resolve(snap, s14Intents(), 3)
-	held := eventsOf(res, model.EventPartyHeld)
-	if len(held) != 1 || payload(held[0])["reason"] != model.HeldLocationLimit {
-		t.Fatalf("held = %+v", held)
-	}
-	after := Clone(snap)
-	if err := Apply(&after, res.Events); err != nil {
-		t.Fatal(err)
-	}
-	loner, _ := after.Character(15)
-	pal, _ := after.Character(14)
-	if *loner.LocationID != 1 || *pal.LocationID != 2 || pal.PartyID == nil || len(after.Parties) != 1 {
-		t.Fatalf("loner %+v, paladin %+v", loner, pal)
-	}
-	// Одиночка идёт на рынок без событий групп; без лимита локаций разделение проходит.
 	solo := Resolve(snap, []model.Intent{{SubmissionID: 5, CharacterID: 15, ActionType: model.ActionMove, Target: "рынок"}}, 3)
 	if len(solo.Events) != 2 || solo.Events[0].Type != model.EventCharacterMoved || len(eventsOf(solo, model.EventPartyHeld)) != 0 {
 		t.Fatalf("solo move = %+v", solo.Events)
 	}
-	snap.MaxActiveLocations = 0
 	if free := Resolve(snap, s14Intents(), 3); len(eventsOf(free, model.EventPartySplit)) != 1 {
-		t.Fatalf("no split without location limit: %+v", free.Events)
+		t.Fatalf("split with a solo present: %+v", free.Events)
 	}
 }

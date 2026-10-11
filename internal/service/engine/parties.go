@@ -17,9 +17,9 @@ type proposal struct {
 }
 
 // settleMoves сверяет заявленные переходы с группами (сценарий S14, docs/game/parties.md). Персонаж без группы
-// переходит сразу. Участники группы, оказавшиеся по итогам заявок в разных локациях, расходятся: большинство
-// остаётся исходной группой, остальные по локациям назначения становятся новыми группами (`party_split`), пока
-// свободны лимиты групп и локаций. Первая блокировка лимитом удерживает группу (`party_held`): все, кто ещё в ней,
+// переходит сразу (запасной путь: группа обязательна, ADR-0017). Участники группы, оказавшиеся по итогам заявок в
+// разных локациях, расходятся: большинство остаётся исходной группой, остальные по локациям назначения становятся
+// новыми группами (`party_split`), пока свободен лимит групп. Первая блокировка лимитом удерживает группу (`party_held`): все, кто ещё в ней,
 // идут туда, куда заявил лидер (без лидера — большинство); заявки на другое направление получают исход «удержан»,
 // участники без заявки на переход уходят вместе с группой.
 func (r *resolver) settleMoves() {
@@ -95,7 +95,7 @@ func (r *resolver) settleMoves() {
 		// Отделение по локациям назначения, пока лимиты свободны; первая блокировка удерживает всех оставшихся вместе.
 		reason := ""
 		for _, loc := range others {
-			if reason = r.splitBlocked(final); reason != "" {
+			if reason = r.splitBlocked(); reason != "" {
 				break
 			}
 			r.split(&r.snap.Parties[pi], groups[loc], origin, loc)
@@ -204,25 +204,11 @@ func mainGroup(pt model.SnapshotParty, groups map[model.LocationID][]*model.Snap
 }
 
 // splitBlocked — причина, по которой новую группу создать нельзя: лимит групп (или нет зарезервированных
-// идентификаторов) либо лимит занятых локаций по итоговым позициям всех присутствующих; пусто — разделение возможно.
-func (r *resolver) splitBlocked(final map[model.CharacterID]model.LocationID) string {
+// идентификаторов); пусто — разделение возможно. Группа держит одну локацию, поэтому лимит групп ограничивает и
+// занятые локации (ADR-0017).
+func (r *resolver) splitBlocked() string {
 	if len(r.snap.NewPartyIDs) == 0 || (r.snap.MaxParties > 0 && len(r.snap.Parties) >= r.snap.MaxParties) {
 		return model.HeldPartyLimit
-	}
-	if r.snap.MaxActiveLocations > 0 {
-		occupied := map[model.LocationID]bool{}
-		for i := range r.snap.Characters {
-			c := &r.snap.Characters[i]
-			if c.Status.Absent() {
-				continue
-			}
-			if loc, ok := final[c.ID]; ok {
-				occupied[loc] = true
-			}
-		}
-		if len(occupied) > r.snap.MaxActiveLocations {
-			return model.HeldLocationLimit
-		}
 	}
 	return ""
 }

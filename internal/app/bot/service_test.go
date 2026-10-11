@@ -1055,10 +1055,10 @@ func TestButtons_HelpAndGames(t *testing.T) {
 	}
 }
 
-// TestParty_Commands (пункт 19): до старта групп нет и можно собрать свою; при старте все без группы входят в группу по
-// умолчанию; /party показывает состав без лидера и кнопки вступления и выхода; join по кнопке `#id`, leave, лимит
-// групп, вступление в группу из другой локации отклоняется; /character и /status показывают группу.
-func TestParty_Commands(t *testing.T) {
+// TestParty_Card (пункт 19, ADR-0017): до старта групп нет; при старте все персонажи в одной группе; /party показывает
+// состав без лидера и остальные группы без кнопок; после расхождения одиночка становится отдельной группой; /character
+// и /status показывают группу.
+func TestParty_Card(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	code := h.createGame()
@@ -1067,61 +1067,24 @@ func TestParty_Commands(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
-	mustContain(t, h.send(alice, private(alice), "/party"), "Группы ещё не собраны", "/party create")
-	mustContain(t, h.send(alice, private(alice), "/party create Я"), "от 2 до 30 символов")
-	mustContain(t, h.send(alice, private(alice), "/party create Искатели"), "Группа «Искатели» создана")
-	mustContain(t, h.send(bob, private(bob), "/party create искатели"), "уже есть")
-	mustContain(t, h.send(bob, private(bob), "/party"), "Вы не в группе", "Другие группы:\n• Искатели (1, Рыночная площадь): Элис", "Вступить: кнопкой")
-	kb := h.tg.lastKeyboard(private(bob))
-	if len(kb) != 1 || kb[0][0].Text != "Вступить: Искатели" || !strings.HasPrefix(kb[0][0].Data, "/party join #") {
-		t.Fatalf("join keyboard = %+v", kb)
-	}
-	mustContain(t, h.press(bob, private(bob), 50, kb[0][0].Data), "Вы в группе «Искатели»")
-	if !h.clearedLast(50) {
-		t.Fatal("join keyboard not cleared")
-	}
-	mustContain(t, h.send(bob, private(bob), "/party join Искатели"), "уже в этой группе")
-	mustContain(t, h.send(bob, private(bob), "/party join Никто"), "Группы с таким именем нет")
-	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Искатели»", "Локация: Рыночная площадь", "Участники:\n• Элис — active\n• Боб — active")
-	if strings.Contains(h.tg.last(private(bob)), "лидер") || strings.Contains(h.tg.last(private(bob)), "Лидер") {
-		t.Fatal("leader shown to players")
-	}
-	mustContain(t, h.send(bob, private(bob), "/party leave"), "Вы покинули группу «Искатели»")
-	mustContain(t, h.send(bob, private(bob), "/party leave"), "Вы не в группе")
+	mustContain(t, h.send(alice, private(alice), "/party"), "Группы соберутся при старте игры")
+	mustContain(t, h.send(alice, private(alice), "/party create Искатели"), "Группы соберутся при старте игры") // команд управления нет: аргументы игнорируются
 	mustContain(t, h.send(bob, private(bob), "/character"), "Группа: нет (/party)")
-	mustContain(t, h.send(alice, private(alice), "/character"), "Группа: «Искатели»")
 
-	// Старт: Боб без группы входит в старейшую активную группу («Искатели», созданная заранее).
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
-	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Искатели»", "• Боб — active")
-	mustContain(t, h.send(alice, groupChat, "/status"), "Группы:\n• Искатели (2), Рыночная площадь: Элис, Боб")
+	reply := h.send(bob, private(bob), "/party")
+	mustContain(t, reply, "Группа «Ночной дозор»", "Локация: Рыночная площадь", "Участники:\n• Элис — active\n• Боб — active", "Группы ведёт рассказчик")
+	if strings.Contains(strings.ToLower(reply), "лидер") || len(h.tg.lastKeyboard(private(bob))) != 0 {
+		t.Fatalf("party card leaks leader or has buttons: %q", reply)
+	}
+	mustContain(t, h.send(alice, groupChat, "/status"), "Группы:\n• Ночной дозор (2), Рыночная площадь: Элис, Боб")
+	mustContain(t, h.send(alice, private(alice), "/character"), "Группа: «Ночной дозор»")
 
-	// Лимит: при двух активных группах из двух разрешённых создание отклоняется (создатель не один в своей группе,
-	// место не освобождается); уход единственного участника место освобождает.
-	mustContain(t, h.send(bob, private(bob), "/party create Тени"), "создана")
-	h.joinAndCreate(nobody, code, "1", "Никто", "1", "1", "1", "-", "-")
-	mustContain(t, h.send(nobody, private(nobody), "/party"), "Группа «Искатели»") // новичок попал в группу своей локации
-	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
-	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
-	g.Settings.MaxParties = 2
-	if err := h.store.UpdateGame(context.Background(), g); err != nil {
-		t.Fatal(err)
-	}
-	mustContain(t, h.send(nobody, private(nobody), "/party create Третьи"), "Новых групп больше создать нельзя")
-	mustContain(t, h.send(bob, private(bob), "/party create Третьи"), "создана") // Боб был один в «Тенях»: они распущены
-	mustContain(t, h.send(alice, groupChat, "/status"), "Группы:\n• Искатели (2), Рыночная площадь: Элис, Никто\n• Третьи (1), Рыночная площадь: Боб")
-	g.Settings.MaxParties = 3
-	if err := h.store.UpdateGame(context.Background(), g); err != nil {
-		t.Fatal(err)
-	}
-	// Элис уходит в башню одна: лимит свободен — отделяется своей группой; вступить к ней из другой локации нельзя.
-	h.clock.advance(time.Minute) // лимит частоты команд Боба
+	// Элис уходит в башню одна: лимит свободен — отделяется своей группой.
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
-	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Зал Серой башни", "Группа: «Ночной дозор»")
-	mustContain(t, h.send(bob, private(bob), "/party join Ночной дозор"), "Группа в другой локации")
-	mustContain(t, h.send(bob, private(bob), "/party join Искатели"), "Вы в группе «Искатели»")
-	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Искатели»", "• Боб — waiting\n• Никто — waiting", "Другие группы:\n• Ночной дозор (1, Зал Серой башни): Элис")
+	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Зал Серой башни", "Группа: «Вольные клинки»")
+	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Ночной дозор»", "• Боб — waiting", "Другие группы:\n• Вольные клинки (1, Зал Серой башни): Элис")
 }
 
 // TestParty_NewcomerInRunningGame (пункт 19): новичок в идущей игре входит в группу своей стартовой локации; если

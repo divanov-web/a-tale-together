@@ -676,6 +676,9 @@ func (s *Service) freeze(ctx context.Context, g model.Game, chat model.Chat, r m
 	if err != nil {
 		return err
 	}
+	if err := s.ensureParties(ctx, g, r.SeasonID, chars, locations, genre); err != nil {
+		return err
+	}
 	snap := snapshot(g, chars, locations, subs, cm.Definition)
 	for i := range snap.Characters {
 		snap.Characters[i].Entry = entries[snap.Characters[i].ID]

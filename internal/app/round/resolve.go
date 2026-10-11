@@ -83,7 +83,7 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 	if err := engine.Apply(&state, result.Events); err != nil {
 		return err
 	}
-	if err := s.saveParties(ctx, g, r.SeasonID, r.Snapshot, &state, chars); err != nil {
+	if err := s.saveParties(ctx, g, r.SeasonID, r.Snapshot, &state); err != nil {
 		return err
 	}
 	if err := s.saveState(ctx, g, r.Snapshot, &state, now); err != nil {

@@ -153,3 +153,65 @@ func Find(parties []model.Party, ref string) (model.Party, bool) {
 	}
 	return model.Party{}, false
 }
+
+// Decision — куда определить персонажа без группы (ADR-0017: группа обязательна, назначает код).
+type Decision struct {
+	Join     model.PartyID    // существующая группа; 0 — создать новую
+	Create   bool             // создать новую группу в локации персонажа
+	Location model.LocationID // локация, где персонаж входит в историю (локация выбранной группы)
+}
+
+// Assign — правило входа персонажа без группы, находящегося в at: группа этой локации; иначе новая группа, пока
+// активных меньше max (0 — без лимита); иначе ближайшая по выходам группа (персонаж появляется в её локации; при
+// недостижимости — первая по порядку). false — активных групп нет и создать нельзя.
+func Assign(active []model.Party, locations []model.Location, at model.LocationID, max int) (Decision, bool) {
+	for _, p := range active {
+		if p.Status == model.PartyActive && p.LocationID != nil && *p.LocationID == at {
+			return Decision{Join: p.ID, Location: at}, true
+		}
+	}
+	if max <= 0 || Active(active) < max {
+		return Decision{Create: true, Location: at}, true
+	}
+	var candidates []model.LocationID
+	for _, p := range active {
+		if p.Status == model.PartyActive && p.LocationID != nil {
+			candidates = append(candidates, *p.LocationID)
+		}
+	}
+	if loc, ok := Nearest(locations, at, candidates); ok {
+		for _, p := range active {
+			if p.Status == model.PartyActive && p.LocationID != nil && *p.LocationID == loc {
+				return Decision{Join: p.ID, Location: loc}, true
+			}
+		}
+	}
+	for _, p := range active {
+		if p.Status == model.PartyActive {
+			loc := at
+			if p.LocationID != nil {
+				loc = *p.LocationID
+			}
+			return Decision{Join: p.ID, Location: loc}, true
+		}
+	}
+	return Decision{}, false
+}
+
+// Stale — активные группы без присутствующих участников (все `inactive` или `dead`, либо никого): распускаются,
+// чтобы не держать место в лимите; вернувшийся персонаж получит группу по правилу Assign.
+func Stale(parties []model.Party, chars []model.Character) []model.Party {
+	present := map[model.PartyID]bool{}
+	for _, c := range chars {
+		if c.PartyID != nil && !c.Status.Absent() {
+			present[*c.PartyID] = true
+		}
+	}
+	var out []model.Party
+	for _, p := range parties {
+		if p.Status == model.PartyActive && !present[p.ID] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
