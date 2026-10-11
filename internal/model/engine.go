@@ -99,18 +99,18 @@ type Event struct {
 	CreatedAt   time.Time       `json:"-"`
 }
 
-// CheckInfo — бросок проверки, записывается в событие check_rolled и итог заявки.
+// CheckInfo — проверка «Прямой шанс» (ADR-0014): параметр, сложность, шанс и бросок d100; записывается в событие
+// check_rolled и итог заявки.
 type CheckInfo struct {
 	Attribute  string `json:"attribute"`
 	Skill      string `json:"skill,omitempty"`
-	Pool       int    `json:"pool"`
-	Dice       []int  `json:"dice"`
-	Successes  int    `json:"successes"`
+	Param      int    `json:"param"`
 	Difficulty int    `json:"difficulty"` // итоговая: подход + локация
-	Pushed     bool   `json:"pushed"`
-	PushDice   []int  `json:"push_dice,omitempty"`
-	Outcome    string `json:"outcome"` // success | costly_success | failure
 	ChancePct  int    `json:"chance_pct"`
+	Roll       int    `json:"roll"` // 1–100; успех при roll ≤ chance_pct
+	Pushed     bool   `json:"pushed"`
+	PushRoll   int    `json:"push_roll,omitempty"` // повторный бросок при форсировании
+	Outcome    string `json:"outcome"`             // success | costly_success | failure
 }
 
 // Исходы проверки.

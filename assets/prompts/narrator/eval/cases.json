@@ -105,18 +105,14 @@
        "summary": "взаимодействует: дверь подвала",
        "check": {
         "attribute": "strength",
-        "pool": 4,
-        "dice": [
-         1,
-         2,
-         3,
-         4
-        ],
-        "successes": 0,
-        "difficulty": 3,
+        "skill": "athletics",
+        "param": 4,
+        "difficulty": 7,
+        "chance_pct": 20,
+        "roll": 63,
         "pushed": true,
-        "outcome": "failure",
-        "chance_pct": 11
+        "push_roll": 88,
+        "outcome": "failure"
        }
       }
      },
@@ -278,11 +274,7 @@
        "inventory": [
         {
          "key": "lockpicks",
-         "title": "Отмычки",
-         "bonus": {
-          "skill": "thievery",
-          "dice": 1
-         }
+         "title": "Отмычки"
         }
        ]
       },
@@ -531,11 +523,7 @@
        "inventory": [
         {
          "key": "lockpicks",
-         "title": "Отмычки",
-         "bonus": {
-          "skill": "thievery",
-          "dice": 1
-         }
+         "title": "Отмычки"
         }
        ]
       },
@@ -655,18 +643,14 @@
        "summary": "взаимодействует: дверь подвала",
        "check": {
         "attribute": "strength",
-        "pool": 4,
-        "dice": [
-         1,
-         2,
-         3,
-         4
-        ],
-        "successes": 0,
-        "difficulty": 3,
+        "skill": "athletics",
+        "param": 4,
+        "difficulty": 7,
+        "chance_pct": 20,
+        "roll": 63,
         "pushed": true,
-        "outcome": "failure",
-        "chance_pct": 11
+        "push_roll": 88,
+        "outcome": "failure"
        }
       }
      }
@@ -800,11 +784,7 @@
        "inventory": [
         {
          "key": "lockpicks",
-         "title": "Отмычки",
-         "bonus": {
-          "skill": "thievery",
-          "dice": 1
-         }
+         "title": "Отмычки"
         }
        ]
       },
@@ -911,18 +891,14 @@
        "summary": "взаимодействует: дверь подвала",
        "check": {
         "attribute": "strength",
-        "pool": 4,
-        "dice": [
-         1,
-         2,
-         3,
-         4
-        ],
-        "successes": 0,
-        "difficulty": 3,
+        "skill": "athletics",
+        "param": 4,
+        "difficulty": 7,
+        "chance_pct": 20,
+        "roll": 63,
         "pushed": true,
-        "outcome": "failure",
-        "chance_pct": 11
+        "push_roll": 88,
+        "outcome": "failure"
        }
       }
      }
@@ -1048,11 +1024,7 @@
        "inventory": [
         {
          "key": "lockpicks",
-         "title": "Отмычки",
-         "bonus": {
-          "skill": "thievery",
-          "dice": 1
-         }
+         "title": "Отмычки"
         }
        ]
       },
@@ -1292,11 +1264,7 @@
        "inventory": [
         {
          "key": "lockpicks",
-         "title": "Отмычки",
-         "bonus": {
-          "skill": "thievery",
-          "dice": 1
-         }
+         "title": "Отмычки"
         }
        ]
       },
@@ -1546,11 +1514,7 @@
        "inventory": [
         {
          "key": "lockpicks",
-         "title": "Отмычки",
-         "bonus": {
-          "skill": "thievery",
-          "dice": 1
-         }
+         "title": "Отмычки"
         }
        ]
       },
@@ -1671,18 +1635,14 @@
        "summary": "взаимодействует: дверь подвала",
        "check": {
         "attribute": "strength",
-        "pool": 4,
-        "dice": [
-         1,
-         2,
-         3,
-         4
-        ],
-        "successes": 0,
-        "difficulty": 3,
+        "skill": "athletics",
+        "param": 4,
+        "difficulty": 7,
+        "chance_pct": 20,
+        "roll": 63,
         "pushed": true,
-        "outcome": "failure",
-        "chance_pct": 11
+        "push_roll": 88,
+        "outcome": "failure"
        }
       }
      }
@@ -1816,11 +1776,7 @@
        "inventory": [
         {
          "key": "lockpicks",
-         "title": "Отмычки",
-         "bonus": {
-          "skill": "thievery",
-          "dice": 1
-         }
+         "title": "Отмычки"
         }
        ]
       },
@@ -2038,11 +1994,7 @@
        "inventory": [
         {
          "key": "lockpicks",
-         "title": "Отмычки",
-         "bonus": {
-          "skill": "thievery",
-          "dice": 1
-         }
+         "title": "Отмычки"
         }
        ]
       },
@@ -2272,11 +2224,7 @@
        "inventory": [
         {
          "key": "lockpicks",
-         "title": "Отмычки",
-         "bonus": {
-          "skill": "thievery",
-          "dice": 1
-         }
+         "title": "Отмычки"
         }
        ]
       },
@@ -2395,18 +2343,14 @@
        "summary": "взаимодействует: дверь подвала",
        "check": {
         "attribute": "strength",
-        "pool": 4,
-        "dice": [
-         1,
-         2,
-         3,
-         4
-        ],
-        "successes": 0,
-        "difficulty": 3,
+        "skill": "athletics",
+        "param": 4,
+        "difficulty": 7,
+        "chance_pct": 20,
+        "roll": 63,
         "pushed": true,
-        "outcome": "failure",
-        "chance_pct": 11
+        "push_roll": 88,
+        "outcome": "failure"
        }
       }
      },
@@ -2575,11 +2519,7 @@
        "inventory": [
         {
          "key": "lockpicks",
-         "title": "Отмычки",
-         "bonus": {
-          "skill": "thievery",
-          "dice": 1
-         }
+         "title": "Отмычки"
         }
        ]
       },

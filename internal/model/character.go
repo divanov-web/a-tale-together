@@ -94,10 +94,10 @@ const (
 // Absent — персонаж вне повествования: выведен за пропуски или выбыл по смерти; в сцены рассказчика не попадает.
 func (s CharacterStatus) Absent() bool { return s == CharacterInactive || s == CharacterDead }
 
-// ItemBonus — бонус предмета к навыку: кубики к пулу проверки.
+// ItemBonus — бонус предмета к навыку: очки к параметру проверки (суммарно не более 2, docs/game/checks.md).
 type ItemBonus struct {
-	Skill string `json:"skill"`
-	Dice  int    `json:"dice"`
+	Skill  string `json:"skill"`
+	Points int    `json:"points"`
 }
 
 // Item — предмет инвентаря персонажа; запись каталога, не свободный текст.

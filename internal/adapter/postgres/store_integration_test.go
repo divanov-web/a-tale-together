@@ -461,7 +461,7 @@ func TestGameFlow(t *testing.T) {
 	}
 
 	// Пункт 07: локации, события, итоги заявок, состояние персонажа.
-	if len(genre.Template.Locations) != 4 || !genre.Template.Locations[0].Start || !genre.Template.Locations[3].Objects[1].HiddenUntil {
+	if len(genre.Template.Locations) != 4 || !genre.Template.Locations[0].Start || !genre.Template.Locations[3].Objects[2].HiddenUntil {
 		t.Fatalf("genre locations = %+v", genre.Template.Locations)
 	}
 	loc, err := s.CreateLocation(ctx, model.Location{GameID: game.ID, Name: "Подвал", Difficulty: 1, Links: []model.LocationLink{{To: "Зал", Title: "наверх"}},
@@ -505,14 +505,14 @@ func TestGameFlow(t *testing.T) {
 		t.Fatalf("NextEventSeq after append = %d", seq)
 	}
 	results := []model.ActionResult{{SubmissionID: sub.ID, CharacterID: cid, Intent: model.Intent{SubmissionID: sub.ID, CharacterID: cid, ActionType: model.ActionMove, Target: "зал"},
-		Status: model.ResultResolved, Summary: "переходит", Check: &model.CheckInfo{Pool: 3, Dice: []int{6, 1, 2}, Successes: 1, Difficulty: 1, Outcome: model.OutcomeSuccess}, EventSeqs: []int64{1, 2}}}
+		Status: model.ResultResolved, Summary: "переходит", Check: &model.CheckInfo{Param: 3, Difficulty: 5, ChancePct: 30, Roll: 12, Outcome: model.OutcomeSuccess}, EventSeqs: []int64{1, 2}}}
 	for i := 0; i < 2; i++ {
 		if err := s.CreateResolvedActions(ctx, game.ID, r2.ID, results); err != nil {
 			t.Fatal(err)
 		}
 	}
 	acts, err := s.ListResolvedActions(ctx, game.ID, r2.ID)
-	if err != nil || len(acts) != 1 || acts[0].Intent.Target != "зал" || acts[0].Check.Pool != 3 || len(acts[0].EventSeqs) != 2 {
+	if err != nil || len(acts) != 1 || acts[0].Intent.Target != "зал" || acts[0].Check.Param != 3 || len(acts[0].EventSeqs) != 2 {
 		t.Fatalf("ListResolvedActions = %+v, %v", acts, err)
 	}
 	diedAt := now

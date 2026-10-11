@@ -8,8 +8,11 @@ import (
 
 func TestChancePct_MatchesTable(t *testing.T) {
 	t.Parallel()
-	// Таблица docs/game/checks.md.
-	cases := map[[2]int]int{{2, 1}: 31, {2, 2}: 3, {4, 1}: 52, {4, 2}: 13, {6, 1}: 67, {6, 2}: 26, {6, 3}: 6, {8, 2}: 40, {10, 1}: 84, {10, 4}: 7, {1, 2}: 0, {3, 0}: 100}
+	// Таблица docs/game/checks.md: 50 + 10 × (параметр − сложность) в границах 5–95.
+	cases := map[[2]int]int{{8, 5}: 80, {2, 5}: 20, {5, 5}: 50, {3, 5}: 30, {9, 5}: 90, {12, 5}: 95, {0, 5}: 5, {-1, 5}: 5, {2, 9}: 5, {8, 7}: 60, {8, 9}: 40}
+	if !Success(80, 80) || Success(81, 80) || !Success(1, 5) || Success(96, 95) {
+		t.Fatal("Success boundaries")
+	}
 	for in, want := range cases {
 		if got := ChancePct(in[0], in[1]); got != want {
 			t.Errorf("ChancePct(%d, %d) = %d; want %d", in[0], in[1], got, want)
@@ -17,24 +20,27 @@ func TestChancePct_MatchesTable(t *testing.T) {
 	}
 }
 
-func TestPool_And_Difficulty(t *testing.T) {
+func TestParam_And_Difficulty(t *testing.T) {
 	t.Parallel()
-	c := model.SnapshotCharacter{Attributes: map[string]int{"agility": 4}, Skills: map[string]int{"thievery": 3}, Conditions: []string{model.ConditionWounded},
-		Inventory: []model.Item{{Key: "lockpicks", Bonus: &model.ItemBonus{Skill: "thievery", Dice: 1}}, {Key: "kit", Bonus: &model.ItemBonus{Skill: "thievery", Dice: 2}}}}
-	if got := Pool(c, "agility", "thievery", 3); got != 4+3+2-1+2 {
-		t.Fatalf("Pool = %d", got)
+	c := model.SnapshotCharacter{Attributes: map[string]int{"agility": 5}, Skills: map[string]int{"thievery": 3}, Conditions: []string{model.ConditionWounded},
+		Inventory: []model.Item{{Key: "lockpicks", Bonus: &model.ItemBonus{Skill: "thievery", Points: 1}}, {Key: "kit", Bonus: &model.ItemBonus{Skill: "thievery", Points: 2}}}}
+	if got := Param(c, "agility", "thievery", 3); got != 5+3+2-1+2 {
+		t.Fatalf("Param = %d", got)
 	}
-	if got := Pool(model.SnapshotCharacter{Conditions: []string{model.ConditionExhausted}}, "strength", "", 0); got != 1 {
-		t.Fatalf("Pool floor = %d", got)
+	if got := Param(c, "strength", "", 0); got != -1 {
+		t.Fatalf("Param without attribute and with a penalty = %d; want -1 (границы задаёт шанс)", got)
 	}
-	if got := Difficulty(Preset(model.ModeNarrative), 3, 1); got != 2 {
-		t.Fatalf("narrative difficulty = %d; want cap 1 + location 1", got)
+	if got := Difficulty(Preset(model.ModeNarrative), 7, 1); got != 6 {
+		t.Fatalf("narrative difficulty = %d; want cap 5 + location 1", got)
 	}
-	if got := Difficulty(Preset(model.ModeMechanics), 3, 1); got != 4 {
+	if got := Difficulty(Preset(model.ModeMechanics), 7, 1); got != 8 {
 		t.Fatalf("mechanics difficulty = %d", got)
 	}
-	if RiskDifficulty(model.RiskExtreme) != 3 || RiskDifficulty("") != 1 {
+	if RiskDifficulty(model.RiskExtreme) != 9 || RiskDifficulty(model.RiskHard) != 7 || RiskDifficulty("") != 5 {
 		t.Fatal("risk table")
+	}
+	if DifficultyWords(5) != "обычно" || DifficultyWords(7) != "трудно" || DifficultyWords(9) != "очень трудно" || DifficultyWords(10) != "героически" {
+		t.Fatal("difficulty words")
 	}
 	if RoundsPerDay(15, 0) != 96 || RoundsPerDay(20, 12*60) != 36 || DeathRounds(10, 36) != 360 || DeathRounds(0, 1) != 10 {
 		t.Fatal("rounds per day / death rounds")

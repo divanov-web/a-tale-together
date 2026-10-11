@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"taletogether/internal/model"
+	"taletogether/internal/service/rules"
 )
 
 // cellar — снимок сценариев S06, S07, S10–S12: зал башни и подвал с запертой дверью (docs/game/scenarios.md).
@@ -20,22 +21,22 @@ func cellar(mode model.GameMode) model.RoundSnapshot {
 			{ID: cellarID, Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, Links: []model.LocationLink{{To: "Зал башни", Title: "наверх в зал"}},
 				Objects: []model.LocationObject{
 					{Key: "cellar_door", Title: "запертая дверь", State: "locked", Approaches: []model.Approach{
-						{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Difficulty: 2, OnSuccess: json.RawMessage(`{"state":"broken"}`), OnFail: json.RawMessage(`{"condition":"exhausted"}`)},
-						{Action: model.ActionInteract, Title: "отпереть", Attribute: "agility", Skill: "thievery", Difficulty: 1, OnSuccess: json.RawMessage(`{"state":"open"}`)},
-						{Action: model.ActionExplore, Title: "найти рычаг", Attribute: "wits", Skill: "awareness", Difficulty: 3, OnSuccess: json.RawMessage(`{"reveal":"hidden_lever"}`)},
+						{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Skill: "athletics", Difficulty: 4, OnSuccess: json.RawMessage(`{"state":"broken"}`), OnFail: json.RawMessage(`{"condition":"exhausted"}`)},
+						{Action: model.ActionInteract, Title: "отпереть", Attribute: "agility", Skill: "thievery", Difficulty: 4, OnSuccess: json.RawMessage(`{"state":"open"}`)},
+						{Action: model.ActionExplore, Title: "найти рычаг", Attribute: "wits", Skill: "awareness", Difficulty: 4, OnSuccess: json.RawMessage(`{"reveal":"hidden_lever"}`)},
 					}},
 					{Key: "hidden_lever", Title: "потайной рычаг", HiddenUntil: true, Approaches: []model.Approach{{Action: model.ActionInteract, Difficulty: 0, OnSuccess: json.RawMessage(`{"object":"cellar_door","state":"open"}`)}}},
 				}},
 		},
 		Characters: []model.SnapshotCharacter{
 			{ID: 11, Nickname: "Вор", Status: model.CharacterActive, HP: 6, MaxHP: 6, LocationID: loc(cellarID), Conditions: []string{},
-				Attributes: map[string]int{"strength": 2, "agility": 4, "wits": 3, "will": 3}, Skills: map[string]int{"thievery": 3}, Inventory: []model.Item{{Key: "lockpicks", Title: "Отмычки", Bonus: &model.ItemBonus{Skill: "thievery", Dice: 1}}}},
+				Attributes: map[string]int{"strength": 2, "agility": 5, "wits": 4, "will": 3}, Skills: map[string]int{"thievery": 3, "stealth": 3}, Inventory: []model.Item{{Key: "lockpicks", Title: "Отмычки"}}},
 			{ID: 12, Nickname: "Кузнец", Status: model.CharacterActive, HP: 8, MaxHP: 8, LocationID: loc(cellarID), Conditions: []string{},
-				Attributes: map[string]int{"strength": 4, "agility": 2, "wits": 2, "will": 4}, Skills: map[string]int{"melee": 3}},
+				Attributes: map[string]int{"strength": 5, "agility": 2, "wits": 2, "will": 5}, Skills: map[string]int{"athletics": 3, "melee": 3}},
 			{ID: 13, Nickname: "Маг", Status: model.CharacterActive, HP: 6, MaxHP: 6, LocationID: loc(hall), Conditions: []string{},
-				Attributes: map[string]int{"strength": 2, "agility": 2, "wits": 4, "will": 4}, Skills: map[string]int{"awareness": 3}},
+				Attributes: map[string]int{"strength": 2, "agility": 3, "wits": 5, "will": 4}, Skills: map[string]int{"awareness": 3}},
 			{ID: 14, Nickname: "Паладин", Status: model.CharacterActive, HP: 8, MaxHP: 8, LocationID: loc(hall), Conditions: []string{},
-				Attributes: map[string]int{"strength": 4, "agility": 3, "wits": 2, "will": 3}},
+				Attributes: map[string]int{"strength": 4, "agility": 4, "wits": 2, "will": 4}},
 			{ID: 15, Nickname: "Призрак", Status: model.CharacterDead, HP: 0, MaxHP: 6, LocationID: loc(hall), Conditions: []string{}, DeathRoundsLeft: 0,
 				Attributes: map[string]int{"strength": 2, "agility": 2, "wits": 4, "will": 4}},
 		},
@@ -77,10 +78,10 @@ func TestScenario_S07_NobodyLost(t *testing.T) {
 			}
 		}
 	}
-	if byID[1].Status != model.ResultResolved || byID[1].Check == nil || byID[1].Check.Pool != 8 || byID[1].Check.Difficulty != 2 {
+	if byID[1].Status != model.ResultResolved || byID[1].Check == nil || byID[1].Check.Param != 8 || byID[1].Check.Difficulty != 5 || byID[1].Check.ChancePct != 80 {
 		t.Errorf("thief = %+v", byID[1])
 	}
-	if byID[2].Status != model.ResultResolved || byID[2].Check == nil || byID[2].Check.Pool != 4 || byID[2].Check.Difficulty != 3 {
+	if byID[2].Status != model.ResultResolved || byID[2].Check == nil || byID[2].Check.Param != 8 || byID[2].Check.Difficulty != 5 || byID[2].Check.Roll < 1 || byID[2].Check.Roll > 100 {
 		t.Errorf("smith = %+v", byID[2])
 	}
 	if byID[3].Status != model.ResultResolved || byID[3].Summary != "переходит: Зал башни → Подвал башни" {
@@ -107,7 +108,7 @@ func TestScenario_S07_NobodyLost(t *testing.T) {
 	}
 }
 
-// TestScenario_S06_Replay: тот же снимок и seed дают те же события и итоги; другой seed — другие кубики.
+// TestScenario_S06_Replay: тот же снимок и seed дают те же события и итоги; другой seed — другой бросок.
 func TestScenario_S06_Replay(t *testing.T) {
 	t.Parallel()
 	a := Resolve(cellar(model.ModeMechanics), intents(), 7)
@@ -118,12 +119,12 @@ func TestScenario_S06_Replay(t *testing.T) {
 	c := Resolve(cellar(model.ModeMechanics), intents(), 8)
 	same := true
 	for i := range a.Results {
-		if a.Results[i].Check != nil && c.Results[i].Check != nil && !reflect.DeepEqual(a.Results[i].Check.Dice, c.Results[i].Check.Dice) {
+		if a.Results[i].Check != nil && c.Results[i].Check != nil && a.Results[i].Check.Roll != c.Results[i].Check.Roll {
 			same = false
 		}
 	}
 	if same {
-		t.Fatal("different seeds rolled identical dice for every check")
+		t.Fatal("different seeds produced identical rolls for every check")
 	}
 }
 
@@ -213,7 +214,7 @@ func TestScenario_S12_LockedDoor(t *testing.T) {
 			exhausted = true
 		}
 	}
-	if !exhausted || len(r.Check.PushDice) != r.Check.Pool {
+	if !exhausted || r.Check.PushRoll < 1 || r.Check.PushRoll > 100 || rules.Success(r.Check.Roll, r.Check.ChancePct) {
 		t.Fatalf("pushed roll without cost: %+v events %+v", r, res.Events)
 	}
 	if r.Outcome == model.OutcomeSuccess {
@@ -221,7 +222,7 @@ func TestScenario_S12_LockedDoor(t *testing.T) {
 	}
 	// Повествование: провал без deadly становится успехом с ценой, форсирование без состояния.
 	narr := Resolve(cellar(model.ModeNarrative), []model.Intent{{SubmissionID: 2, CharacterID: 12, ActionType: model.ActionInteract, Target: "дверь", ApproachIdx: ptr(0)}}, pushedSeed)
-	if narr.Results[0].Outcome == model.OutcomeFailure || narr.Results[0].Check.Difficulty != 2 {
+	if narr.Results[0].Outcome == model.OutcomeFailure || narr.Results[0].Check.Difficulty != 5 {
 		t.Fatalf("narrative = %+v", narr.Results[0])
 	}
 	for _, ev := range narr.Events {
@@ -246,7 +247,7 @@ func TestScenario_S12_LockedDoor(t *testing.T) {
 	}
 }
 
-// TestHelp: помощь добавляет кубик к пулу цели в той же локации; не себе и не издалека.
+// TestHelp: помощь добавляет очко к параметру цели в той же локации; не себе и не издалека.
 func TestHelp(t *testing.T) {
 	t.Parallel()
 	res := Resolve(cellar(model.ModeBalanced), []model.Intent{
@@ -259,7 +260,7 @@ func TestHelp(t *testing.T) {
 	for _, r := range res.Results {
 		by[r.SubmissionID] = r
 	}
-	if by[1].Status != model.ResultResolved || by[2].Check.Pool != 9 || by[3].Status != model.ResultRejected || by[4].Status != model.ResultRejected {
+	if by[1].Status != model.ResultResolved || by[2].Check.Param != 9 || by[2].Check.ChancePct != 90 || by[3].Status != model.ResultRejected || by[4].Status != model.ResultRejected {
 		t.Fatalf("results = %+v", res.Results)
 	}
 }
@@ -271,11 +272,11 @@ func TestScenario_S13_FreeCheck(t *testing.T) {
 	free := model.Intent{SubmissionID: 1, CharacterID: 14, ActionType: model.ActionInteract, Attribute: "agility", Risk: model.RiskHard,
 		OnSuccess: json.RawMessage(`{"fact":"Ров преодолён: тропа к башне.","move":"вниз в подвал","state":"broken"}`), OnFail: json.RawMessage(`{"condition":"wounded"}`)}
 	var successes, failures int
-	for seed := int64(1); seed <= 40; seed++ {
+	for seed := int64(1); seed <= 60; seed++ {
 		snap := cellar(model.ModeBalanced)
 		res := Resolve(snap, []model.Intent{free}, seed)
 		r := res.Results[0]
-		if r.Status != model.ResultResolved || r.Check == nil || r.Check.Pool != 3 || r.Check.Difficulty != 2 || r.Check.Attribute != "agility" {
+		if r.Status != model.ResultResolved || r.Check == nil || r.Check.Param != 4 || r.Check.Difficulty != 7 || r.Check.ChancePct != 20 || r.Check.Attribute != "agility" {
 			t.Fatalf("seed %d: result = %+v", seed, r)
 		}
 		var state model.RoundSnapshot
@@ -319,7 +320,7 @@ func TestFreeCheck_MoveGateAndSafeFallback(t *testing.T) {
 	for seed := int64(1); seed <= 60; seed++ {
 		res := Resolve(cellar(model.ModeBalanced), []model.Intent{gate, safe}, seed)
 		g, s := res.Results[1], res.Results[0] // фазы: wait раньше move
-		if g.Status != model.ResultResolved || g.Check == nil || g.Check.Difficulty != 2 || g.Check.Pool != 4 {
+		if g.Status != model.ResultResolved || g.Check == nil || g.Check.Difficulty != 7 || g.Check.Param != 5 {
 			t.Fatalf("seed %d: gate = %+v", seed, g)
 		}
 		if g.Outcome == model.OutcomeFailure {
@@ -387,5 +388,79 @@ func TestApproachDone(t *testing.T) {
 	}
 	if ApproachDone(loc, 3, loc.Objects[3].Approaches[1], two) || ApproachDone(loc, 0, loc.Objects[0].Approaches[0], nil) || ApproachDone(loc, 9, loc.Objects[0].Approaches[0], one) {
 		t.Error("move approach, no characters and bad index are never done")
+	}
+}
+
+// TestScenario_S15_SpecialistAndWeak: специалист и слабый персонаж у одной двери (docs/game/scenarios.md):
+// параметры 8 и 2 против сложности 5 дают 80 % и 20 %; бросок на границе шанса — успех, на единицу выше — провал;
+// в событии записаны параметр, сложность, шанс и бросок; повтор с тем же seed даёт те же события.
+func TestScenario_S15_SpecialistAndWeak(t *testing.T) {
+	t.Parallel()
+	snapshot := func() model.RoundSnapshot {
+		snap := cellar(model.ModeBalanced)
+		snap.Characters = []model.SnapshotCharacter{
+			{ID: 21, Nickname: "Плут", Status: model.CharacterActive, HP: 6, MaxHP: 6, LocationID: snap.Characters[0].LocationID, Conditions: []string{},
+				Attributes: map[string]int{"strength": 2, "agility": 5, "wits": 4, "will": 3}, Skills: map[string]int{"thievery": 3, "stealth": 3}},
+			{ID: 22, Nickname: "Дипломат", Status: model.CharacterActive, HP: 7, MaxHP: 7, LocationID: snap.Characters[0].LocationID, Conditions: []string{},
+				Attributes: map[string]int{"strength": 3, "agility": 2, "wits": 4, "will": 5}, Skills: map[string]int{"persuasion": 3, "awareness": 2, "survival": 1}},
+		}
+		return snap
+	}
+	unlock := func(id model.CharacterID) []model.Intent {
+		return []model.Intent{{SubmissionID: 1, CharacterID: id, ActionType: model.ActionInteract, Target: "дверь", ApproachIdx: ptr(1)}}
+	}
+	// seedFor подбирает seed, при котором первый бросок d100 равен roll: граница проверяется честным броском движка.
+	seedFor := func(id model.CharacterID, roll int) int64 {
+		for seed := int64(1); seed < 20000; seed++ {
+			if Resolve(snapshot(), unlock(id), seed).Results[0].Check.Roll == roll {
+				return seed
+			}
+		}
+		t.Fatalf("no seed with roll %d", roll)
+		return 0
+	}
+	cases := []struct {
+		name    string
+		id      model.CharacterID
+		param   int
+		chance  int
+		roll    int
+		outcome string
+	}{
+		{"specialist on the boundary", 21, 8, 80, 80, model.OutcomeSuccess},
+		{"specialist one above", 21, 8, 80, 81, model.OutcomeFailure},
+		{"weak on the boundary", 22, 2, 20, 20, model.OutcomeSuccess},
+		{"weak one above", 22, 2, 20, 21, model.OutcomeFailure},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			seed := seedFor(tc.id, tc.roll)
+			res := Resolve(snapshot(), unlock(tc.id), seed)
+			if len(res.Results) != 1 {
+				t.Fatalf("results = %d", len(res.Results))
+			}
+			r := res.Results[0]
+			if r.Status != model.ResultResolved || r.Check == nil || r.Check.Param != tc.param || r.Check.Difficulty != 5 || r.Check.ChancePct != tc.chance || r.Check.Roll != tc.roll || r.Outcome != tc.outcome || r.Check.Pushed {
+				t.Fatalf("result = %+v", r)
+			}
+			var payload struct {
+				Check model.CheckInfo `json:"check"`
+			}
+			if err := json.Unmarshal(res.Events[0].Payload, &payload); err != nil || res.Events[0].Type != model.EventCheckRolled || !reflect.DeepEqual(payload.Check, *r.Check) {
+				t.Fatalf("check event = %+v (%v)", res.Events[0], err)
+			}
+			if again := Resolve(snapshot(), unlock(tc.id), seed); !reflect.DeepEqual(again, res) {
+				t.Fatal("replay differs")
+			}
+			opened := false
+			for _, ev := range res.Events {
+				if ev.Type == model.EventObjectChanged {
+					opened = true
+				}
+			}
+			if opened != (tc.outcome == model.OutcomeSuccess) {
+				t.Fatalf("door opened = %v for outcome %s", opened, tc.outcome)
+			}
+		})
 	}
 }

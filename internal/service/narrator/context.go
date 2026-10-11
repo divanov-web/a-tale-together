@@ -98,10 +98,11 @@ type event struct {
 }
 
 type checkNumbers struct {
-	Pool       int   `json:"pool"`
-	Dice       []int `json:"dice"`
-	Successes  int   `json:"successes"`
-	Difficulty int   `json:"difficulty"`
+	Param      int `json:"param"`
+	Difficulty int `json:"difficulty"`
+	ChancePct  int `json:"chance_pct"`
+	Roll       int `json:"roll"`
+	PushRoll   int `json:"push_roll,omitempty"`
 }
 
 type approachIn struct {
@@ -165,11 +166,7 @@ func BuildInput(p Params) Input {
 			info := checkOf(ev)
 			e.Outcome, e.Pushed = OutcomeWords(info.Outcome), info.Pushed
 			if mechanics {
-				dice := info.Dice
-				if info.Pushed {
-					dice = info.PushDice
-				}
-				e.Numbers = &checkNumbers{Pool: info.Pool, Dice: dice, Successes: info.Successes, Difficulty: info.Difficulty}
+				e.Numbers = &checkNumbers{Param: info.Param, Difficulty: info.Difficulty, ChancePct: info.ChancePct, Roll: info.Roll, PushRoll: info.PushRoll}
 			}
 		}
 		in.Events = append(in.Events, e)
@@ -282,7 +279,7 @@ func Options(state *model.RoundSnapshot, def model.CharacterModelDef, mode model
 					}
 					opt.Difficulty = rules.Difficulty(preset, ap.Difficulty, l.Difficulty)
 					for _, c := range chars {
-						opt.Chances = append(opt.Chances, Chance{Nickname: c.Nickname, Pct: rules.ChancePct(rules.Pool(c, ap.Attribute, ap.Skill, 0), opt.Difficulty)})
+						opt.Chances = append(opt.Chances, Chance{Nickname: c.Nickname, Pct: rules.ChancePct(rules.Param(c, ap.Attribute, ap.Skill, 0), opt.Difficulty)})
 					}
 				}
 				out = append(out, opt)

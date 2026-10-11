@@ -528,7 +528,7 @@ func TestResolve_Interpreter(t *testing.T) {
 		byChar[a.CharacterID] = a
 	}
 	free := byChar[w.chars[0].ID]
-	if free.Status != model.ResultResolved || free.Check == nil || free.Check.Attribute != "wits" || free.Check.Difficulty != 1 || !free.Intent.FreeCheck() {
+	if free.Status != model.ResultResolved || free.Check == nil || free.Check.Attribute != "wits" || free.Check.Difficulty != 5 || !free.Intent.FreeCheck() {
 		t.Fatalf("free action = %+v", free)
 	}
 	if mv := byChar[w.chars[1].ID]; mv.Status != model.ResultResolved || mv.Intent.Target != "Зал Серой башни" {
@@ -591,7 +591,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "«Мир» — раунд 1 — итоги\n• Элис (@Элис) уходит из «Рыночная площадь» в «Зал Серой башни»") {
 		t.Fatalf("fallback chronicle = %q", fallback.Text)
 	}
-	if !strings.Contains(fallback.Text, "— Рыночная площадь (Боб, Кэт) —\nВарианты:\n• прочитать (Разум/внимательность, сложность 1)") {
+	if !strings.Contains(fallback.Text, "— Рыночная площадь (Боб, Кэт) —\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)") {
 		t.Fatalf("fallback options = %q", fallback.Text)
 	}
 	// Второй раунд: рассказчик отвечает; в его контексте сцены, события и выжимки нет (прошлой хроники не было).
@@ -622,7 +622,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if chron.ID == 0 {
 		t.Fatalf("chronicle message for round 2 missing: %+v", w.outbox(t))
 	}
-	want := "«Мир» — раунд 2\nОсень в Мире густеет.\n\n— Площадь —\nБоб (@Боб) читает объявление.\nВарианты:\n• прочитать (Разум/внимательность, сложность 1)\n\n— Башня —\nЭлис (@Элис) ждёт в зале."
+	want := "«Мир» — раунд 2\nОсень в Мире густеет.\n\n— Площадь —\nБоб (@Боб) читает объявление.\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n\n— Башня —\nЭлис (@Элис) ждёт в зале."
 	if chron.Text != want {
 		t.Fatalf("chronicle text = %q\nwant %q", chron.Text, want)
 	}

@@ -147,11 +147,10 @@ func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model
 	}
 	if res.Check != nil {
 		if preset.ShowNumbers {
-			fmt.Fprintf(&b, "\nПроверка: пул %d, кубики %v, сложность %d, шанс %d%%", res.Check.Pool, res.Check.Dice, res.Check.Difficulty, res.Check.ChancePct)
+			fmt.Fprintf(&b, "\nПроверка: параметр %d, сложность %d, шанс %d%%, бросок %d", res.Check.Param, res.Check.Difficulty, res.Check.ChancePct, res.Check.Roll)
 			if res.Check.Pushed {
-				fmt.Fprintf(&b, ", форсирование %v", res.Check.PushDice)
+				fmt.Fprintf(&b, ", повторный бросок %d", res.Check.PushRoll)
 			}
-			fmt.Fprintf(&b, " → успехов %d", res.Check.Successes)
 		} else if g.Mode == model.ModeNarrative {
 			fmt.Fprintf(&b, "\nШанс был: %s", rules.ChanceWords(res.Check.ChancePct))
 		} else {

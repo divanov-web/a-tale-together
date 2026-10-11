@@ -277,11 +277,11 @@ func TestCharacter_CreateAutoAndManual(t *testing.T) {
 	code := h.createGame()
 
 	card := h.joinAndCreate(alice, code, "1", "Элис", "воин", "1", "Высокая и шумная", "-")
-	mustContain(t, card, "Персонаж создан", "Элис — Воин, фракция «Орден Рассвета»", "HP 8", "Сила 4, Ловкость 3, Разум 2, Воля 3",
-		"Бой 3", "Меч, Щит", "Открытое описание: Высокая и шумная", "Скрытое описание: нет")
+	mustContain(t, card, "Персонаж создан", "Элис — Воин, фракция «Орден Рассвета»", "HP 9", "Сила 5, Ловкость 3, Разум 2, Воля 4",
+		"Атлетика 3, Бой 3", "Меч, Щит", "Открытое описание: Высокая и шумная", "Скрытое описание: нет")
 
-	card = h.joinAndCreate(bob, code, "Гильдия теней", "Боб", "2", "2", "2 4 3 3", "воровство 3 скрытность 2 бой 1", "-", "Боится воды")
-	mustContain(t, card, "Боб — Плут, фракция «Гильдия теней»", "HP 6", "Воровство 3, Скрытность 2, Бой 1", "Кинжал, Отмычки", "Скрытое описание: Боится воды")
+	card = h.joinAndCreate(bob, code, "Гильдия теней", "Боб", "2", "2", "2 5 4 3", "воровство 3 скрытность 2 бой 1", "-", "Боится воды")
+	mustContain(t, card, "Боб — Плут, фракция «Гильдия теней»", "HP 6", "Бой 1, Воровство 3, Скрытность 2", "Кинжал, Отмычки", "Скрытое описание: Боится воды")
 
 	mustContain(t, h.send(alice, private(alice), "/character"), "Элис — Воин")
 	mustContain(t, h.send(alice, private(alice), "/bio Теперь тихая"), "сохранено")
@@ -307,9 +307,9 @@ func TestCharacter_ValidationInDialog(t *testing.T) {
 	mustContain(t, h.send(bob, private(bob), "Боб"), "Архетип")
 	mustContain(t, h.send(bob, private(bob), "бард"), "выберите архетип")
 	mustContain(t, h.send(bob, private(bob), "маг"), "Распределение")
-	mustContain(t, h.send(bob, private(bob), "2"), "Характеристики, сумма 12")
-	mustContain(t, h.send(bob, private(bob), "4 4 4 4"), "сумма характеристик должна быть 12")
-	mustContain(t, h.send(bob, private(bob), "2 2 4 4"), "Навыки: 6 очков")
+	mustContain(t, h.send(bob, private(bob), "2"), "Характеристики, сумма 14", "Например: 5 3 2 4")
+	mustContain(t, h.send(bob, private(bob), "4 4 4 4"), "сумма характеристик должна быть 14")
+	mustContain(t, h.send(bob, private(bob), "2 3 5 4"), "Навыки: 6 очков", "например: атлетика 3 бой 3")
 	mustContain(t, h.send(bob, private(bob), "внимательность 4 убеждение 2"), "от 0 до 3")
 	mustContain(t, h.send(bob, private(bob), "внимательность 3 убеждение 3"), "Открытое описание")
 	mustContain(t, h.send(bob, private(bob), strings.Repeat("я", 101)), "до 100 символов")

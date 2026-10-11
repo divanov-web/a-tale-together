@@ -202,19 +202,45 @@ func (s *Service) characterQuestion(ctx context.Context, g model.Game, step stri
 		for _, a := range def.Attributes {
 			names = append(names, fmt.Sprintf("%s (%d–%d)", a.Title, a.Min, a.Max))
 		}
-		return fmt.Sprintf("Характеристики, сумма %d. Введите числа по порядку: %s.\nНапример: 4 3 2 3", def.AttributePoints, strings.Join(names, ", ")), nil
+		return fmt.Sprintf("Характеристики, сумма %d. Введите числа по порядку: %s.\nНапример: %s", def.AttributePoints, strings.Join(names, ", "), exampleAttributes(def)), nil
 	case stepSkills:
 		var names []string
 		for _, sk := range def.Skills {
 			names = append(names, sk.Title)
 		}
-		return fmt.Sprintf("Навыки: %d очков, не более %d в один. Доступны: %s.\nВведите пары «навык значение», например: бой 3 выживание 2 внимательность 1", def.SkillPoints, def.SkillMax, strings.Join(names, ", ")), nil
+		return fmt.Sprintf("Навыки: %d очков, не более %d в один. Доступны: %s.\nВведите пары «навык значение», например: %s", def.SkillPoints, def.SkillMax, strings.Join(names, ", "), exampleSkills(def)), nil
 	case stepPublicBio:
 		return fmt.Sprintf("Открытое описание персонажа (до %d символов, видно всем) или «%s»:", game.BioMax, setupSkip), nil
 	case stepSecretBio:
 		return fmt.Sprintf("Скрытое описание (до %d символов, видит только рассказчик) или «%s»:", game.BioMax, setupSkip), nil
 	}
 	return "", fmt.Errorf("bot.characterQuestion: unknown step %q", step)
+}
+
+// exampleAttributes — пример ответа на шаг характеристик: числа первого архетипа модели в порядке характеристик.
+func exampleAttributes(def model.CharacterModelDef) string {
+	if len(def.Archetypes) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(def.Attributes))
+	for _, a := range def.Attributes {
+		parts = append(parts, strconv.Itoa(def.Archetypes[0].Attributes[a.Key]))
+	}
+	return strings.Join(parts, " ")
+}
+
+// exampleSkills — пример ответа на шаг навыков: ненулевые навыки первого архетипа в порядке модели.
+func exampleSkills(def model.CharacterModelDef) string {
+	if len(def.Archetypes) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, s := range def.Skills {
+		if v := def.Archetypes[0].Skills[s.Key]; v > 0 {
+			parts = append(parts, strings.ToLower(s.Title)+" "+strconv.Itoa(v))
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // findFaction находит фракцию по номеру, коду или названию.

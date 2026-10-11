@@ -21,7 +21,7 @@ type Result struct {
 }
 
 // Resolve разрешает раунд. Фазы (docs/game/round.md): подготовка (help, wait) → перемещение → взаимодействие
-// (explore, interact) → итоги (возврат после ненастоящей смерти). Броски из rand.New(rand.NewPCG(seed, 0)).
+// (explore, interact) → итоги (возврат после ненастоящей смерти). Броски d100 из rand.New(rand.NewPCG(seed, seed>>1)).
 func Resolve(snap model.RoundSnapshot, intents []model.Intent, seed int64) Result {
 	r := &resolver{snap: Clone(snap), rng: rand.New(rand.NewPCG(uint64(seed), uint64(seed)>>1)), preset: rules.Preset(snap.Mode), helpers: map[model.CharacterID]int{}}
 	ordered := append([]model.Intent(nil), intents...)
@@ -262,31 +262,25 @@ func (r *resolver) check(c *model.SnapshotCharacter, loc *model.SnapshotLocation
 		r.applyApproach(res, c, loc, obj, objIdx, ap.OnSuccess)
 		return true
 	}
-	pool := rules.Pool(*c, ap.Attribute, ap.Skill, r.helpers[c.ID])
+	param := rules.Param(*c, ap.Attribute, ap.Skill, r.helpers[c.ID])
 	difficulty := rules.Difficulty(r.preset, ap.Difficulty, loc.Difficulty)
-	info := model.CheckInfo{Attribute: ap.Attribute, Skill: ap.Skill, Pool: pool, Difficulty: difficulty, ChancePct: rules.ChancePct(pool, difficulty)}
-	info.Dice = r.roll(pool)
-	info.Successes = count6(info.Dice)
-	if info.Successes < difficulty && (in.Push || r.preset.AutoPush) {
+	info := model.CheckInfo{Attribute: ap.Attribute, Skill: ap.Skill, Param: param, Difficulty: difficulty, ChancePct: rules.ChancePct(param, difficulty)}
+	info.Roll = r.roll()
+	success := rules.Success(info.Roll, info.ChancePct)
+	if !success && (in.Push || r.preset.AutoPush) {
+		// Форсирование — повторный бросок с тем же шансом (docs/game/checks.md).
 		info.Pushed = true
-		info.PushDice = make([]int, len(info.Dice))
-		for i, d := range info.Dice {
-			if d == 6 {
-				info.PushDice[i] = 6
-			} else {
-				info.PushDice[i] = r.roll(1)[0]
-			}
-		}
-		info.Successes = count6(info.PushDice)
+		info.PushRoll = r.roll()
+		success = rules.Success(info.PushRoll, info.ChancePct)
 		if r.preset.PushCost && !c.HasCondition(model.ConditionExhausted) {
 			c.Conditions = append(c.Conditions, model.ConditionExhausted)
 			r.emit(res, model.EventConditionAdded, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "condition": model.ConditionExhausted})
 		}
 	}
 	switch {
-	case info.Successes >= difficulty && info.Pushed:
+	case success && info.Pushed:
 		info.Outcome = model.OutcomeCostlySuccess
-	case info.Successes >= difficulty:
+	case success:
 		info.Outcome = model.OutcomeSuccess
 	case r.preset.FailAsCostly && !ap.Deadly:
 		info.Outcome = model.OutcomeCostlySuccess
@@ -482,12 +476,9 @@ func (r *resolver) emit(res *model.ActionResult, t model.EventType, vis model.Vi
 	}
 }
 
-func (r *resolver) roll(n int) []int {
-	out := make([]int, n)
-	for i := range out {
-		out[i] = r.rng.IntN(6) + 1
-	}
-	return out
+// roll — бросок d100: целое от 1 до 100.
+func (r *resolver) roll() int {
+	return r.rng.IntN(100) + 1
 }
 
 func (r *resolver) locationOf(c *model.SnapshotCharacter) (*model.SnapshotLocation, bool) {
@@ -638,16 +629,6 @@ func outcomeWords(outcome string) string {
 		return "успех с ценой"
 	}
 	return "провал"
-}
-
-func count6(dice []int) int {
-	n := 0
-	for _, d := range dice {
-		if d == 6 {
-			n++
-		}
-	}
-	return n
 }
 
 func appendUnique(list []string, v string) []string {

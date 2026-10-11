@@ -14,9 +14,9 @@ func TestValidateAttributes(t *testing.T) {
 		attrs   map[string]int
 		wantErr bool
 	}{
-		{name: "valid sum 12", attrs: map[string]int{"strength": 4, "agility": 3, "wits": 2, "will": 3}},
-		{name: "sum too high", attrs: map[string]int{"strength": 4, "agility": 4, "wits": 2, "will": 3}, wantErr: true},
-		{name: "below min", attrs: map[string]int{"strength": 1, "agility": 4, "wits": 4, "will": 3}, wantErr: true},
+		{name: "valid sum 14", attrs: map[string]int{"strength": 5, "agility": 3, "wits": 2, "will": 4}},
+		{name: "sum too high", attrs: map[string]int{"strength": 5, "agility": 4, "wits": 2, "will": 4}, wantErr: true},
+		{name: "below min", attrs: map[string]int{"strength": 1, "agility": 5, "wits": 5, "will": 3}, wantErr: true},
 		{name: "missing key", attrs: map[string]int{"strength": 4, "agility": 4, "wits": 4}, wantErr: true},
 		{name: "unknown key", attrs: map[string]int{"strength": 3, "agility": 3, "wits": 3, "luck": 3}, wantErr: true},
 	}
@@ -133,7 +133,7 @@ func TestParseSkills(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseSkills: %v", err)
 	}
-	want := map[string]int{"melee": 3, "survival": 2, "awareness": 1, "thievery": 0, "persuasion": 0, "stealth": 0}
+	want := map[string]int{"athletics": 0, "melee": 3, "survival": 2, "awareness": 1, "thievery": 0, "persuasion": 0, "stealth": 0}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ParseSkills = %v; want %v", got, want)
 	}

@@ -6,40 +6,41 @@ import (
 	"taletogether/internal/model"
 )
 
-// BasicFantasy — модель персонажа basic_fantasy, как в миграции 00003.
+// BasicFantasy — модель персонажа basic_fantasy версии правил 1, как в миграции 00015 (docs/game/models/character-basic.md).
 func BasicFantasy() model.CharacterModelDef {
 	return model.CharacterModelDef{
 		SchemaVersion: 1,
 		Attributes: []model.AttributeDef{
-			{Key: "strength", Title: "Сила", Min: 2, Max: 4},
-			{Key: "agility", Title: "Ловкость", Min: 2, Max: 4},
-			{Key: "wits", Title: "Разум", Min: 2, Max: 4},
-			{Key: "will", Title: "Воля", Min: 2, Max: 4},
+			{Key: "strength", Title: "Сила", Min: 2, Max: 5},
+			{Key: "agility", Title: "Ловкость", Min: 2, Max: 5},
+			{Key: "wits", Title: "Разум", Min: 2, Max: 5},
+			{Key: "will", Title: "Воля", Min: 2, Max: 5},
 		},
-		AttributePoints: 12,
+		AttributePoints: 14,
 		Skills: []model.SkillDef{
-			{Key: "thievery", Title: "Воровство", Attribute: "agility"},
-			{Key: "awareness", Title: "Внимательность", Attribute: "wits"},
-			{Key: "persuasion", Title: "Убеждение", Attribute: "will"},
-			{Key: "survival", Title: "Выживание", Attribute: "wits"},
-			{Key: "stealth", Title: "Скрытность", Attribute: "agility"},
+			{Key: "athletics", Title: "Атлетика", Attribute: "strength"},
 			{Key: "melee", Title: "Бой", Attribute: "strength"},
+			{Key: "thievery", Title: "Воровство", Attribute: "agility"},
+			{Key: "stealth", Title: "Скрытность", Attribute: "agility"},
+			{Key: "awareness", Title: "Внимательность", Attribute: "wits"},
+			{Key: "survival", Title: "Выживание", Attribute: "wits"},
+			{Key: "persuasion", Title: "Убеждение", Attribute: "will"},
 		},
 		SkillPoints:    6,
 		SkillMax:       3,
 		HPFormula:      "4 + strength",
 		InventoryLimit: 6,
 		Archetypes: []model.ArchetypeDef{
-			{Key: "warrior", Title: "Воин", Attributes: map[string]int{"strength": 4, "agility": 3, "wits": 2, "will": 3}, Skills: map[string]int{"melee": 3, "survival": 2, "awareness": 1}, Items: []string{"sword", "shield"}},
-			{Key: "rogue", Title: "Плут", Attributes: map[string]int{"strength": 2, "agility": 4, "wits": 3, "will": 3}, Skills: map[string]int{"thievery": 3, "stealth": 2, "awareness": 1}, Items: []string{"dagger", "lockpicks"}},
-			{Key: "mage", Title: "Маг", Attributes: map[string]int{"strength": 2, "agility": 2, "wits": 4, "will": 4}, Skills: map[string]int{"awareness": 3, "persuasion": 2, "survival": 1}, Items: []string{"staff", "tome"}},
-			{Key: "diplomat", Title: "Дипломат", Attributes: map[string]int{"strength": 2, "agility": 3, "wits": 3, "will": 4}, Skills: map[string]int{"persuasion": 3, "awareness": 2, "thievery": 1}, Items: []string{"seal", "coin_purse"}},
-			{Key: "ranger", Title: "Следопыт", Attributes: map[string]int{"strength": 3, "agility": 4, "wits": 3, "will": 2}, Skills: map[string]int{"survival": 3, "stealth": 2, "melee": 1}, Items: []string{"bow", "rope"}},
+			{Key: "warrior", Title: "Воин", Attributes: map[string]int{"strength": 5, "agility": 3, "wits": 2, "will": 4}, Skills: map[string]int{"athletics": 3, "melee": 3}, Items: []string{"sword", "shield"}},
+			{Key: "rogue", Title: "Плут", Attributes: map[string]int{"strength": 2, "agility": 5, "wits": 4, "will": 3}, Skills: map[string]int{"thievery": 3, "stealth": 3}, Items: []string{"dagger", "lockpicks"}},
+			{Key: "mage", Title: "Маг", Attributes: map[string]int{"strength": 2, "agility": 3, "wits": 5, "will": 4}, Skills: map[string]int{"awareness": 3, "persuasion": 2, "survival": 1}, Items: []string{"staff", "tome"}},
+			{Key: "diplomat", Title: "Дипломат", Attributes: map[string]int{"strength": 3, "agility": 2, "wits": 4, "will": 5}, Skills: map[string]int{"persuasion": 3, "awareness": 2, "survival": 1}, Items: []string{"seal", "coin_purse"}},
+			{Key: "ranger", Title: "Следопыт", Attributes: map[string]int{"strength": 4, "agility": 3, "wits": 5, "will": 2}, Skills: map[string]int{"survival": 3, "stealth": 2, "melee": 1}, Items: []string{"bow", "rope"}},
 		},
 	}
 }
 
-// FantasyTemplate — шаблон жанра fantasy, как в миграции 00003 (сокращённый каталог предметов).
+// FantasyTemplate — шаблон жанра fantasy, как в миграциях 00003 и 00015 (сокращённый набор локаций).
 func FantasyTemplate() model.GenreTemplate {
 	return model.GenreTemplate{
 		SchemaVersion:  1,
@@ -51,20 +52,20 @@ func FantasyTemplate() model.GenreTemplate {
 		},
 		Locations: []model.LocationTemplate{
 			{Name: "Рыночная площадь", Description: "Сердце города.", Start: true, Links: []model.LocationLink{{To: "Зал Серой башни", Title: "к башне"}},
-				Objects: []model.LocationObject{{Key: "notice_board", Title: "доска объявлений", Description: "Объявление о награде.", Approaches: []model.Approach{{Action: model.ActionExplore, Title: "прочитать", Attribute: "wits", Skill: "awareness", Difficulty: 1, OnSuccess: json.RawMessage(`{"fact":"Гонца видели у башни."}`)}}}}},
+				Objects: []model.LocationObject{{Key: "notice_board", Title: "доска объявлений", Description: "Объявление о награде.", Approaches: []model.Approach{{Action: model.ActionExplore, Title: "разобрать приписку", Attribute: "wits", Skill: "awareness", Difficulty: 5, OnSuccess: json.RawMessage(`{"fact":"Гонца видели у башни."}`)}}}}},
 			{Name: "Зал Серой башни", Description: "Пыльный зал.", Links: []model.LocationLink{{To: "Рыночная площадь", Title: "на площадь"}, {To: "Подвал башни", Title: "вниз в подвал"}}},
 			{Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, Links: []model.LocationLink{{To: "Зал Серой башни", Title: "наверх в зал"}},
 				Objects: []model.LocationObject{{Key: "cellar_door", Title: "запертая дверь", State: "locked", Approaches: []model.Approach{
-					{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Difficulty: 2, OnSuccess: json.RawMessage(`{"state":"broken"}`), OnFail: json.RawMessage(`{"condition":"exhausted"}`)},
-					{Action: model.ActionInteract, Title: "отпереть", Attribute: "agility", Skill: "thievery", Difficulty: 1, OnSuccess: json.RawMessage(`{"state":"open"}`)},
+					{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Skill: "athletics", Difficulty: 4, OnSuccess: json.RawMessage(`{"state":"broken"}`), OnFail: json.RawMessage(`{"condition":"exhausted"}`)},
+					{Action: model.ActionInteract, Title: "отпереть", Attribute: "agility", Skill: "thievery", Difficulty: 4, OnSuccess: json.RawMessage(`{"state":"open"}`)},
 				}}}},
 		},
 		OpeningScene: "В {{world_title}} наступает осень.",
 		Items: []model.ItemTemplate{
-			{Key: "sword", Title: "Меч", Tags: []string{"weapon", "melee"}, Bonus: &model.ItemBonus{Skill: "melee", Dice: 1}},
+			{Key: "sword", Title: "Меч", Tags: []string{"weapon", "melee"}},
 			{Key: "shield", Title: "Щит", Tags: []string{"armor"}},
 			{Key: "dagger", Title: "Кинжал", Tags: []string{"weapon", "melee"}},
-			{Key: "lockpicks", Title: "Отмычки", Tags: []string{"tool"}, Bonus: &model.ItemBonus{Skill: "thievery", Dice: 1}},
+			{Key: "lockpicks", Title: "Отмычки", Tags: []string{"tool"}},
 			{Key: "staff", Title: "Посох", Tags: []string{"weapon", "focus"}},
 			{Key: "tome", Title: "Фолиант", Tags: []string{"book"}},
 			{Key: "seal", Title: "Печать гильдии", Tags: []string{"token"}},

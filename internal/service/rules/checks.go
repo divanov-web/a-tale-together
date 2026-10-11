@@ -1,23 +1,29 @@
 package rules
 
 import (
-	"math"
-
 	"taletogether/internal/model"
 )
 
-// Version — версия правил, закрепляется за игрой (`games.rules_version`, G10).
-const Version = 0
+// Version — версия правил, закрепляется за игрой (`games.rules_version`, G10). 1 — «Прямой шанс» (ADR-0014).
+const Version = 1
 
-// Сложность свободного действия по оценке риска (docs/game/checks.md): требуемое число успехов.
-var riskDifficulty = map[model.Risk]int{model.RiskNormal: 1, model.RiskHard: 2, model.RiskExtreme: 3}
+// Границы шанса (docs/game/checks.md): гарантированного исхода нет.
+const (
+	ChanceMin  = 5
+	ChanceMax  = 95
+	ChanceBase = 50 // шанс при равных параметре и сложности
+	ChanceStep = 10 // процентных пунктов за очко разницы
+)
 
-// RiskDifficulty — требуемое число успехов по риску; неизвестный риск считается обычным.
+// Сложность свободного действия по оценке риска (docs/game/checks.md).
+var riskDifficulty = map[model.Risk]int{model.RiskNormal: 5, model.RiskHard: 7, model.RiskExtreme: 9}
+
+// RiskDifficulty — базовая сложность по риску; неизвестный риск считается обычным.
 func RiskDifficulty(r model.Risk) int {
 	if d, ok := riskDifficulty[r]; ok {
 		return d
 	}
-	return 1
+	return riskDifficulty[model.RiskNormal]
 }
 
 // Risks — уровни риска свободного испытания в порядке роста сложности.
@@ -45,52 +51,39 @@ func ValidCondition(c string) bool {
 	return false
 }
 
-// Состояния, снимающие по кубику с пула (docs/game/character.md).
+// Состояния, снимающие по очку с параметра (docs/game/character.md).
 var penaltyConditions = []string{model.ConditionWounded, model.ConditionExhausted}
 
-// Pool — пул кубиков персонажа: характеристика + навык + бонус предметов (не более 2) − штрафы состояний − помощь (+1 за помощника, не более +2). Не меньше 1.
-func Pool(c model.SnapshotCharacter, attribute, skill string, helpers int) int {
-	pool := c.Attributes[attribute]
+// Param — параметр персонажа в проверке: характеристика + навык + бонус предметов (не более 2) − штрафы состояний
+// + помощь (+1 за помощника, не более +2). Может быть любым: границы задаёт шанс.
+func Param(c model.SnapshotCharacter, attribute, skill string, helpers int) int {
+	param := c.Attributes[attribute]
 	if skill != "" {
-		pool += c.Skills[skill]
+		param += c.Skills[skill]
 	}
 	bonus := 0
 	for _, it := range c.Inventory {
 		if it.Bonus != nil && skill != "" && it.Bonus.Skill == skill {
-			bonus += it.Bonus.Dice
+			bonus += it.Bonus.Points
 		}
 	}
-	pool += min(bonus, 2)
+	param += min(bonus, 2)
 	for _, cond := range penaltyConditions {
 		if c.HasCondition(cond) {
-			pool--
+			param--
 		}
 	}
-	pool += min(helpers, 2)
-	return max(pool, 1)
+	return param + min(helpers, 2)
 }
 
-// ChancePct — вероятность хотя бы need успехов («6») на пуле из pool d6, в процентах.
-func ChancePct(pool, need int) int {
-	if need <= 0 {
-		return 100
-	}
-	if pool < need {
-		return 0
-	}
-	p := 0.0
-	for k := need; k <= pool; k++ {
-		p += binomial(pool, k) * math.Pow(1.0/6, float64(k)) * math.Pow(5.0/6, float64(pool-k))
-	}
-	return int(math.Round(p * 100))
+// ChancePct — шанс успеха в процентах: 50 + 10 × (параметр − сложность) в границах 5–95 («Прямой шанс»).
+func ChancePct(param, difficulty int) int {
+	return min(max(ChanceBase+ChanceStep*(param-difficulty), ChanceMin), ChanceMax)
 }
 
-func binomial(n, k int) float64 {
-	r := 1.0
-	for i := 1; i <= k; i++ {
-		r = r * float64(n-k+i) / float64(i)
-	}
-	return r
+// Success — исход одного броска d100 (1–100) против шанса.
+func Success(roll, chancePct int) bool {
+	return roll <= chancePct
 }
 
 // ChanceWords — шанс словами для режима «повествование».
@@ -106,15 +99,15 @@ func ChanceWords(pct int) string {
 	return "почти невозможно"
 }
 
-// DifficultyWords — сложность словами для режима «повествование» (docs/game/checks.md: 1 обычная, 2 трудная,
-// 3 очень трудная, 4 героическая).
+// DifficultyWords — сложность словами для режима «повествование» (docs/game/checks.md: 5 обычно, 6–7 трудно,
+// 8–9 очень трудно, 10 и выше героически).
 func DifficultyWords(difficulty int) string {
 	switch {
-	case difficulty <= 1:
+	case difficulty <= 5:
 		return "обычно"
-	case difficulty == 2:
+	case difficulty <= 7:
 		return "трудно"
-	case difficulty == 3:
+	case difficulty <= 9:
 		return "очень трудно"
 	}
 	return "героически"
@@ -138,7 +131,7 @@ func Preset(mode model.GameMode) ModePreset {
 	case model.ModeMechanics:
 		return ModePreset{PushCost: true, ShowNumbers: true, TrackHP: true, InventoryLimit: true, RequireSkillChoice: true}
 	case model.ModeNarrative:
-		return ModePreset{MaxDifficulty: 1, AutoPush: true, FailAsCostly: true}
+		return ModePreset{MaxDifficulty: RiskDifficulty(model.RiskNormal), AutoPush: true, FailAsCostly: true}
 	}
 	return ModePreset{PushCost: true, TrackHP: true, InventoryLimit: true}
 }

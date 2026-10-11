@@ -22,20 +22,20 @@ func tower() model.RoundSnapshot {
 		SchemaVersion: 2, Mode: model.ModeBalanced,
 		Locations: []model.SnapshotLocation{
 			{ID: 1, Name: "Зал башни", Description: "Пыльный зал.", Links: []model.LocationLink{{To: "Подвал башни", Title: "вниз в подвал"}, {To: "Тайный ход", Title: "тайный ход", Hidden: true}},
-				Objects: []model.LocationObject{{Key: "statue", Title: "статуя", Approaches: []model.Approach{{Action: model.ActionExplore, Title: "осмотреть статую", Attribute: "wits", Skill: "awareness", Difficulty: 1}}}}},
+				Objects: []model.LocationObject{{Key: "statue", Title: "статуя", Approaches: []model.Approach{{Action: model.ActionExplore, Title: "осмотреть статую", Attribute: "wits", Skill: "awareness", Difficulty: 5}}}}},
 			{ID: 2, Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, Links: []model.LocationLink{{To: "Зал башни", Title: "наверх в зал"}},
 				Objects: []model.LocationObject{
 					{Key: "cellar_door", Title: "дверь", State: "open", Approaches: []model.Approach{
-						{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Difficulty: 2},
-						{Action: model.ActionInteract, Title: "отпереть", Attribute: "agility", Skill: "thievery", Difficulty: 1},
+						{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Skill: "athletics", Difficulty: 4},
+						{Action: model.ActionInteract, Title: "отпереть", Attribute: "agility", Skill: "thievery", Difficulty: 4},
 					}},
 					{Key: "hidden_lever", Title: "потайной рычаг", HiddenUntil: true, Approaches: []model.Approach{{Action: model.ActionInteract, Title: "дёрнуть"}}},
 				}},
 		},
 		Characters: []model.SnapshotCharacter{
-			{ID: 11, Nickname: "Вор", Status: model.CharacterActive, LocationID: loc(2), Attributes: map[string]int{"strength": 2, "agility": 4}, Skills: map[string]int{"thievery": 3}, Conditions: []string{}},
-			{ID: 12, Nickname: "Кузнец", Status: model.CharacterWaiting, LocationID: loc(2), Attributes: map[string]int{"strength": 4, "agility": 2}, Conditions: []string{model.ConditionExhausted}},
-			{ID: 13, Nickname: "Маг", Status: model.CharacterActive, LocationID: loc(1), Attributes: map[string]int{"wits": 4}, Skills: map[string]int{"awareness": 3}},
+			{ID: 11, Nickname: "Вор", Status: model.CharacterActive, LocationID: loc(2), Attributes: map[string]int{"strength": 2, "agility": 5}, Skills: map[string]int{"thievery": 3}, Conditions: []string{}},
+			{ID: 12, Nickname: "Кузнец", Status: model.CharacterWaiting, LocationID: loc(2), Attributes: map[string]int{"strength": 5, "agility": 2}, Skills: map[string]int{"athletics": 3}, Conditions: []string{model.ConditionExhausted}},
+			{ID: 13, Nickname: "Маг", Status: model.CharacterActive, LocationID: loc(1), Attributes: map[string]int{"wits": 5}, Skills: map[string]int{"awareness": 3}},
 			{ID: 15, Nickname: "Призрак", Status: model.CharacterDead, LocationID: loc(1)},
 		},
 	}
@@ -44,14 +44,14 @@ func tower() model.RoundSnapshot {
 func def() model.CharacterModelDef {
 	return model.CharacterModelDef{
 		Attributes: []model.AttributeDef{{Key: "strength", Title: "Сила"}, {Key: "agility", Title: "Ловкость"}, {Key: "wits", Title: "Разум"}},
-		Skills:     []model.SkillDef{{Key: "thievery", Title: "Воровство", Attribute: "agility"}, {Key: "awareness", Title: "Внимательность", Attribute: "wits"}},
+		Skills:     []model.SkillDef{{Key: "athletics", Title: "Атлетика", Attribute: "strength"}, {Key: "thievery", Title: "Воровство", Attribute: "agility"}, {Key: "awareness", Title: "Внимательность", Attribute: "wits"}},
 	}
 }
 
 func events() []model.Event {
 	check := func(outcome string, pushed bool) json.RawMessage {
 		b, _ := json.Marshal(map[string]any{"character_id": 12, "object": "cellar_door", "title": "дверь", "free": false, "summary": "взаимодействует: дверь",
-			"check": model.CheckInfo{Attribute: "strength", Pool: 4, Dice: []int{1, 2, 3, 4}, Successes: 0, Difficulty: 3, Outcome: outcome, Pushed: pushed, ChancePct: 11}})
+			"check": model.CheckInfo{Attribute: "strength", Skill: "athletics", Param: 7, Difficulty: 5, ChancePct: 70, Roll: 84, Outcome: outcome, Pushed: pushed, PushRoll: 91}})
 		return b
 	}
 	return []model.Event{
@@ -138,11 +138,11 @@ func TestBuildInput(t *testing.T) {
 	if len(in.World.Previous) != 2 || in.World.Previous[0] != "Раунд пять." || !strings.HasSuffix(in.World.Previous[1], "…") || len([]rune(in.World.Previous[1])) != previousMaxRune+1 {
 		t.Errorf("previous = %q", in.World.Previous)
 	}
-	if len(in.Approaches) != 3 || in.Approaches[1].Difficulty != 3 || in.Approaches[1].Attribute != "Сила" {
+	if len(in.Approaches) != 3 || in.Approaches[1].Difficulty != 5 || in.Approaches[1].Attribute != "Сила" {
 		t.Errorf("approaches = %+v", in.Approaches)
 	}
 	mech := BuildInput(params(model.ModeMechanics))
-	if mech.Events[1].Numbers == nil || mech.Events[1].Numbers.Pool != 4 || mech.Events[1].Numbers.Difficulty != 3 {
+	if mech.Events[1].Numbers == nil || mech.Events[1].Numbers.Param != 7 || mech.Events[1].Numbers.Difficulty != 5 || mech.Events[1].Numbers.Roll != 84 || mech.Events[1].Numbers.ChancePct != 70 {
 		t.Errorf("mechanics numbers = %+v", mech.Events[1].Numbers)
 	}
 	narr := BuildInput(params(model.ModeNarrative))
@@ -244,19 +244,19 @@ func TestOptions(t *testing.T) {
 		t.Fatalf("options = %+v", opts)
 	}
 	door, pick := opts[1], opts[2]
-	if door.Difficulty != 3 || door.Attribute != "Сила" || len(door.Chances) != 2 || door.Chances[0].Nickname != "Вор" {
+	if door.Difficulty != 5 || door.Attribute != "Сила" || door.Skill != "Атлетика" || len(door.Chances) != 2 || door.Chances[0].Nickname != "Вор" || door.Chances[0].Pct != 20 || door.Chances[1].Pct != 70 {
 		t.Errorf("door option = %+v", door)
 	}
-	// Вор: пул 4 + 3 против сложности 2; Кузнец: пул 2 − 1 (истощён) → почти без шансов.
-	if pick.Difficulty != 2 || pick.Skill != "Воровство" || pick.Chances[0].Pct < 30 || pick.Chances[1].Pct != 0 {
+	// Вор: параметр 5 + 3 против сложности 5 → 80 %; Кузнец: 2 − 1 (истощён) → 10 %.
+	if pick.Difficulty != 5 || pick.Skill != "Воровство" || pick.Chances[0].Pct != 80 || pick.Chances[1].Pct != 10 {
 		t.Errorf("pick option = %+v", pick)
 	}
 	text := OptionsText(opts[1:], model.ModeBalanced)
-	if text != "Варианты:\n• выбить (Сила, сложность 3)\n• отпереть (Ловкость/воровство, сложность 2)" {
+	if text != "Варианты:\n• выбить (Сила/атлетика, сложность 5)\n• отпереть (Ловкость/воровство, сложность 5)" {
 		t.Errorf("text = %q", text)
 	}
 	words := OptionsText(opts[1:], model.ModeNarrative)
-	if strings.ContainsAny(words, "0123456789") || !strings.Contains(words, "• выбить (Сила, очень трудно)\n• отпереть (Ловкость/воровство, трудно)") {
+	if strings.ContainsAny(words, "0123456789") || !strings.Contains(words, "• выбить (Сила/атлетика, обычно)\n• отпереть (Ловкость/воровство, обычно)") {
 		t.Errorf("narrative text = %q", words)
 	}
 	st.Locations[1].Objects[1].Revealed = true
