@@ -80,7 +80,7 @@ users ──< chats (owner_user_id)
 | `npcs` | персонажи мира без игрока | `game_id`, `location_id`, `key`, `title`, `faction_id`, `state`, `attitude jsonb`, `knowledge jsonb`, `stats jsonb` | `(game_id, key)` | 27, 30 |
 | `generation_jobs` | сохранённые результаты заданий генерации для повтора раунда без модели | `game_id`, `round_id`, `role`, `input_hash`, `response jsonb`, `accepted` | `(round_id, role, input_hash)` | 27 |
 | `faction_goals` | цели фракций | `game_id`, `faction_id`, `version`, `text`, `stage`, `changed_round_id` | `(faction_id, version)` | [28](../plan/telegram/28-quests.md) |
-| `quests` | квесты мира | `game_id`, `kind` (story/side), `title`, `summary`, `status` (active/done), `faction_id` (nullable), `created_round_id`, `done_round_id` | активных ≤ `max_story_quests` + `max_side_quests` | 28 |
+| `quests` | квесты фракций | `game_id`, `faction_id`, `kind` (story/side), `title`, `summary`, `status` (active/done), `created_round_id`, `done_round_id` | у фракции активных story ≤ `max_story_quests` (2), side ≤ `max_side_quests` (1) | 28 |
 | `quest_stages` | этапы квеста | `game_id`, `quest_id`, `stage_no`, `key`, `summary`, `distance`, `location_id` (nullable до привязки), `condition jsonb`, `reward jsonb`, `status` (pending/bound/done), `done_round_id` | `(quest_id, stage_no)` | 28 |
 
 ## Инварианты
@@ -97,4 +97,4 @@ users ──< chats (owner_user_id)
 
 ## Открыто
 
-Счётчик исследования `games.explored_since_reset` (пункт 27). Хранение «знаний персонажа» (отдельная таблица `character_knowledge` или факты в событиях); срок хранения `raw_text` (G8).
+Счётчик исследования на фракцию `factions.explored_since_reset` и первые открытия клетки по фракциям `location_discoveries (location_id, faction_id)` (пункт 27). Хранение «знаний персонажа» (отдельная таблица `character_knowledge` или факты в событиях); срок хранения `raw_text` (G8).
