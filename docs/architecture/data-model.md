@@ -74,6 +74,14 @@ users ──< chats (owner_user_id)
 |---|---|---|---|---|
 | `character_goals` | личные сюжетные цели | `game_id`, `character_id`, `text`, `status` (active/achieved/abandoned), `created_at`, `achieved_at`, `abandoned_at` | лимит активных по `settings.max_active_goals`; новая не раньше `goal_cooldown_rounds` после отказа | [17](../plan/telegram/17-story-goals.md) |
 | `goal_steps` | шаги цели | `game_id`, `goal_id`, `step_no` (1–10), `text`, `status` (pending/done), `done_round_id`, `stalled_rounds` | `(goal_id, step_no)` | 17 |
+| `locations` (расширение) | клетка сетки ([динамический мир](../game/world.md)) | `x`, `y`, `stage` (none/card/detailed), `terrain`, `visited_at`; выходы по направлениям; объекты переезжают в `world_objects` | `(game_id, x, y)`; имя перестаёт быть уникальным | [27](../plan/telegram/27-world-grid.md) |
+| `world_objects` | объекты клеток | `game_id`, `location_id`, `key`, `title`, `description`, `state`, `revealed`, `searched`, `approaches jsonb` | `(game_id, key)` | 27 |
+| `items` | переносимые предметы | `game_id`, `key`, `title`, `kind`, `props jsonb`, владелец: `location_id` / `object_id` / `character_id` (ровно один) | `(game_id, key)` | 27, [30](../plan/telegram/30-npc-and-items.md) |
+| `npcs` | персонажи мира без игрока | `game_id`, `location_id`, `key`, `title`, `faction_id`, `state`, `attitude jsonb`, `knowledge jsonb`, `stats jsonb` | `(game_id, key)` | 27, 30 |
+| `generation_jobs` | сохранённые результаты заданий генерации для повтора раунда без модели | `game_id`, `round_id`, `role`, `input_hash`, `response jsonb`, `accepted` | `(round_id, role, input_hash)` | 27 |
+| `faction_goals` | цели фракций | `game_id`, `faction_id`, `version`, `text`, `stage`, `changed_round_id` | `(faction_id, version)` | [28](../plan/telegram/28-quests.md) |
+| `quests` | квесты мира | `game_id`, `kind` (story/side), `title`, `summary`, `status` (active/done), `faction_id` (nullable), `created_round_id`, `done_round_id` | активных ≤ `max_story_quests` + `max_side_quests` | 28 |
+| `quest_stages` | этапы квеста | `game_id`, `quest_id`, `stage_no`, `key`, `summary`, `distance`, `location_id` (nullable до привязки), `condition jsonb`, `reward jsonb`, `status` (pending/bound/done), `done_round_id` | `(quest_id, stage_no)` | 28 |
 
 ## Инварианты
 
@@ -89,4 +97,4 @@ users ──< chats (owner_user_id)
 
 ## Открыто
 
-Хранение «знаний персонажа» (отдельная таблица `character_knowledge` или факты в событиях); срок хранения `raw_text` (G8).
+Счётчик исследования `games.explored_since_reset` (пункт 27). Хранение «знаний персонажа» (отдельная таблица `character_knowledge` или факты в событиях); срок хранения `raw_text` (G8).
