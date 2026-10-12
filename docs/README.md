@@ -10,6 +10,7 @@
 | [Динамический мир](concept/dynamic_world_review.md) | Оценка генерации карты и квестов, бюджет токенов и предлагаемые этапы реализации |
 | [План реализации](plan/README.md) | Крупные пункты по порядку (техника, фичи, devops) и файл-скелет на каждый; [доработки вне плана](plan/backlog.md) — очередь замечаний ручного тестирования, [выполненные](plan/backlog-done.md) отдельно |
 | [Roadmap](roadmap.md) | Этапы концепта и их связь с пунктами плана |
+| [Сайт игры](website.md) | Второй проект: вики и информация из БД игры, отдельное приложение на том же сервере; замысел, старт не скоро |
 | [Глоссарий проекта](glossary.md), [глоссарий игры](game/glossary.md) | Единая терминология: технические и игровые термины; неудачные термины заменяются с пометкой «Было» |
 | [Архитектура](architecture/overview.md) | [Компоненты](architecture/overview.md), [слои](architecture/layers.md), [структура репозитория](architecture/project-layout.md), [модель данных](architecture/data-model.md), [конвейер раунда](architecture/round-pipeline.md), [команды Telegram](architecture/telegram-commands.md) |
 | [Руководство игрока](../guide/README.md) | Материалы со стороны пользователя, вне `docs/`: [команды игры](../guide/commands.md) по пути владельца чата и игрока, [персонаж](../guide/character/README.md) и [испытания](../guide/checks/checks.md) человеческим языком; правила ведения `.claude/rules/guide.md` |
