@@ -30,7 +30,7 @@ func basicFantasy() model.CharacterModelDef {
 			{Key: "warrior", Title: "Воин", Attributes: map[string]int{"strength": 5, "agility": 3, "wits": 2, "will": 4}, Skills: map[string]int{"athletics": 3, "melee": 3}, Items: []string{"sword", "shield"}},
 			{Key: "rogue", Title: "Плут", Attributes: map[string]int{"strength": 2, "agility": 5, "wits": 4, "will": 3}, Skills: map[string]int{"thievery": 3, "stealth": 3}, Items: []string{"dagger", "lockpicks"}},
 			{Key: "mage", Title: "Маг", Attributes: map[string]int{"strength": 2, "agility": 3, "wits": 5, "will": 4}, Skills: map[string]int{"awareness": 3, "persuasion": 2, "survival": 1}, Items: []string{"staff", "tome"}},
-			{Key: "diplomat", Title: "Дипломат", Attributes: map[string]int{"strength": 3, "agility": 2, "wits": 4, "will": 5}, Skills: map[string]int{"persuasion": 3, "awareness": 2, "survival": 1}, Items: []string{"seal", "coin_purse"}},
+			{Key: "bard", Title: "Бард", Attributes: map[string]int{"strength": 3, "agility": 2, "wits": 4, "will": 5}, Skills: map[string]int{"persuasion": 3, "awareness": 2, "survival": 1}, Items: []string{"lute", "coin_purse"}},
 			{Key: "ranger", Title: "Следопыт", Attributes: map[string]int{"strength": 4, "agility": 3, "wits": 5, "will": 2}, Skills: map[string]int{"survival": 3, "stealth": 2, "melee": 1}, Items: []string{"bow", "rope"}},
 		},
 	}

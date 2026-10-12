@@ -77,7 +77,7 @@ func TestAutoDistribute_AllArchetypesValid(t *testing.T) {
 			t.Fatalf("archetype %s: skills has %d keys; want all %d", a.Key, len(skills), len(def.Skills))
 		}
 	}
-	if _, _, err := AutoDistribute(def, "bard"); !errors.Is(err, ErrInvalid) {
+	if _, _, err := AutoDistribute(def, "priest"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("unknown archetype error = %v; want ErrInvalid", err)
 	}
 }

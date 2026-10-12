@@ -546,7 +546,7 @@ func TestResolve_Interpreter(t *testing.T) {
 		byChar[a.CharacterID] = a
 	}
 	free := byChar[w.chars[0].ID]
-	if free.Status != model.ResultResolved || free.Check == nil || free.Check.Attribute != "wits" || free.Check.Difficulty != 5 || !free.Intent.FreeCheck() {
+	if free.Status != model.ResultResolved || free.Check == nil || free.Check.Attribute != "wits" || free.Check.Difficulty != 4 || !free.Intent.FreeCheck() {
 		t.Fatalf("free action = %+v", free)
 	}
 	if mv := byChar[w.chars[1].ID]; mv.Status != model.ResultResolved || mv.Intent.Target != "north" {
@@ -617,7 +617,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "Раунд 1 — итоги\n\n• Элис (@Элис) отделяется от группы «Ночной дозор» и уходит из «Рыночная площадь» в «Зал Серой башни»: теперь это группа «Вольные клинки»\n• Элис уходит из «Рыночная площадь» в «Зал Серой башни»") {
 		t.Fatalf("fallback chronicle = %q", fallback.Text)
 	}
-	if !strings.Contains(fallback.Text, "— Ночной дозор (Рыночная площадь): Боб, Кэт —\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)") {
+	if !strings.Contains(fallback.Text, "— Ночной дозор (Рыночная площадь): Боб, Кэт —\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 4)") {
 		t.Fatalf("fallback options = %q", fallback.Text)
 	}
 	// Второй раунд: рассказчик отвечает; в его контексте сцены, события и выжимка только из завязки (прошлой хроники не было).
@@ -654,7 +654,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if chron.ID == 0 {
 		t.Fatalf("chronicle message for round 2 missing: %+v", w.outbox(t))
 	}
-	want := "Раунд 2\n\nОсень в Мире густеет.\n\n— Ночной дозор (Рыночная площадь) —\nБоб (@Боб) читает объявление.\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n• идти на север: Зал Серой башни\n• идти на юг: Неизведанные земли\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли\n\n— Вольные клинки (Зал Серой башни) —\nЭлис (@Элис) ждёт в зале.\n\nВарианты:\n• разобраться на месте (без броска)\n• идти на север: Подвал башни\n• идти на юг: Рыночная площадь\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли"
+	want := "Раунд 2\n\nОсень в Мире густеет.\n\n— Ночной дозор (Рыночная площадь) —\nБоб (@Боб) читает объявление.\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 4)\n• идти на север: Зал Серой башни\n• идти на юг: Неизведанные земли\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли\n\n— Вольные клинки (Зал Серой башни) —\nЭлис (@Элис) ждёт в зале.\n\nВарианты:\n• разобраться на месте (без броска)\n• идти на север: Подвал башни\n• идти на юг: Рыночная площадь\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли"
 	if chron.Text != want {
 		t.Fatalf("chronicle text = %q\nwant %q", chron.Text, want)
 	}

@@ -30,13 +30,13 @@ func TestParam_And_Difficulty(t *testing.T) {
 	if got := Param(c, "strength", "", 0); got != -1 {
 		t.Fatalf("Param without attribute and with a penalty = %d; want -1 (границы задаёт шанс)", got)
 	}
-	if got := Difficulty(Preset(model.ModeNarrative), 7, 1); got != 6 {
-		t.Fatalf("narrative difficulty = %d; want cap 5 + location 1", got)
+	if got := Difficulty(Preset(model.ModeNarrative), 7, 1); got != 5 {
+		t.Fatalf("narrative difficulty = %d; want cap 4 + location 1", got)
 	}
 	if got := Difficulty(Preset(model.ModeMechanics), 7, 1); got != 8 {
 		t.Fatalf("mechanics difficulty = %d", got)
 	}
-	if RiskDifficulty(model.RiskExtreme) != 9 || RiskDifficulty(model.RiskHard) != 7 || RiskDifficulty("") != 5 {
+	if RiskDifficulty(model.RiskExtreme) != 9 || RiskDifficulty(model.RiskHard) != 7 || RiskDifficulty("") != 4 {
 		t.Fatal("risk table")
 	}
 	if DifficultyWords(5) != "обычно" || DifficultyWords(7) != "трудно" || DifficultyWords(9) != "очень трудно" || DifficultyWords(10) != "героически" {

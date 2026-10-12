@@ -308,7 +308,8 @@ func nonNilQuests(q []QuestInfo) []QuestInfo {
 // ориентиры сложности подходов (база без надбавки клетки).
 func generationLimits() limits {
 	return limits{ObjectsPerCell: model.MaxObjectsPerCell, ApproachesPerObj: model.MaxApproachesPerObj, DescriptionRunes: model.MaxCellDescRunes, CardRunes: model.MaxCardRunes,
-		DifficultyUsual: 5, DifficultyHard: 7, DifficultyExtreme: 9, CellDifficultyMax: 2}
+		DifficultyUsual: rules.RiskDifficulty(model.RiskNormal), DifficultyHard: rules.RiskDifficulty(model.RiskHard),
+		DifficultyExtreme: rules.RiskDifficulty(model.RiskExtreme), CellDifficultyMax: 2}
 }
 
 // Encode — JSON контекста для поля Input запроса.

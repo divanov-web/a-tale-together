@@ -61,7 +61,7 @@ func TestTexts_Notice(t *testing.T) {
 	g := model.Game{Title: "Мир", Mode: model.ModeBalanced}
 	res := model.ActionResult{Intent: model.Intent{RawText: "осмотреть доску"}, Status: model.ResultResolved, Summary: "осматривает: доска объявлений — успех", Check: &model.CheckInfo{Param: 6, Difficulty: 5, ChancePct: 60, Roll: 37}}
 	own := []model.Event{{Type: model.EventFactLearned, Visibility: model.VisibilityPrivate, Payload: json.RawMessage(`{"fact":"Гонца видели у башни."}`)}}
-	options := "Варианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%"
+	options := "Варианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 4, шанс 70%"
 	want := "«Мир» — раунд 1 — ваш итог\n\nЗаявка «осмотреть доску»: осматривает: доска объявлений — успех\nШанс был 60%\n• Гонца видели у башни.\n\n" + options + "\n\nСледующая заявка: /act <текст> после открытия раунда."
 	if got := noticeText(g, model.Round{RoundNo: 1}, res, own, rules.Preset(g.Mode), options); got != want {
 		t.Errorf("notice =\n%q\nwant\n%q", got, want)
@@ -92,12 +92,12 @@ func TestTexts_OptionsFor(t *testing.T) {
 	state := snapshot(w.game, chars, locations, nil, nil, def)
 	opts := narrator.Options(&state, def, model.ModeBalanced)
 	alice := state.Characters[0]
-	want := "Варианты для вас (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%\n• идти на север: Зал Серой башни"
+	want := "Варианты для вас (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 4, шанс 70%\n• идти на север: Зал Серой башни"
 	if got := optionsFor(alice, &state, opts, "Варианты для вас"); got != want {
 		t.Errorf("balanced =\n%q\nwant\n%q", got, want)
 	}
 	// B19: в «повествовании» личный шанс тоже в процентах, сложность берётся из вариантов этого режима.
-	if got := optionsFor(alice, &state, narrator.Options(&state, def, model.ModeNarrative), "Варианты на раунд 2"); got != "Варианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%\n• идти на север: Зал Серой башни" {
+	if got := optionsFor(alice, &state, narrator.Options(&state, def, model.ModeNarrative), "Варианты на раунд 2"); got != "Варианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 4, шанс 70%\n• идти на север: Зал Серой башни" {
 		t.Errorf("narrative = %q", got)
 	}
 	// Подвал: сложность локации 1, у плута без атлетики и воровства шансы 20 % и 30 %; снимок локальный (пункт 27):

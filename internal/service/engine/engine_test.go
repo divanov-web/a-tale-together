@@ -433,7 +433,7 @@ func TestScenario_S15_SpecialistAndWeak(t *testing.T) {
 		snap.Characters = []model.SnapshotCharacter{
 			{ID: 21, Nickname: "Плут", Status: model.CharacterActive, HP: 6, MaxHP: 6, LocationID: snap.Characters[0].LocationID, Conditions: []string{},
 				Attributes: map[string]int{"strength": 2, "agility": 5, "wits": 4, "will": 3}, Skills: map[string]int{"thievery": 3, "stealth": 3}},
-			{ID: 22, Nickname: "Дипломат", Status: model.CharacterActive, HP: 7, MaxHP: 7, LocationID: snap.Characters[0].LocationID, Conditions: []string{},
+			{ID: 22, Nickname: "Бард", Status: model.CharacterActive, HP: 7, MaxHP: 7, LocationID: snap.Characters[0].LocationID, Conditions: []string{},
 				Attributes: map[string]int{"strength": 3, "agility": 2, "wits": 4, "will": 5}, Skills: map[string]int{"persuasion": 3, "awareness": 2, "survival": 1}},
 		}
 		return snap

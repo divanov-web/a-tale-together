@@ -399,7 +399,7 @@ func TestCharacter_ValidationInDialog(t *testing.T) {
 	mustContain(t, h.send(bob, private(bob), "Боб"), "Пол персонажа: 1 — мужской, 2 — женский, 3 — не указывать")
 	mustContain(t, h.send(bob, private(bob), "0"), "ответьте 1 (мужской), 2 (женский) или 3 (не указывать)")
 	mustContain(t, h.send(bob, private(bob), "не указывать"), "Архетип")
-	mustContain(t, h.send(bob, private(bob), "бард"), "выберите архетип")
+	mustContain(t, h.send(bob, private(bob), "жрец"), "выберите архетип")
 	mustContain(t, h.send(bob, private(bob), "маг"), "Распределение")
 	mustContain(t, h.send(bob, private(bob), "2"), "Характеристики, сумма 14", "Например: 5 3 2 4")
 	mustContain(t, h.send(bob, private(bob), "4 4 4 4"), "сумма характеристик должна быть 14")
@@ -981,7 +981,7 @@ func TestButtons_ActOption(t *testing.T) {
 		t.Fatalf("notice keyboard = %+v (text %q)", notice.Keyboard, notice.Text)
 	}
 	// Без модели заявка по кнопке разобрана запасным разбором в подход объекта (не «ждёт»).
-	mustContain(t, aliceNotice.Text, "Заявка «разобрать приписку»: осматривает: доска объявлений", "Шанс был 20%")
+	mustContain(t, aliceNotice.Text, "Заявка «разобрать приписку»: осматривает: доска объявлений", "Шанс был 30%")
 	if strings.Contains(aliceNotice.Text, "ждёт") {
 		t.Fatalf("alice notice = %+v", aliceNotice)
 	}

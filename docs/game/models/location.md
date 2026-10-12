@@ -21,7 +21,7 @@
 |---|---|
 | `key`, `title` | ключ латиницей в snake_case, уникален внутри клетки; имя для игрока |
 | `state` | `locked / open / broken / closed …`; меняется событиями `object_changed` |
-| `approaches` | предлагаемые подходы (JSONB): `action` (`explore` / `interact`), `title`, `attribute`, `skill`, `difficulty` (0 и без характеристики — без броска; база 5 обычно, 7 трудно, 9 почти невозможно), `on_success` (`{"state": …}` для объекта или `{"object": key, "state": …}`, `{"reveal": key}`, `{"fact": текст}`), `on_fail` (`{"condition": …}`, `{"damage": N}`, `{"fact": …}`), `deadly` (провал не заменяется успехом с ценой в повествовании) |
+| `approaches` | предлагаемые подходы (JSONB): `action` (`explore` / `interact`), `title`, `attribute`, `skill`, `difficulty` (0 и без характеристики — без броска; база 4 обычно, 7 трудно, 9 почти невозможно), `on_success` (`{"state": …}` для объекта или `{"object": key, "state": …}`, `{"reveal": key}`, `{"fact": текст}`), `on_fail` (`{"condition": …}`, `{"damage": N}`, `{"fact": …}`), `deadly` (провал не заменяется успехом с ценой в повествовании) |
 | `hidden_until_revealed`, `revealed` | объект не виден и не доступен до события `reveal` |
 | `searched` | «ничего полезного»: повторный осмотр без изменения состояния находку не даёт (пункт 29) |
 

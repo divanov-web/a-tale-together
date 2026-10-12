@@ -16,7 +16,7 @@ const (
 )
 
 // Сложность свободного действия по оценке риска (docs/game/checks.md).
-var riskDifficulty = map[model.Risk]int{model.RiskNormal: 5, model.RiskHard: 7, model.RiskExtreme: 9}
+var riskDifficulty = map[model.Risk]int{model.RiskNormal: 4, model.RiskHard: 7, model.RiskExtreme: 9}
 
 // RiskDifficulty — базовая сложность по риску; неизвестный риск считается обычным.
 func RiskDifficulty(r model.Risk) int {
@@ -99,7 +99,7 @@ func ChanceWords(pct int) string {
 	return "почти невозможно"
 }
 
-// DifficultyWords — сложность словами для режима «повествование» (docs/game/checks.md: 5 обычно, 6–7 трудно,
+// DifficultyWords — сложность словами для режима «повествование» (docs/game/checks.md: до 5 обычно, 6–7 трудно,
 // 8–9 очень трудно, 10 и выше героически).
 func DifficultyWords(difficulty int) string {
 	switch {
