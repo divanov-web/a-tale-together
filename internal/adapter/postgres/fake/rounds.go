@@ -253,6 +253,19 @@ func (s *Store) SaveCharacterState(_ context.Context, game model.GameID, c model
 	return nil
 }
 
+// SaveCharacterKnowledge — см. postgres.Store.
+func (s *Store) SaveCharacterKnowledge(_ context.Context, game model.GameID, id model.CharacterID, knowledge []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ex, ok := s.chars[id]
+	if !ok || ex.GameID != game {
+		return model.ErrNotFound
+	}
+	ex.Knowledge = append([]string{}, knowledge...)
+	s.chars[id] = ex
+	return nil
+}
+
 // UpdateCharacterActivity — см. postgres.Store.
 func (s *Store) UpdateCharacterActivity(_ context.Context, game model.GameID, id model.CharacterID, status model.CharacterStatus, missed int) error {
 	s.mu.Lock()

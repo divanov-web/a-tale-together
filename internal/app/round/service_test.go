@@ -595,8 +595,9 @@ func TestResolve_Narrator(t *testing.T) {
 	events, _ := w.store.ListEvents(ctx, w.game.ID, r1.ID)
 	// Пункт 19: уход Элис из группы по умолчанию даёт `party_split` и пару событий перехода; пункт 27: первый вход
 	// фракции в зал — приватное `cell_discovered`, недостающие соседи зала (запад, восток) — шаблонные карточки
-	// `cell_generated`, потому что рассказчик упал.
-	if len(events) != 6 || events[0].Type != model.EventPartySplit || events[1].Type != model.EventCharacterMoved || events[3].Type != model.EventCellDiscovered || events[4].Type != model.EventCellGenerated || events[5].Type != model.EventCellGenerated {
+	// `cell_generated`, потому что рассказчик упал; пункт 28: первый этап шаблонного сюжетного квеста Ордена
+	// размещается в зале шаблонным объектом «след» (`object_created`, `quest_stage_placed`).
+	if len(events) != 8 || events[0].Type != model.EventPartySplit || events[1].Type != model.EventCharacterMoved || events[3].Type != model.EventCellDiscovered || events[4].Type != model.EventCellGenerated || events[5].Type != model.EventCellGenerated || events[6].Type != model.EventObjectCreated || events[7].Type != model.EventQuestStagePlaced {
 		t.Fatalf("events = %+v", events)
 	}
 	// Карта: три клетки мира, три шаблонных соседа площади от стартового пакета без модели, два соседа зала.
@@ -628,8 +629,9 @@ func TestResolve_Narrator(t *testing.T) {
 	llm.json = fmt.Sprintf(`{"intents":[{"submission_id":%d,"character_id":%d,"action_type":"explore","target":"notice_board","approach_idx":0,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}]}`, sub.ID, sub.CharacterID)
 	square, hall := byName["Рыночная площадь"], byName["Зал Серой башни"]
 	// Сцены по группам (пункт 19): 1 — «Ночной дозор» на площади, 2 — «Вольные клинки» в зале.
-	// Событие осмотра — seq 7: в первом раунде шесть событий (пункт 27 добавил открытие клетки и две карточки).
-	llm.narr = `{"chronicle":"Осень в Мире густеет.","scenes":[{"scene_id":1,"text":"Боб читает объявление.","event_seqs":[7]},{"scene_id":2,"text":"Элис ждёт в зале.","event_seqs":[]}]}`
+	// Событие осмотра — seq 9: в первом раунде восемь событий (пункт 27 добавил открытие клетки и две карточки,
+	// пункт 28 — объект и привязку шаблонного этапа квеста).
+	llm.narr = `{"chronicle":"Осень в Мире густеет.","scenes":[{"scene_id":1,"text":"Боб читает объявление.","event_seqs":[9]},{"scene_id":2,"text":"Элис ждёт в зале.","event_seqs":[]}]}`
 	w.tick(t, 10*time.Minute)
 	info, _ = w.svc.Info(ctx, w.game)
 	r2 := *info.Last
@@ -652,7 +654,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if chron.ID == 0 {
 		t.Fatalf("chronicle message for round 2 missing: %+v", w.outbox(t))
 	}
-	want := "Раунд 2\n\nОсень в Мире густеет.\n\n— Ночной дозор (Рыночная площадь) —\nБоб (@Боб) читает объявление.\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n• идти на север: Зал Серой башни\n• идти на юг: Неизведанные земли\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли\n\n— Вольные клинки (Зал Серой башни) —\nЭлис (@Элис) ждёт в зале.\n\nВарианты:\n• идти на север: Подвал башни\n• идти на юг: Рыночная площадь\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли"
+	want := "Раунд 2\n\nОсень в Мире густеет.\n\n— Ночной дозор (Рыночная площадь) —\nБоб (@Боб) читает объявление.\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n• идти на север: Зал Серой башни\n• идти на юг: Неизведанные земли\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли\n\n— Вольные клинки (Зал Серой башни) —\nЭлис (@Элис) ждёт в зале.\n\nВарианты:\n• разобраться на месте (без броска)\n• идти на север: Подвал башни\n• идти на юг: Рыночная площадь\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли"
 	if chron.Text != want {
 		t.Fatalf("chronicle text = %q\nwant %q", chron.Text, want)
 	}

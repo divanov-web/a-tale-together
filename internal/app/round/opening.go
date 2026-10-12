@@ -11,9 +11,10 @@ import (
 
 // opening — завязка истории и стартовый пакет при `/begin` (ADR-0018, ADR-0019): рассказчик придумывает начало по
 // жанру, фракциям, стартовой клетке и открытым описаниям персонажей, описывает стартовую клетку с объектами и
-// даёт карточки недостающих соседей одним вызовом с ролью `opening` через `app/llm.Complete` (модель рассказчика
-// профиля; ответ сохраняется по ключу задания). Без провайдера или при сбое — стартовая сцена и клетка шаблона
-// жанра, соседи «неизведанные земли». Возвращает текст без заголовка; ошибка — только у записи в хранилище.
+// даёт карточки недостающих соседей, цель и сюжетный квест каждой фракции (пункт 28, ADR-0020) одним вызовом с
+// ролью `opening` через `app/llm.Complete` (модель рассказчика профиля; ответ сохраняется по ключу задания). Без
+// провайдера или при сбое — стартовая сцена и клетка шаблона жанра, соседи «неизведанные земли», цели и квесты из
+// шаблона. Возвращает текст без заголовка; ошибка — только у записи в хранилище.
 func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, genre model.Genre, factions []model.Faction, chars []model.Character, locs []model.Location) (string, error) {
 	fallback := openingTemplate(g, genre.Template.OpeningScene, factions)
 	var start model.Location
@@ -36,16 +37,25 @@ func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, ge
 			tasks = append(tasks, narrator.NeighborTask{X: x, Y: y, Direction: d, Of: start.ID, OfName: start.Name})
 		}
 	}
+	questTasks, goalTasks := startQuestTasks(factions, genre.Template)
+	templateQuests := func() (string, error) {
+		quests, _, goals := narrator.TemplateQuests(narrator.Tasks{Quests: questTasks, Goals: goalTasks, StoryTemplate: genre.Template.StoryQuest})
+		if err := s.startQuests(ctx, g, quests, goals); err != nil {
+			return "", err
+		}
+		return fallback, s.startPackage(ctx, g, start, narrator.OpeningResult{}, tasks)
+	}
 	if s.LLM == nil || start.ID == 0 {
 		s.journal(ctx, g, chat.TelegramChatID, model.Round{}, "opening", map[string]any{"fallback": "рассказчик не настроен: стартовая сцена жанра"})
-		return fallback, s.startPackage(ctx, g, start, narrator.OpeningResult{}, tasks)
+		return templateQuests()
 	}
 	def, err := s.characterDef(ctx, g)
 	if err != nil {
 		return "", err
 	}
 	p := narrator.OpeningParams{Title: g.Title, Genre: genre.Title, Tone: genre.Template.Tone, Mode: g.Mode, Def: def, Neighbors: tasks,
-		Start: narrator.OpeningStart{LocationID: start.ID, Name: start.Name, Description: start.Description, Terrain: start.Terrain, Objects: []string{}}}
+		Start:  narrator.OpeningStart{LocationID: start.ID, Name: start.Name, Description: start.Description, Terrain: start.Terrain, Objects: []string{}},
+		Quests: questTasks, Goals: goalTasks, Template: genre.Template.StoryQuest}
 	for _, o := range start.Objects {
 		p.Start.Objects = append(p.Start.Objects, o.Title)
 	}
@@ -72,11 +82,14 @@ func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, ge
 	if err != nil {
 		s.logger.Warn("opening unavailable, genre template", slog.Int64("game_id", int64(g.ID)), slog.Any("err", err))
 		s.journal(ctx, g, chat.TelegramChatID, model.Round{}, "opening", map[string]any{"fallback": "стартовая сцена жанра", "error": err.Error(), "calls": res.Calls})
-		return fallback, s.startPackage(ctx, g, start, narrator.OpeningResult{}, tasks)
+		return templateQuests()
 	}
 	s.logger.Info("opening narrated", slog.Int64("game_id", int64(g.ID)), slog.Int("calls", res.Calls), slog.Int("issues", len(res.Issues)),
-		slog.Bool("start_from_model", res.Start != nil), slog.Int("neighbors", len(res.Neighbors)),
+		slog.Bool("start_from_model", res.Start != nil), slog.Int("neighbors", len(res.Neighbors)), slog.Int("quests", len(res.Quests)), slog.Int("goals", len(res.Goals)),
 		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
-	s.journal(ctx, g, chat.TelegramChatID, model.Round{}, "opening", map[string]any{"calls": res.Calls, "issues": res.Issues, "text": res.Text, "start": res.Start, "neighbors": res.Neighbors})
+	s.journal(ctx, g, chat.TelegramChatID, model.Round{}, "opening", map[string]any{"calls": res.Calls, "issues": res.Issues, "text": res.Text, "start": res.Start, "neighbors": res.Neighbors, "quests": res.Quests, "goals": res.Goals})
+	if err := s.startQuests(ctx, g, res.Quests, res.Goals); err != nil {
+		return "", err
+	}
 	return res.Text, s.startPackage(ctx, g, start, res, tasks)
 }

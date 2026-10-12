@@ -12,7 +12,6 @@ import (
 
 	applm "taletogether/internal/app/llm"
 	"taletogether/internal/model"
-	"taletogether/internal/service/engine"
 	"taletogether/internal/service/narrator"
 )
 
@@ -120,20 +119,7 @@ func (s *Service) applyWorld(ctx context.Context, g model.Game, r model.Round, s
 			return nil, err
 		}
 	}
-	if len(events) == 0 {
-		return nil, nil
-	}
-	offset, err := s.store.NextEventSeq(ctx, g.ID)
-	if err != nil {
-		return nil, err
-	}
-	for i := range events {
-		events[i].Seq = offset + int64(i)
-	}
-	if err := s.store.AppendEvents(ctx, events); err != nil {
-		return nil, err
-	}
-	if err := engine.Apply(state, events); err != nil {
+	if err := s.commitEvents(ctx, g, state, events); err != nil {
 		return nil, err
 	}
 	return events, nil

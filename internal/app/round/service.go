@@ -40,7 +40,15 @@ type Store interface {
 	ResetWorld(ctx context.Context, game model.GameID) error
 	GetGenerationJob(ctx context.Context, game model.GameID, round *model.RoundID, role model.LLMRole, hash string) (model.GenerationJob, error)
 	SaveGenerationJob(ctx context.Context, j model.GenerationJob) error
+	CreateQuest(ctx context.Context, q model.Quest) (model.Quest, error)
+	UpdateQuest(ctx context.Context, q model.Quest) error
+	UpdateQuestStage(ctx context.Context, st model.QuestStage) error
+	ListQuests(ctx context.Context, game model.GameID) ([]model.Quest, error)
+	CreateFactionGoal(ctx context.Context, g model.FactionGoal) (model.FactionGoal, error)
+	ListFactionGoals(ctx context.Context, game model.GameID) ([]model.FactionGoal, error)
+	SetFactionExplored(ctx context.Context, game model.GameID, faction model.FactionID, n int) error
 	SaveCharacterState(ctx context.Context, game model.GameID, c model.Character) error
+	SaveCharacterKnowledge(ctx context.Context, game model.GameID, id model.CharacterID, knowledge []string) error
 	NextEventSeq(ctx context.Context, game model.GameID) (int64, error)
 	AppendEvents(ctx context.Context, events []model.Event) error
 	ListEvents(ctx context.Context, game model.GameID, round model.RoundID) ([]model.Event, error)

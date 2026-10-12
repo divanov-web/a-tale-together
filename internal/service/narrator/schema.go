@@ -3,12 +3,13 @@ package narrator
 import "encoding/json"
 
 // PromptVersion — версия промпта рассказчика, пишется в `llm_runs.prompt_version` и `rounds.narration`.
-const PromptVersion = "narrator/v4"
+const PromptVersion = "narrator/v5"
 
 // Schema — JSON-схема ответа модели: общий текст раунда, блок на сцену (`scene_id` из входа: группа в локации или
 // персонажи без группы) с упомянутыми событиями (docs/llm/round-calls.md) и пакет мира `world` (пункт 27: клетки
 // для детализации и карточки соседей по заданиям `generate`; без заданий — пустые массивы). Локацию и подпись
-// сцены подставляет код.
+// сцены подставляет код. Пункт 28: `world.quests`, `world.stages`, `world.goals` по заданиям `generate.quests`,
+// `generate.stages`, `generate.goals`.
 var Schema = json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -30,9 +31,12 @@ var Schema = json.RawMessage(`{
       "type": "object",
       "properties": {
         "cells": {"type": "array", "items": ` + cellSchema + `},
-        "neighbors": {"type": "array", "items": ` + neighborSchema + `}
+        "neighbors": {"type": "array", "items": ` + neighborSchema + `},
+        "quests": {"type": "array", "items": ` + questSchema + `},
+        "stages": {"type": "array", "items": ` + stagePlacementSchema + `},
+        "goals": {"type": "array", "items": ` + goalSchema + `}
       },
-      "required": ["cells", "neighbors"],
+      "required": ["cells", "neighbors", "quests", "stages", "goals"],
       "additionalProperties": false
     }
   },

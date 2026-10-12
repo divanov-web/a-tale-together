@@ -161,6 +161,15 @@ func chronicleText(g model.Game, r model.Round, events []model.Event, state *mod
 	return fmt.Sprintf("%s — итоги\n\n%s", header(g, r.RoundNo), strings.Join(lines, "\n"))
 }
 
+// rewardFact — факт награды из события `quest_stage_done`.
+func rewardFact(ev model.Event) string {
+	var p struct {
+		Reward model.StageReward `json:"reward"`
+	}
+	_ = json.Unmarshal(ev.Payload, &p)
+	return p.Reward.Fact
+}
+
 // noticeText — уведомление о заявке игроку (с названием мира: у игрока может быть несколько игр): статус, исход,
 // проверка (числа по режиму), приватные события персонажа, варианты следующего раунда по его локации (B15).
 func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model.Event, preset rules.ModePreset, options string) string {
@@ -203,6 +212,20 @@ func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model
 			facts = append(facts, "• состояние: "+narrator.ConditionWords(payloadStr(ev, "condition")))
 		case model.EventHPChanged:
 			facts = append(facts, fmt.Sprintf("• HP: %s", payloadStr(ev, "to")))
+		case model.EventQuestIssued:
+			facts = append(facts, fmt.Sprintf("• новое дело фракции: «%s» — %s", payloadStr(ev, "quest"), payloadStr(ev, "summary")))
+		case model.EventQuestStagePlaced:
+			facts = append(facts, fmt.Sprintf("• «%s»: этап «%s» — здесь, в «%s»", payloadStr(ev, "quest"), payloadStr(ev, "stage"), payloadStr(ev, "cell")))
+		case model.EventQuestStageDone:
+			line := fmt.Sprintf("• «%s»: этап «%s» выполнен", payloadStr(ev, "quest"), payloadStr(ev, "stage"))
+			if reward := rewardFact(ev); reward != "" {
+				line += " — " + reward
+			}
+			facts = append(facts, line)
+		case model.EventQuestDone:
+			facts = append(facts, fmt.Sprintf("• «%s» завершён", payloadStr(ev, "quest")))
+		case model.EventGoalRevised:
+			facts = append(facts, fmt.Sprintf("• цель фракции теперь: %s", payloadStr(ev, "text")))
 		}
 	}
 	if len(facts) > 0 {

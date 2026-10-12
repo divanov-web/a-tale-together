@@ -11,5 +11,6 @@
 | Жанр | [genre.md](genre.md) | `genres.template` |
 | Клетка и объекты | [location.md](location.md) | `locations` (сетка `x`, `y`, стадия), `world_objects` |
 | NPC | [npc.md](npc.md) | `npcs` (таблица с пункта 27, поведение — пункт 30) |
+| Квест, этап, цель фракции | [quest.md](quest.md) | `quests`, `quest_stages`, `faction_goals`, `settings.max_story_quests` / `max_side_quests`, шаблон `genres.template.story_quest` |
 
 Правила моделей: ключи в JSON на английском в snake_case; русские названия для игрока в поле `title`; каждая модель несёт `schema_version`; движок валидирует данные по модели, LLM их не меняет.

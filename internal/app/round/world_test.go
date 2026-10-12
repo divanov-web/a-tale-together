@@ -15,13 +15,66 @@ import (
 )
 
 // worldLLM — рассказчик, который достраивает мир по заданиям из входа (как сделала бы модель): каждой клетке из
-// `generate.cells` — описание и объект с подходом без броска, каждому соседу — карточка; сцены по входу, все события
-// упомянуты. Интерпретатор недоступен: заявки разбирает код (`идти north`). Завязка — стартовый пакет из opening.
+// `generate.cells` — описание и объект с подходом без броска, каждому соседу — карточка; по заданиям квестов
+// (пункт 28) — квест с минимальным числом этапов (первый на расстоянии 1, условие `fact`), размещение этапа объектом
+// «зацепка» с подходом без броска и условием по виду из задания (`fact` — его факт, `visited`, `object_state` —
+// «камень», который сдвигают), цель фракции; сцены по входу, все события упомянуты.
+// Интерпретатор недоступен: заявки разбирает код (`идти north`). Завязка — стартовый пакет из opening.
 type worldLLM struct {
 	opening   string
 	calls     map[model.LLMRole]int
 	generated int // клеток и соседей, выданных моделью
+	quests    int // квестов, выданных моделью
+	placed    int // этапов, размещённых моделью
 	inputs    []string
+}
+
+// questBlock — задания по квестам во входе рассказчика.
+type questBlock struct {
+	Quests []narrator.QuestTask `json:"quests"`
+	Stages []narrator.StageTask `json:"stages"`
+	Goals  []narrator.GoalTask  `json:"goals"`
+}
+
+// answerQuests — ответ фейка на задания по квестам.
+func (w *worldLLM) answerQuests(q *questBlock) (quests, stages, goals []map[string]any) {
+	quests, stages, goals = []map[string]any{}, []map[string]any{}, []map[string]any{}
+	if q == nil {
+		return
+	}
+	for _, task := range q.Quests {
+		w.quests++
+		st := []map[string]any{}
+		for i := 0; i < task.MinStages; i++ {
+			cond := "fact"
+			if i > 0 {
+				cond = "visited"
+			}
+			st = append(st, map[string]any{"key": fmt.Sprintf("step_%d", i+1), "title": fmt.Sprintf("Шаг %d", i+1), "summary": "Сделать шаг.", "distance": 1, "condition": cond, "reward": "Награда за шаг."})
+		}
+		quests = append(quests, map[string]any{"faction": task.Faction, "title": "Дело " + string(task.Kind), "summary": "Описание дела.", "stages": st})
+	}
+	for _, task := range q.Stages {
+		w.placed++
+		fact := "Подсказка: " + task.StageTitle
+		key := "clue_" + task.StageKey
+		object := map[string]any{"key": key, "title": "зацепка", "description": "", "state": "", "hidden": false,
+			"approaches": []map[string]any{{"action": "explore", "title": "изучить зацепку", "attribute": nil, "skill": nil, "difficulty": 0, "on_success": map[string]any{"state": nil, "reveal": nil, "fact": fact}, "on_fail": nil}}}
+		condition := map[string]any{"kind": "fact", "object": nil, "state": nil, "fact": fact}
+		switch task.ConditionKind {
+		case model.ConditionVisited:
+			condition = map[string]any{"kind": "visited", "object": nil, "state": nil, "fact": nil}
+		case model.ConditionObjectState:
+			object = map[string]any{"key": key, "title": "камень вожака", "description": "", "state": "in_place", "hidden": false,
+				"approaches": []map[string]any{{"action": "interact", "title": "сдвинуть камень", "attribute": nil, "skill": nil, "difficulty": 0, "on_success": map[string]any{"state": "moved", "reveal": nil, "fact": nil}, "on_fail": nil}}}
+			condition = map[string]any{"kind": "object_state", "object": key, "state": "moved", "fact": nil}
+		}
+		stages = append(stages, map[string]any{"quest_id": task.QuestID, "stage_key": task.StageKey, "condition": condition, "objects": []map[string]any{object}})
+	}
+	for _, task := range q.Goals {
+		goals = append(goals, map[string]any{"faction": task.Faction, "text": "Цель фракции " + task.Faction + " после «" + task.Closed + "».", "stage": "дальше"})
+	}
+	return
 }
 
 func (w *worldLLM) Complete(_ context.Context, call applm.Call, req model.LLMRequest) (model.LLMResponse, error) {
@@ -49,6 +102,7 @@ func (w *worldLLM) Complete(_ context.Context, call applm.Call, req model.LLMReq
 		Generate *struct {
 			Cells     []narrator.CellTask     `json:"cells"`
 			Neighbors []narrator.NeighborTask `json:"neighbors"`
+			Quests    *questBlock             `json:"quests"`
 		} `json:"generate"`
 	}
 	if err := json.Unmarshal([]byte(req.Input), &in); err != nil {
@@ -67,7 +121,9 @@ func (w *worldLLM) Complete(_ context.Context, call applm.Call, req model.LLMReq
 		scenes = append(scenes, map[string]any{"scene_id": sc.SceneID, "text": "Группа идёт дальше.", "event_seqs": own})
 	}
 	cells, neighbors := []map[string]any{}, []map[string]any{}
+	quests, stages, goals := []map[string]any{}, []map[string]any{}, []map[string]any{}
 	if in.Generate != nil {
+		quests, stages, goals = w.answerQuests(in.Generate.Quests)
 		for _, c := range in.Generate.Cells {
 			w.generated++
 			cells = append(cells, map[string]any{"location_id": c.LocationID, "name": c.Name + " (подробно)", "description": "Описание клетки " + c.Name + ".", "difficulty": 0,
@@ -79,12 +135,24 @@ func (w *worldLLM) Complete(_ context.Context, call applm.Call, req model.LLMReq
 			neighbors = append(neighbors, map[string]any{"x": n.X, "y": n.Y, "name": fmt.Sprintf("Клетка %d,%d", n.X, n.Y), "terrain": "forest", "card": "Лес шумит."})
 		}
 	}
-	raw, _ := json.Marshal(map[string]any{"chronicle": "Ветер.", "scenes": scenes, "world": map[string]any{"cells": cells, "neighbors": neighbors}})
+	raw, _ := json.Marshal(map[string]any{"chronicle": "Ветер.", "scenes": scenes, "world": map[string]any{"cells": cells, "neighbors": neighbors, "quests": quests, "stages": stages, "goals": goals}})
 	return model.LLMResponse{JSON: raw, TokensIn: 100, TokensOut: 50}, nil
 }
 
-// startPackageJSON — ответ завязки: стартовая клетка с объектом и четыре карточки соседей.
+// startPackageJSON — ответ завязки: стартовая клетка с объектом, четыре карточки соседей, цель и сюжетный квест
+// каждой фракции (пункт 28): у Ордена три этапа (первый — факт на расстоянии 1), у Гильдии — три этапа.
 const startPackageJSON = `{"text":"Над площадью туман, Элис, Боб и Кэт ждут вестей. Ветер приносит запах дыма с севера, и никто не знает, откуда он. Торговцы закрывают лавки раньше времени. Кто-то должен пойти и посмотреть.",
+ "factions":[
+  {"code":"good","goal":{"text":"Узнать, откуда дым, и защитить город.","stage":"тревога"},
+   "quest":{"faction":"good","title":"Дым с севера","summary":"Кто-то жжёт костры на севере; надо понять, кто и зачем.",
+    "stages":[{"key":"smoke_source","title":"Найти источник дыма","summary":"Понять, откуда идёт дым.","distance":1,"condition":"fact","reward":"Дым идёт от лагеря на холме."},
+              {"key":"camp","title":"Выйти к лагерю","summary":"Добраться до лагеря.","distance":2,"condition":"visited","reward":""},
+              {"key":"chief","title":"Договориться с вожаком","summary":"Вожак должен согласиться уйти.","distance":1,"condition":"object_state","reward":"Лагерь снимается."}]}},
+  {"code":"evil","goal":{"text":"Обернуть тревогу города себе на пользу.","stage":"выжидание"},
+   "quest":{"faction":"evil","title":"Тёмный груз","summary":"Пока Орден смотрит на север, провезти груз.",
+    "stages":[{"key":"contact","title":"Найти связного","summary":"Связной ждёт за воротами.","distance":1,"condition":"fact","reward":"Связной: груз в южной сторожке."},
+              {"key":"lodge","title":"Добраться до сторожки","summary":"Дойти до сторожки.","distance":1,"condition":"visited","reward":""},
+              {"key":"cargo","title":"Забрать груз","summary":"Сундук должен быть открыт.","distance":1,"condition":"object_state","reward":"Груз у Гильдии."}]}}],
  "start":{"location_id":%d,"name":"Площадь у колодца","description":"Сердце города; у колодца толпа.","difficulty":0,"objects":[{"key":"well","title":"колодец","description":"","state":"","hidden":false,"approaches":[{"action":"explore","title":"заглянуть в колодец","attribute":"wits","skill":"awareness","difficulty":5,"on_success":{"state":null,"reveal":null,"fact":"На дне блестит кольцо."},"on_fail":null}]}]},
  "neighbors":[{"direction":"north","name":"Опушка","terrain":"forest","card":"Кромка леса."},{"direction":"south","name":"Южные ворота","terrain":"town","card":"Ворота на тракт."},{"direction":"west","name":"Переулки","terrain":"town","card":"Тесные дворы."},{"direction":"east","name":"Рынок","terrain":"town","card":"Торговые ряды."}]}`
 
@@ -210,7 +278,15 @@ func TestSixSteps_North(t *testing.T) {
 			t.Fatalf("after step %d: %d cells, want %d", step, got, 5+3*step)
 		}
 		cell := w.at(t, 0, step)
-		if cell.Stage != model.StageDetailed || !strings.HasSuffix(cell.Name, "(подробно)") || len(cell.Objects) != 1 || cell.VisitedAt == nil {
+		// Пункт 28: в клетке объект рассказчика, а если здесь разместился этап квеста — ещё «зацепка»: шаг 1 — первый
+		// этап стартового сюжетного квеста (расстояние 1 от площади); шаг 2 — первый этап побочного квеста, выданного
+		// на шаге 1 за одну открытую клетку; шаг 6 — первый этап второго сюжетного, выданного на шаге 5 после ещё
+		// четырёх клеток (порог 4 при двух активных).
+		objects := 1
+		if step == 1 || step == 2 || step == 6 {
+			objects = 2
+		}
+		if cell.Stage != model.StageDetailed || !strings.HasSuffix(cell.Name, "(подробно)") || len(cell.Objects) != objects || cell.VisitedAt == nil {
 			t.Fatalf("step %d: entered cell = %+v", step, cell)
 		}
 		for _, d := range []model.Direction{model.North, model.West, model.East} {
@@ -230,9 +306,20 @@ func TestSixSteps_North(t *testing.T) {
 	if llm.generated != 6*4 || llm.calls[model.RoleNarrator] != 6 {
 		t.Fatalf("generated = %d, narrator calls = %d", llm.generated, llm.calls[model.RoleNarrator])
 	}
+	// Счётчик Ордена: 1 → выдача побочного (−1) → 0, затем 4 → выдача сюжетного (−4) → 0, шаг 6 → 1; Гильдия не ходила.
 	factions, _ := w.store.ListFactions(ctx, w.game.ID)
-	if factions[0].ExploredSinceReset != 6 || factions[1].ExploredSinceReset != 0 {
+	if factions[0].ExploredSinceReset != 1 || factions[1].ExploredSinceReset != 0 {
 		t.Fatalf("explored = %+v", factions)
+	}
+	quests, _ := w.store.ListQuests(ctx, w.game.ID)
+	kinds := []model.QuestKind{}
+	for _, q := range quests {
+		if q.FactionID == factions[0].ID {
+			kinds = append(kinds, q.Kind)
+		}
+	}
+	if fmt.Sprint(kinds) != "[story side story]" || len(quests) != 4 || llm.quests != 2 || llm.placed != 3 {
+		t.Fatalf("quests = %v (all %d), model quests %d, placed %d", kinds, len(quests), llm.quests, llm.placed)
 	}
 	// Возврат на юг в известную клетку: заданий нет, карта не растёт, открытий нет.
 	w.reload(t)
@@ -249,7 +336,7 @@ func TestSixSteps_North(t *testing.T) {
 		t.Fatalf("return generated tasks: %s", last)
 	}
 	factions, _ = w.store.ListFactions(ctx, w.game.ID)
-	if factions[0].ExploredSinceReset != 6 {
+	if factions[0].ExploredSinceReset != 1 {
 		t.Fatalf("explored after return = %+v", factions)
 	}
 	if d, _ := w.store.ListDiscoveries(ctx, w.game.ID); len(d) != 6 || len(d[w.at(t, 0, 3).ID]) != 1 {
@@ -313,8 +400,12 @@ func TestRound_RetryReusesGeneration(t *testing.T) {
 	if got := len(w.locations(t)); got != 8 {
 		t.Fatalf("cells after retry = %d", got)
 	}
-	if cell := w.at(t, 0, 1); cell.Name != "Опушка (подробно)" || len(cell.Objects) != 1 {
+	// Объект рассказчика и «зацепка» первого этапа сюжетного квеста (пункт 28): этап размещён один раз.
+	if cell := w.at(t, 0, 1); cell.Name != "Опушка (подробно)" || len(cell.Objects) != 2 || cell.Objects[1].Key != "clue_smoke_source" {
 		t.Fatalf("entered cell = %+v", cell)
+	}
+	if quests, _ := w.store.ListQuests(ctx, w.game.ID); len(quests) != 3 || quests[0].Stages[0].Status != model.StageBound {
+		t.Fatalf("quests after retry = %+v", quests)
 	}
 }
 

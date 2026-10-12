@@ -112,22 +112,44 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 	}
 	m.EngineMS, step = s.lap(step)
 	r.Status = model.RoundPublished
+	qs, err := s.loadQuests(ctx, g, genre)
+	if err != nil {
+		return err
+	}
+	closed, err := s.checkQuests(ctx, g, r, &state, &qs)
+	if err != nil {
+		return err
+	}
 	tasks, err := s.planTasks(ctx, g, &state)
 	if err != nil {
 		return err
 	}
+	tasks.Quests, tasks.Stages, tasks.Goals = s.questTasks(g, &qs, &state)
+	tasks.StoryTemplate = genre.Template.StoryQuest
 	var pkg narrator.WorldPackage
-	r.Narration, pkg = s.narrate(ctx, g, chat, r, genre, def, &state, chars, result.Events, tasks, m)
+	r.Narration, pkg = s.narrate(ctx, g, chat, r, genre, def, &state, chars, result.Events, tasks, questContext(&qs), m)
 	m.NarrateMS, step = s.lap(step)
 	generated, err := s.applyWorld(ctx, g, r, &state, pkg, now)
 	if err != nil {
 		return err
 	}
 	m.WorldCells, m.WorldTemplated = len(pkg.Cells)+len(pkg.Neighbors), pkg.Templated()
+	questEvents, err := s.applyQuests(ctx, g, r, &state, pkg, &qs, m)
+	if err != nil {
+		return err
+	}
+	closedAfter, err := s.checkQuests(ctx, g, r, &state, &qs)
+	if err != nil {
+		return err
+	}
+	m.StagesDone = countStagesDone(closed) + countStagesDone(closedAfter)
+	result.Events = append(result.Events, closed...)
+	result.Events = append(result.Events, questEvents...)
+	result.Events = append(result.Events, closedAfter...)
 	if r.Narration != nil {
 		relabel(r.Narration, &state)
 	}
-	s.journal(ctx, g, chat.TelegramChatID, r, "resolved", map[string]any{"results": result.Results, "events": result.Events, "world": generated})
+	s.journal(ctx, g, chat.TelegramChatID, r, "resolved", map[string]any{"results": result.Results, "events": result.Events, "world": generated, "quests": append(append(closed, questEvents...), closedAfter...)})
 	if err := s.publish(ctx, g, chat, r, &state, result, def, m); err != nil {
 		return err
 	}
@@ -189,17 +211,17 @@ func (s *Service) interpret(ctx context.Context, g model.Game, chat model.Chat, 
 }
 
 // narrate — вызов 2 из 2 (docs/llm/round-calls.md): публичные и локационные события, состояние после свёртки,
-// описания персонажей как данные, выжимка прошлых хроник и задания на достройку мира (пункт 27) → хроника по сценам
-// и пакет мира через `app/llm.Complete` с ролью `narrator` (ответ сохраняется по ключу задания, ADR-0019). Без
+// описания персонажей как данные, выжимка прошлых хроник, задания на достройку мира (пункт 27) и по квестам с
+// активными квестами для подсказок (пункт 28) → хроника по сценам и пакет мира через `app/llm.Complete` с ролью `narrator` (ответ сохраняется по ключу задания, ADR-0019). Без
 // провайдера, при сбое, утечке или превышении бюджета — nil и шаблонный пакет: публикуется шаблонная хроника,
 // клетки получают шаблон, раунд не откатывается.
-func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, state *model.RoundSnapshot, chars []model.Character, events []model.Event, tasks narrator.Tasks, m *model.RoundMetrics) (*model.Narration, narrator.WorldPackage) {
+func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, state *model.RoundSnapshot, chars []model.Character, events []model.Event, tasks narrator.Tasks, quests []narrator.QuestInfo, m *model.RoundMetrics) (*model.Narration, narrator.WorldPackage) {
 	if s.LLM == nil {
 		m.NarratorFallback = true
 		s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"fallback": "рассказчик не настроен: шаблонная хроника", "world_template": !tasks.Empty()})
 		return nil, narrator.TemplateWorld(tasks)
 	}
-	p := narrator.Params{Title: g.Title, Tone: genre.Template.Tone, Mode: g.Mode, RoundNo: r.RoundNo, Opening: g.OpeningScene, State: state, Bios: map[model.CharacterID]narrator.Bio{}, Events: visibility.Public(events), Def: def, Tasks: tasks}
+	p := narrator.Params{Title: g.Title, Tone: genre.Template.Tone, Mode: g.Mode, RoundNo: r.RoundNo, Opening: g.OpeningScene, State: state, Bios: map[model.CharacterID]narrator.Bio{}, Events: visibility.Public(events), Def: def, Tasks: tasks, Quests: quests}
 	for _, c := range chars {
 		p.Bios[c.ID] = narrator.Bio{Public: c.PublicBio, Secret: c.SecretBio}
 	}
@@ -231,10 +253,22 @@ func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r 
 	s.logger.Info("round narrated", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)),
 		slog.Int("scenes", len(res.Narration.Scenes)), slog.Int("calls", res.Calls), slog.Int("patched", res.Patched), slog.Int("issues", len(res.Issues)),
 		slog.Int("cells", len(res.World.Cells)), slog.Int("neighbors", len(res.World.Neighbors)), slog.Int("templated", res.World.Templated()),
+		slog.Int("quests", len(res.World.Quests)), slog.Int("stages", len(res.World.Stages)), slog.Int("goals", len(res.World.Goals)),
 		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
 	s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"calls": res.Calls, "patched": res.Patched, "issues": res.Issues, "narration": res.Narration, "world": res.World})
 	m.LLMCalls, m.TokensIn, m.TokensOut, m.Patched, m.Issues = m.LLMCalls+res.Calls, m.TokensIn+res.TokensIn, m.TokensOut+res.TokensOut, res.Patched, len(res.Issues)
 	return &res.Narration, res.World
+}
+
+// countStagesDone — число закрытых этапов среди событий квестов.
+func countStagesDone(events []model.Event) int {
+	n := 0
+	for _, ev := range events {
+		if ev.Type == model.EventQuestStageDone {
+			n++
+		}
+	}
+	return n
 }
 
 // relabel обновляет подписи сцен после пакета мира: клетка могла получить имя от рассказчика.

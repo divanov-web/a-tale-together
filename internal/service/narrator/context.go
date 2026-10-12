@@ -45,7 +45,8 @@ type Params struct {
 	Bios     map[model.CharacterID]Bio `json:"bios"`
 	Events   []model.Event             `json:"events"` // только public и location (visibility.Public)
 	Def      model.CharacterModelDef   `json:"character_model"`
-	Tasks    Tasks                     `json:"tasks"` // задания на достройку мира (пункт 27); пусто — пакет мира не нужен
+	Tasks    Tasks                     `json:"tasks"`  // задания на достройку мира (пункт 27) и квесты (пункт 28); пусто — пакет мира не нужен
+	Quests   []QuestInfo               `json:"quests"` // активные квесты фракций для подсказок (пункт 28)
 }
 
 // Input — переменная часть вызова: мир, сцены, события, подходы следующего раунда, задания на достройку мира.
@@ -54,6 +55,7 @@ type Input struct {
 	Scenes     []scene      `json:"scenes"`
 	Events     []event      `json:"events"`
 	Approaches []approachIn `json:"approaches"`
+	Quests     []QuestInfo  `json:"quests"`             // пункт 28: активные квесты, ближайший этап, закрытые этапы
 	Generate   *generate    `json:"generate,omitempty"` // пункт 27: что достроить; nil — заданий нет
 }
 
@@ -68,10 +70,11 @@ type world struct {
 
 // generate — задания на генерацию с лимитами и ключами модели персонажа для подходов.
 type generate struct {
-	Cells          []CellTask     `json:"cells"`
-	Neighbors      []NeighborTask `json:"neighbors"`
-	Limits         limits         `json:"limits"`
-	CharacterModel modelInfo      `json:"character_model"`
+	Cells          []CellTask      `json:"cells"`
+	Neighbors      []NeighborTask  `json:"neighbors"`
+	Limits         limits          `json:"limits"`
+	CharacterModel modelInfo       `json:"character_model"`
+	Quests         *generateQuests `json:"quests,omitempty"` // пункт 28: новые квесты, этапы, цели
 }
 
 type limits struct {
@@ -170,7 +173,7 @@ type sceneKey struct {
 // данные, видимые объекты и выходы; события только public и location, числа броска — в режиме «механика»; подходы
 // следующего раунда без шансов (их код припишет сам). Сцена без персонажей не нужна; лидер группы не передаётся.
 func BuildInput(p Params) Input {
-	in := Input{Scenes: []scene{}, Events: []event{}, Approaches: []approachIn{}}
+	in := Input{Scenes: []scene{}, Events: []event{}, Approaches: []approachIn{}, Quests: nonNilQuests(p.Quests)}
 	in.World = world{Title: p.Title, Tone: p.Tone, Mode: string(p.Mode), RoundNo: p.RoundNo, Factions: nonNilFactions(p.Factions), Previous: digest(p.Opening, p.Previous)}
 	if p.State == nil {
 		return in
@@ -265,9 +268,40 @@ func BuildInput(p Params) Input {
 		if neighbors == nil {
 			neighbors = []NeighborTask{}
 		}
-		in.Generate = &generate{Cells: cells, Neighbors: neighbors, Limits: generationLimits(), CharacterModel: modelKeys(p.Def)}
+		in.Generate = &generate{Cells: cells, Neighbors: neighbors, Limits: generationLimits(), CharacterModel: modelKeys(p.Def), Quests: questTasks(p.Tasks)}
 	}
 	return in
+}
+
+// questTasks — блок заданий по квестам; nil, если их нет.
+func questTasks(t Tasks) *generateQuests {
+	if len(t.Quests) == 0 && len(t.Stages) == 0 && len(t.Goals) == 0 {
+		return nil
+	}
+	g := &generateQuests{Quests: []QuestTask{}, Stages: []StageTask{}, Goals: []GoalTask{}, Limits: questLimitsInfo()}
+	g.Quests = append(g.Quests, t.Quests...)
+	g.Stages = append(g.Stages, t.Stages...)
+	g.Goals = append(g.Goals, t.Goals...)
+	for i := range g.Stages {
+		if g.Stages[i].Objects == nil {
+			g.Stages[i].Objects = []string{}
+		}
+	}
+	return g
+}
+
+func nonNilQuests(q []QuestInfo) []QuestInfo {
+	if q == nil {
+		return []QuestInfo{}
+	}
+	out := make([]QuestInfo, 0, len(q))
+	for _, it := range q {
+		if it.Closed == nil {
+			it.Closed = []string{}
+		}
+		out = append(out, it)
+	}
+	return out
 }
 
 // generationLimits — лимиты пакета мира для модели (docs/game/world.md): число объектов и подходов, длины,

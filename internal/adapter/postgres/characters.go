@@ -98,6 +98,17 @@ func (s *Store) ListCharacters(ctx context.Context, game model.GameID, season mo
 	return out, nil
 }
 
+// SaveCharacterKnowledge записывает знания персонажа (награда этапа квеста после фиксации состояния раунда, пункт 28).
+func (s *Store) SaveCharacterKnowledge(ctx context.Context, game model.GameID, id model.CharacterID, knowledge []string) error {
+	if knowledge == nil {
+		knowledge = []string{}
+	}
+	if _, err := s.db(ctx).Exec(ctx, `UPDATE characters SET knowledge = $3, updated_at = now() WHERE game_id = $1 AND id = $2`, game, id, knowledge); err != nil {
+		return fmt.Errorf("postgres.SaveCharacterKnowledge: %w", err)
+	}
+	return nil
+}
+
 // SaveCharacterState сохраняет изменяемое движком состояние: локация, группа, HP, состояния, знания, статус, пропуски, смерть.
 func (s *Store) SaveCharacterState(ctx context.Context, game model.GameID, c model.Character) error {
 	conditions, knowledge := c.Conditions, c.Knowledge

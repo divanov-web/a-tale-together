@@ -179,9 +179,11 @@ func (s *Store) ListDiscoveries(ctx context.Context, game model.GameID) (map[mod
 }
 
 // ResetWorld — сброс мира для dev-команды `/reset`: остаются только стартовая клетка (без объектов и посещения),
-// открытия и счётчики исследования обнуляются, сохранённые ответы модели удаляются.
+// открытия и счётчики исследования обнуляются, сохранённые ответы модели, квесты и цели фракций удаляются (пункт 28).
 func (s *Store) ResetWorld(ctx context.Context, game model.GameID) error {
 	for _, q := range []string{
+		`DELETE FROM faction_goals WHERE game_id = $1`,
+		`DELETE FROM quests WHERE game_id = $1`,
 		`DELETE FROM location_discoveries WHERE game_id = $1`,
 		`UPDATE factions SET explored_since_reset = 0 WHERE game_id = $1`,
 		`DELETE FROM generation_jobs WHERE game_id = $1`,

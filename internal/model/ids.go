@@ -33,6 +33,15 @@ type LocationID int64
 // RoundID — идентификатор раунда.
 type RoundID int64
 
+// QuestID — идентификатор квеста фракции (пункт 28).
+type QuestID int64
+
+// QuestStageID — идентификатор этапа квеста.
+type QuestStageID int64
+
+// FactionGoalID — идентификатор версии цели фракции.
+type FactionGoalID int64
+
 // SubmissionID — идентификатор заявки на раунд.
 type SubmissionID int64
 

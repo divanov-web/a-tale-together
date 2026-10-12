@@ -70,6 +70,9 @@ type RoundMetrics struct {
 	LLMReused           int   `json:"llm_reused,omitempty"`      // ответов модели взято из сохранённых по ключу задания (ADR-0019)
 	WorldCells          int   `json:"world_cells,omitempty"`     // клеток и карточек в пакете мира (пункт 27)
 	WorldTemplated      int   `json:"world_templated,omitempty"` // из них закрыто шаблоном
+	QuestsIssued        int   `json:"quests_issued,omitempty"`   // квестов выдано фракциям (пункт 28)
+	StagesPlaced        int   `json:"stages_placed,omitempty"`   // этапов привязано к клеткам
+	StagesDone          int   `json:"stages_done,omitempty"`     // этапов закрыто
 }
 
 // RoundSnapshot — состояние на дедлайн: персонажи, локации и заявки; воспроизведение движка по снимку и seed.

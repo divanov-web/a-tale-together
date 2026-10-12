@@ -77,6 +77,16 @@ func Describe(ev model.Event, state *model.RoundSnapshot) (actor, summary string
 		}
 		_ = json.Unmarshal(ev.Payload, &p)
 		return "мир", fmt.Sprintf("появляется объект «%s»", p.Object.Title)
+	case model.EventQuestIssued:
+		return "мир", fmt.Sprintf("у фракции новое дело: «%s»", payloadStr(ev, "quest"))
+	case model.EventQuestStagePlaced:
+		return "мир", fmt.Sprintf("«%s»: этап «%s» ждёт в «%s»", payloadStr(ev, "quest"), payloadStr(ev, "stage"), payloadStr(ev, "cell"))
+	case model.EventQuestStageDone:
+		return "мир", fmt.Sprintf("«%s»: этап «%s» выполнен", payloadStr(ev, "quest"), payloadStr(ev, "stage"))
+	case model.EventQuestDone:
+		return "мир", fmt.Sprintf("«%s» завершён", payloadStr(ev, "quest"))
+	case model.EventGoalRevised:
+		return "мир", fmt.Sprintf("цель фракции: %s", payloadStr(ev, "text"))
 	}
 	return actor, fmt.Sprintf("%s: %s", actor, strings.ReplaceAll(string(ev.Type), "_", " "))
 }

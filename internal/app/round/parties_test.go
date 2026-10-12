@@ -100,9 +100,10 @@ func TestRound_PartySplitAndLeader(t *testing.T) {
 		t.Fatalf("characters after split: %+v", chars)
 	}
 	// Пункт 27: за событиями движка (ожидание, разделение, пара перехода, открытие клетки) идут две шаблонные
-	// карточки соседей зала; воспроизведение сравнивает только события движка.
+	// карточки соседей зала; пункт 28: шаблонный этап квеста в зале (объект и привязка); воспроизведение сравнивает
+	// только события движка.
 	events, _ := w.store.ListEvents(ctx, w.game.ID, info.Last.ID)
-	if len(events) != 7 || events[1].Type != model.EventPartySplit || events[4].Type != model.EventCellDiscovered || events[6].Type != model.EventCellGenerated {
+	if len(events) != 9 || events[1].Type != model.EventPartySplit || events[4].Type != model.EventCellDiscovered || events[6].Type != model.EventCellGenerated || events[8].Type != model.EventQuestStagePlaced {
 		t.Fatalf("events = %+v", events)
 	}
 	// Воспроизведение раунда с зарезервированным id даёт те же события.

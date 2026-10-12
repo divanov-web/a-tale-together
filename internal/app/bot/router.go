@@ -74,6 +74,7 @@ func (s *Service) registry() []command {
 		{name: "games", contexts: ctxPrivate, description: "[номер] — мои игры и выбор текущей", run: s.gamesList},
 		{name: "character", contexts: ctxPrivate, description: "мой персонаж", run: s.character},
 		{name: "party", contexts: ctxPrivate, description: "моя группа и остальные группы", run: s.party},
+		{name: "quests", contexts: ctxPrivate, description: "цель и квесты моей фракции", run: s.quests},
 		{name: "bio", contexts: ctxPrivate, description: "<текст> — открытое описание персонажа до 100 символов", run: s.characterBio},
 		{name: "secret", contexts: ctxPrivate, description: "<текст> — скрытое описание персонажа до 100 символов", run: s.characterSecret},
 		{name: "cancel", contexts: ctxPrivate, description: "прервать диалог", run: s.cancel},

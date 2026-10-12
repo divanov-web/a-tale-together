@@ -9,7 +9,8 @@ import (
 
 // Apply сворачивает события в состояние снимка: персонажи (локация, группа, HP, состояния, знания, статус), группы
 // (`party_split` добавляет группу), объекты локаций, клетки (`character_moved` отмечает посещение, `cell_discovered`
-// добавляет фракцию, `cell_generated` создаёт или детализирует клетку, `object_created` добавляет объект; пункт 27).
+// добавляет фракцию, `cell_generated` создаёт или детализирует клетку, `object_created` добавляет объект; пункт 27),
+// награда этапа квеста (`quest_stage_done`: `reward.fact` в знания адресатов события; пункт 28).
 // `party_held` состояние не меняет: переходы записаны отдельно. Состояние после раунда равно
 // Apply(снимок до раунда, события) — критерий пункта 07.
 func Apply(snap *model.RoundSnapshot, events []model.Event) error {
@@ -51,6 +52,20 @@ func Apply(snap *model.RoundSnapshot, events []model.Event) error {
 				l.Name, l.Description, l.Difficulty, l.Terrain, l.Stage = cell.Name, cell.Description, cell.Difficulty, cell.Terrain, cell.Stage
 			} else {
 				snap.Locations = append(snap.Locations, model.SnapshotLocation{ID: cell.LocationID, X: cell.X, Y: cell.Y, Name: cell.Name, Description: cell.Description, Difficulty: cell.Difficulty, Terrain: cell.Terrain, Stage: cell.Stage, Objects: []model.LocationObject{}})
+			}
+		case model.EventQuestStageDone:
+			var done struct {
+				Reward model.StageReward `json:"reward"`
+			}
+			if err := json.Unmarshal(ev.Payload, &done); err != nil {
+				return fmt.Errorf("engine.Apply: event %d: %w", ev.Seq, err)
+			}
+			if done.Reward.Fact != "" {
+				for _, id := range ev.VisibleTo {
+					if c, ok := snap.Character(id); ok {
+						c.Knowledge = appendUnique(c.Knowledge, done.Reward.Fact)
+					}
+				}
 			}
 		case model.EventObjectCreated:
 			var created struct {

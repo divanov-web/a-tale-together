@@ -82,16 +82,22 @@ const (
 	EventActionRejected    EventType = "action_rejected"
 	EventCharacterDied     EventType = "character_died"
 	EventCharacterReturned EventType = "character_returned"
-	EventPartySplit        EventType = "party_split"     // часть группы ушла в другую локацию новой группой (пункт 19)
-	EventPartyHeld         EventType = "party_held"      // лимит не дал разделиться: группа идёт за лидером (пункт 19)
-	EventCellDiscovered    EventType = "cell_discovered" // первый вход персонажа фракции в клетку (пункт 27, приватно)
-	EventCellGenerated     EventType = "cell_generated"  // клетка создана или детализирована пакетом рассказчика или шаблоном (пункт 27)
-	EventObjectCreated     EventType = "object_created"  // объект клетки создан пакетом рассказчика (пункт 27)
+	EventPartySplit        EventType = "party_split"        // часть группы ушла в другую локацию новой группой (пункт 19)
+	EventPartyHeld         EventType = "party_held"         // лимит не дал разделиться: группа идёт за лидером (пункт 19)
+	EventCellDiscovered    EventType = "cell_discovered"    // первый вход персонажа фракции в клетку (пункт 27, приватно)
+	EventCellGenerated     EventType = "cell_generated"     // клетка создана или детализирована пакетом рассказчика или шаблоном (пункт 27)
+	EventObjectCreated     EventType = "object_created"     // объект клетки создан пакетом рассказчика (пункт 27)
+	EventQuestIssued       EventType = "quest_issued"       // фракция получила квест (пункт 28, private персонажам фракции)
+	EventQuestStagePlaced  EventType = "quest_stage_placed" // этап квеста привязан к клетке (private)
+	EventQuestStageDone    EventType = "quest_stage_done"   // условие этапа выполнено; награда `reward.fact` → знания адресатов (private)
+	EventQuestDone         EventType = "quest_done"         // последний этап закрыт (private)
+	EventGoalRevised       EventType = "goal_revised"       // новая версия цели фракции (private)
 )
 
-// GenerationEvents — события пакета мира: их создаёт сценарий раунда после вызова рассказчика, не движок;
+// GenerationEvents — события сценария раунда вне движка: пакет мира после вызова рассказчика и квесты (пункт 28);
 // воспроизведение раунда (`/replay`) их не сравнивает.
-var GenerationEvents = map[EventType]bool{EventCellGenerated: true, EventObjectCreated: true}
+var GenerationEvents = map[EventType]bool{EventCellGenerated: true, EventObjectCreated: true,
+	EventQuestIssued: true, EventQuestStagePlaced: true, EventQuestStageDone: true, EventQuestDone: true, EventGoalRevised: true}
 
 // Event — событие мира: единственный способ изменить состояние (docs/architecture/data-model.md, `world_events`).
 type Event struct {

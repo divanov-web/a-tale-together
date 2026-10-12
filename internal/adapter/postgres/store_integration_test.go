@@ -543,7 +543,49 @@ func TestGameFlow(t *testing.T) {
 	if fs, _ := s.ListFactions(ctx, game.ID); fs[0].ExploredSinceReset != 1 {
 		t.Fatalf("explored_since_reset = %+v", fs)
 	}
+	// Пункт 28: квест с этапами, привязка и закрытие этапа, цели по версиям, счётчик исследования.
 	rid := r2.ID
+	quest, err := s.CreateQuest(ctx, model.Quest{GameID: game.ID, FactionID: f1.ID, Kind: model.QuestStory, Title: "След гонца", Summary: "Гонец пропал.", CreatedRoundID: &rid,
+		Stages: []model.QuestStage{{Key: "trail", Title: "Найти след", Summary: "Где видели.", Distance: 1, Condition: model.StageCondition{Kind: model.ConditionFact}, Reward: model.StageReward{Fact: "Факт."}}, {Key: "seal", Title: "Печать", Distance: 2, Condition: model.StageCondition{Kind: model.ConditionObjectState}}}})
+	if err != nil || quest.ID == 0 || quest.Status != model.QuestActive || len(quest.Stages) != 2 || quest.Stages[1].StageNo != 2 || quest.Stages[0].Status != model.StagePending {
+		t.Fatalf("CreateQuest = %+v, %v", quest, err)
+	}
+	st := quest.Stages[0]
+	st.Status, st.LocationID, st.Condition = model.StageBound, &loc.ID, model.StageCondition{Kind: model.ConditionFact, Fact: "Гонца увели на север."}
+	if err := s.UpdateQuestStage(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	quest.Status, quest.DoneRoundID = model.QuestDone, &rid
+	if err := s.UpdateQuest(ctx, quest); err != nil {
+		t.Fatal(err)
+	}
+	quests, err := s.ListQuests(ctx, game.ID)
+	if err != nil || len(quests) != 1 || quests[0].Status != model.QuestDone || quests[0].DoneRoundID == nil || len(quests[0].Stages) != 2 || quests[0].Stages[0].Status != model.StageBound || quests[0].Stages[0].LocationID == nil || quests[0].Stages[0].Condition.Fact != "Гонца увели на север." || quests[0].Stages[0].Reward.Fact != "Факт." {
+		t.Fatalf("ListQuests = %+v, %v", quests, err)
+	}
+	if _, err := s.CreateFactionGoal(ctx, model.FactionGoal{GameID: game.ID, FactionID: f1.ID, Text: "Найти гонца.", Stage: "начало"}); err != nil {
+		t.Fatal(err)
+	}
+	qid := quest.ID
+	g2, err := s.CreateFactionGoal(ctx, model.FactionGoal{GameID: game.ID, FactionID: f1.ID, Text: "Вернуть печать.", Stage: "после следа", QuestID: &qid, RoundID: &rid})
+	if err != nil || g2.Version != 2 {
+		t.Fatalf("CreateFactionGoal v2 = %+v, %v", g2, err)
+	}
+	if goals, err := s.ListFactionGoals(ctx, game.ID); err != nil || len(goals) != 1 || goals[0].Version != 2 || goals[0].Text != "Вернуть печать." || goals[0].QuestID == nil || *goals[0].QuestID != qid {
+		t.Fatalf("ListFactionGoals = %+v, %v", goals, err)
+	}
+	if err := s.SetFactionExplored(ctx, game.ID, f1.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	if fs, _ := s.ListFactions(ctx, game.ID); fs[0].ExploredSinceReset != 0 {
+		t.Fatalf("explored after reset = %+v", fs)
+	}
+	if err := s.SaveCharacterKnowledge(ctx, game.ID, created.ID, []string{"Факт."}); err != nil {
+		t.Fatal(err)
+	}
+	if cs, _ := s.ListCharacters(ctx, game.ID, season.ID); len(cs) == 0 || len(cs[0].Knowledge) != 1 || cs[0].Knowledge[0] != "Факт." {
+		t.Fatalf("knowledge = %+v", cs)
+	}
 	if err := s.SaveGenerationJob(ctx, model.GenerationJob{GameID: game.ID, RoundID: &rid, Role: model.RoleNarrator, InputHash: "abc", Response: model.LLMResponse{JSON: json.RawMessage(`{"x":1}`), TokensIn: 5}}); err != nil {
 		t.Fatal(err)
 	}

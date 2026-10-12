@@ -2710,6 +2710,253 @@
     "neighbors": 3,
     "min_objects": 1
    }
+  },
+  {
+   "name": "quest_generation",
+   "comment": "Пункт 28: у Ордена один активный квест и одна открытая клетка — задание на побочный квест; первый этап сюжетного квеста проявляется на опушке (условие fact, достижимое подходом); цель Гильдии пересматривается после закрытого квеста. Ожидание: квест 2–4 этапа с условиями из каталога, этап с объектом и достижимым условием, цель без конечной точки; в хронике намёк без слова «квест».",
+   "params": {
+    "mode": "balanced",
+    "round_no": 3,
+    "state": {
+     "schema_version": 4,
+     "mode": "balanced",
+     "locations": [
+      {
+       "id": 1,
+       "name": "Зал башни",
+       "description": "Пыльный зал с каменной статуей рыцаря.",
+       "difficulty": 0,
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true,
+       "visited": true,
+       "objects": [
+        {
+         "key": "statue",
+         "title": "статуя рыцаря",
+         "description": "каменный рыцарь"
+        }
+       ]
+      },
+      {
+       "id": 3,
+       "name": "Опушка",
+       "description": "Кромка леса за рвом; за деревьями виден дым.",
+       "difficulty": 0,
+       "x": 0,
+       "y": 1,
+       "stage": "card",
+       "terrain": "forest",
+       "visited": true,
+       "discovered_by": [
+        1
+       ],
+       "objects": []
+      }
+     ],
+     "characters": [
+      {
+       "id": 13,
+       "nickname": "Маг",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "faction_id": 1,
+       "party_id": 1,
+       "location_id": 3,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 2,
+        "wits": 4,
+        "will": 4
+       },
+       "skills": {
+        "awareness": 3
+       }
+      },
+      {
+       "id": 14,
+       "nickname": "Паладин",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "faction_id": 1,
+       "party_id": 1,
+       "location_id": 3,
+       "conditions": [],
+       "attributes": {
+        "strength": 4,
+        "agility": 3,
+        "wits": 2,
+        "will": 3
+       },
+       "skills": {
+        "melee": 2
+       }
+      }
+     ],
+     "parties": [
+      {
+       "id": 1,
+       "name": "Ночной дозор"
+      }
+     ]
+    },
+    "events": [
+     {
+      "seq": 301,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 1,
+      "character_id": 13
+     },
+     {
+      "seq": 302,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 3,
+      "character_id": 13
+     },
+     {
+      "seq": 303,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 14,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 1,
+      "character_id": 14
+     },
+     {
+      "seq": 304,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 14,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 3,
+      "character_id": 14
+     }
+    ],
+    "bios": {
+     "13": {
+      "public": "молчаливый маг",
+      "secret": ""
+     },
+     "14": {
+      "public": "паладин Ордена",
+      "secret": ""
+     }
+    },
+    "previous": [
+     {
+      "chronicle": "Башня молчала всю ночь; к утру за рвом потянуло дымом."
+     }
+    ],
+    "tasks": {
+     "cells": [],
+     "neighbors": [],
+     "quests": [
+      {
+       "faction": "good",
+       "kind": "side",
+       "goal": "Понять, кто жжёт костры за рвом, и защитить город.",
+       "min_stages": 2,
+       "max_stages": 4
+      }
+     ],
+     "stages": [
+      {
+       "quest_id": 9,
+       "quest_title": "Дым за рвом",
+       "stage_key": "smoke_source",
+       "stage_title": "Найти источник дыма",
+       "stage_summary": "Понять, откуда идёт дым за деревьями.",
+       "condition_kind": "fact",
+       "location_id": 3,
+       "cell_name": "Опушка",
+       "cell_description": "Кромка леса за рвом; за деревьями виден дым.",
+       "objects": []
+      }
+     ],
+     "goals": [
+      {
+       "faction": "evil",
+       "current": "Обернуть тревогу города себе на пользу.",
+       "current_stage": "выжидание",
+       "closed_quest": "Тёмный груз"
+      }
+     ]
+    },
+    "quests": [
+     {
+      "faction": "good",
+      "kind": "story",
+      "title": "Дым за рвом",
+      "summary": "Кто-то жжёт костры за рвом; надо понять, кто и зачем.",
+      "goal": "Понять, кто жжёт костры за рвом, и защитить город.",
+      "next": {
+       "title": "Найти источник дыма",
+       "summary": "Понять, откуда идёт дым за деревьями.",
+       "placed": false
+      },
+      "closed": []
+     }
+    ]
+   },
+   "required": [
+    "Маг",
+    "Паладин"
+   ],
+   "forbidden": [
+    "лидер",
+    "модель",
+    "движок",
+    "координат",
+    "квест",
+    "этап"
+   ],
+   "no_digits": true,
+   "world": {
+    "cells": 0,
+    "neighbors": 0,
+    "min_objects": 0,
+    "quests": 1,
+    "stages": 1,
+    "goals": 1
+   }
   }
  ]
 }

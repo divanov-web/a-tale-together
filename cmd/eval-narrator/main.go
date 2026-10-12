@@ -41,11 +41,15 @@ type evalCase struct {
 	World     *caseWorld `json:"world"`     // ожидания к пакету мира (пункт 27); nil — пакет не проверяется
 }
 
-// caseWorld — ожидания к пакету мира: число клеток и карточек от модели, минимум объектов в клетке, без шаблонов.
+// caseWorld — ожидания к пакету мира: число клеток и карточек от модели, минимум объектов в клетке, без шаблонов;
+// пункт 28: число квестов, размещённых этапов и целей по заданиям.
 type caseWorld struct {
 	Cells      int `json:"cells"`
 	Neighbors  int `json:"neighbors"`
 	MinObjects int `json:"min_objects"`
+	Quests     int `json:"quests"`
+	Stages     int `json:"stages"`
+	Goals      int `json:"goals"`
 }
 
 type caseParams struct {
@@ -55,7 +59,8 @@ type caseParams struct {
 	Bios     map[model.CharacterID]narrator.Bio `json:"bios"`
 	Previous []model.Narration                  `json:"previous"`
 	State    *model.RoundSnapshot               `json:"state"`
-	Tasks    narrator.Tasks                     `json:"tasks"` // задания на достройку мира (пункт 27)
+	Tasks    narrator.Tasks                     `json:"tasks"`  // задания на достройку мира (пункт 27) и квесты (пункт 28)
+	Quests   []narrator.QuestInfo               `json:"quests"` // активные квесты для подсказок (пункт 28)
 }
 
 var digits = regexp.MustCompile(`\d`)
@@ -109,7 +114,7 @@ func run() error {
 		}
 		total++
 		p := narrator.Params{Title: set.Title, Tone: set.Tone, Factions: set.Factions, Def: set.CharacterModel,
-			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks}
+			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks, Quests: c.Params.Quests}
 		started := time.Now()
 		res, err := svc.Narrate(context.Background(), p)
 		elapsed += time.Since(started)
@@ -133,6 +138,7 @@ func run() error {
 			for _, cell := range res.World.Cells {
 				fmt.Printf("     [клетка %d] %s (%d объектов, шаблон=%v): %s\n", cell.LocationID, cell.Name, len(cell.Objects), cell.Template, cell.Description)
 			}
+			printQuests(res.World.Quests, res.World.Stages, res.World.Goals)
 			for _, n := range res.World.Neighbors {
 				fmt.Printf("     [сосед %d,%d] %s (%s): %s\n", n.X, n.Y, n.Name, n.Terrain, n.Card)
 			}
@@ -190,8 +196,32 @@ func check(c evalCase, res narrator.Result) []string {
 				out = append(out, fmt.Sprintf("клетка «%s»: объектов %d, нужно не меньше %d", cell.Name, len(cell.Objects), w.MinObjects))
 			}
 		}
+		if len(res.World.Quests) != w.Quests || len(res.World.Stages) != w.Stages || len(res.World.Goals) != w.Goals {
+			out = append(out, fmt.Sprintf("квесты: %d/%d, этапов %d/%d, целей %d/%d", len(res.World.Quests), w.Quests, len(res.World.Stages), w.Stages, len(res.World.Goals), w.Goals))
+		}
+		for _, st := range res.World.Stages {
+			if st.Condition.Kind == model.ConditionVisited && st.Stage.Condition.Kind != model.ConditionVisited {
+				out = append(out, fmt.Sprintf("этап «%s»: условие заменено на visited (недостижимо)", st.Stage.Title))
+			}
+		}
 	}
 	return out
+}
+
+// printQuests печатает принятые квесты, размещения этапов и цели.
+func printQuests(quests []narrator.GeneratedQuest, stages []narrator.GeneratedStage, goals []narrator.GeneratedGoal) {
+	for _, q := range quests {
+		fmt.Printf("     [квест %s, фракция %d, шаблон=%v] %s: %s\n", q.Kind, q.FactionID, q.Template, q.Title, q.Summary)
+		for i, st := range q.Stages {
+			fmt.Printf("       %d. %s (%s, через %d): %s → %s\n", i+1, st.Title, st.Condition.Kind, st.Distance, st.Summary, st.Reward.Fact)
+		}
+	}
+	for _, st := range stages {
+		fmt.Printf("     [этап «%s» в клетке %d, шаблон=%v] условие %+v, объектов %d\n", st.Stage.Title, st.LocationID, st.Template, st.Condition, len(st.Objects))
+	}
+	for _, g := range goals {
+		fmt.Printf("     [цель фракции %d, шаблон=%v] %s (%s)\n", g.FactionID, g.Template, g.Text, g.Stage)
+	}
 }
 
 // runOpening — живой вызов завязки и стартового пакета по миру, первой локации и персонажам первого случая набора;
@@ -205,6 +235,12 @@ func runOpening(svc *narrator.Service, set evalSet) error {
 	start := st.Locations[0]
 	p := narrator.OpeningParams{Title: set.Title, Genre: "Классическое фэнтези", Tone: set.Tone, Mode: model.ModeBalanced, Factions: set.Factions, Def: set.CharacterModel,
 		Start: narrator.OpeningStart{LocationID: start.ID, Name: start.Name, Description: start.Description, Terrain: start.Terrain, Objects: []string{}}}
+	// Пункт 28: цель и сюжетный квест каждой фракции (идентификатор фракции — её номер в наборе).
+	for i, f := range set.Factions {
+		minStages, maxStages := model.StageBounds(model.QuestStory)
+		p.Quests = append(p.Quests, narrator.QuestTask{FactionID: model.FactionID(i + 1), Faction: f.Code, Kind: model.QuestStory, MinStages: minStages, MaxStages: maxStages, Mandatory: true})
+		p.Goals = append(p.Goals, narrator.GoalTask{FactionID: model.FactionID(i + 1), Faction: f.Code, Fallback: f.Description})
+	}
 	for _, o := range start.Objects {
 		p.Start.Objects = append(p.Start.Objects, o.Title)
 	}
@@ -227,6 +263,7 @@ func runOpening(svc *narrator.Service, set evalSet) error {
 			fmt.Printf("  объект %s «%s» (%d подходов)\n", o.Key, o.Title, len(o.Approaches))
 		}
 	}
+	printQuests(res.Quests, nil, res.Goals)
 	for _, n := range res.Neighbors {
 		fmt.Printf("[сосед %d,%d] %s (%s, шаблон=%v): %s\n", n.X, n.Y, n.Name, n.Terrain, n.Template, n.Card)
 	}

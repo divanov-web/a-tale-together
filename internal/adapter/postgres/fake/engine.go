@@ -210,6 +210,7 @@ func (s *Store) ResetWorld(_ context.Context, game model.GameID) error {
 			delete(s.jobs, k)
 		}
 	}
+	s.resetQuests(game)
 	return nil
 }
 

@@ -40,6 +40,8 @@ type GameSettings struct {
 	MaxRounds           int        `json:"max_rounds,omitempty"`  // граница рассказа: число раундов; 0 — без границы
 	MaxRoundPlayers     int        `json:"max_round_players"`     // сколько игроков обрабатывается за раунд; остальные — в очередь (этап 6 roadmap); админу не показывается
 	MaxParties          int        `json:"max_parties"`           // лимит групп в сезоне; группа держит одну локацию, поэтому это и лимит занятых локаций (ADR-0017)
+	MaxStoryQuests      int        `json:"max_story_quests"`      // активных сюжетных квестов на фракцию (пункт 28, ADR-0020); 0 — по умолчанию
+	MaxSideQuests       int        `json:"max_side_quests"`       // активных побочных квестов на фракцию; 0 — по умолчанию
 	MaxActiveGoals      int        `json:"max_active_goals"`      // сюжетные цели (пункт 17)
 	GoalCooldownRounds  int        `json:"goal_cooldown_rounds"`  // раундов до новой цели после отказа
 	InactiveAfterRounds int        `json:"inactive_after_rounds"` // пропусков подряд до статуса inactive
@@ -68,6 +70,8 @@ func DefaultGameSettings() GameSettings {
 		SchemaVersion:       1,
 		MaxRoundPlayers:     MaxRoundPlayersDefault,
 		MaxParties:          MaxPartiesDefault,
+		MaxStoryQuests:      MaxStoryQuestsDefault,
+		MaxSideQuests:       MaxSideQuestsDefault,
 		MaxActiveGoals:      1,
 		GoalCooldownRounds:  3,
 		InactiveAfterRounds: 3,
@@ -76,6 +80,18 @@ func DefaultGameSettings() GameSettings {
 		DeathDays:           DeathDaysDefault,
 		PauseAfterSkipped:   PauseAfterSkippedDefault,
 	}
+}
+
+// QuestLimits — лимиты активных квестов на фракцию; нули в настройках старых игр заменяются значениями по умолчанию.
+func (s GameSettings) QuestLimits() (story, side int) {
+	story, side = s.MaxStoryQuests, s.MaxSideQuests
+	if story <= 0 {
+		story = MaxStoryQuestsDefault
+	}
+	if side < 0 {
+		side = MaxSideQuestsDefault
+	}
+	return story, side
 }
 
 // Game — запущенный мир, привязанный к чату.
@@ -184,6 +200,7 @@ type FactionTemplate struct {
 	Description string            `json:"description"`
 	Tone        string            `json:"tone"`
 	Relations   map[string]string `json:"relations"`
+	Goal        string            `json:"goal,omitempty"` // цель фракции по умолчанию при сбое модели (пункт 28)
 }
 
 // ItemTemplate — предмет каталога жанра.
@@ -204,6 +221,7 @@ type GenreTemplate struct {
 	OpeningScene   string             `json:"opening_scene"`
 	Items          []ItemTemplate     `json:"items"`
 	PartyNames     []string           `json:"party_names,omitempty"` // имена групп по умолчанию (пункт 19); исчерпаны — «Группа N»
+	StoryQuest     *QuestTemplate     `json:"story_quest,omitempty"` // сюжетный квест при сбое модели (пункт 28)
 }
 
 // Genre — запись справочника жанров.

@@ -35,15 +35,21 @@ type NeighborTask struct {
 	OfName    string           `json:"of_name"`
 }
 
-// Tasks — задания на генерацию в этом раунде.
+// Tasks — задания на генерацию в этом раунде: клетки и соседи (пункт 27), квесты, этапы и цели фракций (пункт 28).
 type Tasks struct {
-	Cells     []CellTask     `json:"cells"`
-	Neighbors []NeighborTask `json:"neighbors"`
-	Overflow  []CellTask     `json:"-"` // клетки сверх лимита: шаблон без участия модели
+	Cells         []CellTask           `json:"cells"`
+	Neighbors     []NeighborTask       `json:"neighbors"`
+	Overflow      []CellTask           `json:"-"` // клетки сверх лимита: шаблон без участия модели
+	Quests        []QuestTask          `json:"quests,omitempty"`
+	Stages        []StageTask          `json:"stages,omitempty"`
+	Goals         []GoalTask           `json:"goals,omitempty"`
+	StoryTemplate *model.QuestTemplate `json:"-"` // сюжетный квест шаблона жанра при сбое модели
 }
 
 // Empty — заданий нет: пакет мира от модели не нужен.
-func (t Tasks) Empty() bool { return len(t.Cells) == 0 && len(t.Neighbors) == 0 }
+func (t Tasks) Empty() bool {
+	return len(t.Cells) == 0 && len(t.Neighbors) == 0 && len(t.Quests) == 0 && len(t.Stages) == 0 && len(t.Goals) == 0
+}
 
 // PlanTasks планирует задания по состоянию после свёртки: занятые присутствующими персонажами клетки стадии
 // `card` детализируются (до model.MaxCellsPerRound, остальные в Overflow), у каждой занятой клетки недостающие
@@ -113,7 +119,10 @@ func contains(list []string, v string) bool {
 type WorldPackage struct {
 	Cells     []GeneratedCell
 	Neighbors []GeneratedNeighbor
-	Issues    []string // замечания к пакету (для лога и eval); дозапроса по ним нет
+	Quests    []GeneratedQuest // новые квесты фракций по заданиям (пункт 28)
+	Stages    []GeneratedStage // размещённые этапы
+	Goals     []GeneratedGoal  // версии целей фракций
+	Issues    []string         // замечания к пакету (для лога и eval); дозапроса по ним нет
 }
 
 // Templated — сколько заданий закрыто шаблоном.
@@ -126,6 +135,21 @@ func (w WorldPackage) Templated() int {
 	}
 	for _, c := range w.Neighbors {
 		if c.Template {
+			n++
+		}
+	}
+	for _, q := range w.Quests {
+		if q.Template {
+			n++
+		}
+	}
+	for _, st := range w.Stages {
+		if st.Template {
+			n++
+		}
+	}
+	for _, g := range w.Goals {
+		if g.Template {
 			n++
 		}
 	}
@@ -154,8 +178,11 @@ type GeneratedNeighbor struct {
 
 // rawWorld — блок `world` ответа модели по Schema.
 type rawWorld struct {
-	Cells     []rawCell     `json:"cells"`
-	Neighbors []rawNeighbor `json:"neighbors"`
+	Cells     []rawCell           `json:"cells"`
+	Neighbors []rawNeighbor       `json:"neighbors"`
+	Quests    []rawQuest          `json:"quests"`
+	Stages    []rawStagePlacement `json:"stages"`
+	Goals     []rawGoal           `json:"goals"`
 }
 
 type rawCell struct {
@@ -205,15 +232,8 @@ type rawNeighbor struct {
 	Card    string `json:"card"`
 }
 
-// worldSchema — фрагмент JSON-схемы для блока `world` (хроника) и стартового пакета (завязка).
-const cellSchema = `{
-  "type": "object",
-  "properties": {
-    "location_id": {"type": "integer"},
-    "name": {"type": "string"},
-    "description": {"type": "string"},
-    "difficulty": {"type": "integer"},
-    "objects": {
+// objectsSchema — массив объектов клетки (пакет мира, стартовый пакет, размещение этапа).
+const objectsSchema = `{
       "type": "array",
       "items": {
         "type": "object",
@@ -254,7 +274,17 @@ const cellSchema = `{
         "required": ["key", "title", "description", "state", "hidden", "approaches"],
         "additionalProperties": false
       }
-    }
+    }`
+
+// cellSchema — фрагмент JSON-схемы для блока `world` (хроника) и стартового пакета (завязка).
+const cellSchema = `{
+  "type": "object",
+  "properties": {
+    "location_id": {"type": "integer"},
+    "name": {"type": "string"},
+    "description": {"type": "string"},
+    "difficulty": {"type": "integer"},
+    "objects": ` + objectsSchema + `
   },
   "required": ["location_id", "name", "description", "difficulty", "objects"],
   "additionalProperties": false
@@ -346,6 +376,13 @@ func validateWorld(raw rawWorld, tasks Tasks, def model.CharacterModelDef) World
 			out.Issues = append(out.Issues, fmt.Sprintf("сосед (%d, %d) не из задания: отброшен", xy[0], xy[1]))
 		}
 	}
+	var issues []string
+	out.Quests, issues = validateQuests(raw.Quests, tasks.Quests, tasks.StoryTemplate)
+	out.Issues = append(out.Issues, issues...)
+	out.Stages, issues = validateStages(raw.Stages, tasks.Stages, def)
+	out.Issues = append(out.Issues, issues...)
+	out.Goals, issues = validateGoals(raw.Goals, tasks.Goals)
+	out.Issues = append(out.Issues, issues...)
 	return out
 }
 
@@ -531,8 +568,8 @@ func validateNeighbor(n rawNeighbor, ok bool, task NeighborTask) (GeneratedNeigh
 	return card, issues
 }
 
-// TemplateWorld закрывает все задания шаблоном: клетка «дорога» и карточки «неизведанные земли» (сбой модели,
-// отсутствие провайдера или превышение бюджета).
+// TemplateWorld закрывает все задания шаблоном: клетка «дорога», карточки «неизведанные земли», сюжетные квесты
+// и цели из шаблона жанра, этапы объектом «след» (сбой модели, отсутствие провайдера или превышение бюджета).
 func TemplateWorld(tasks Tasks) WorldPackage {
 	var out WorldPackage
 	for _, task := range tasks.Cells {
@@ -544,6 +581,7 @@ func TemplateWorld(tasks Tasks) WorldPackage {
 	for _, task := range tasks.Neighbors {
 		out.Neighbors = append(out.Neighbors, templateNeighbor(task))
 	}
+	out.Quests, out.Stages, out.Goals = TemplateQuests(tasks)
 	return out
 }
 

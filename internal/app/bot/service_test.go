@@ -1116,3 +1116,24 @@ func TestParty_NewcomerInRunningGame(t *testing.T) {
 	mustContain(t, h.send(nobody, private(nobody), "/party"), "Группа «", "Локация: Зал Серой башни", "• Никто — active")
 	mustContain(t, h.send(nobody, private(nobody), "/character"), "Локация: Зал Серой башни")
 }
+
+// TestQuests_Card (пункт 28, ADR-0020): до старта у фракции нет цели и квестов; после `/begin` без модели — цель и
+// шаблонный сюжетный квест с этапами без клеток; после входа в зал первый этап проявляется там с подсказкой.
+func TestQuests_Card(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
+	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	mustContain(t, h.send(alice, private(alice), "/quests"), "Фракция «Орден Рассвета»", "Цель: ещё не определена", "Квестов пока нет")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	mustContain(t, h.send(alice, private(alice), "/quests"), "Цель: Найти пропавшего гонца и вернуть печать Ордена. (начало)", "«След гонца» (сюжетный)", "○ Найти след\n○ Выйти к укрытию\n○ Вернуть печать", "✓ — сделано")
+	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
+	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
+	mustContain(t, h.send(alice, private(alice), "/quests"), "▶ Найти след — Зал Серой башни (0, 1): узнать: Этап «Найти след»: Отыскать место, где гонца видели в последний раз.")
+	if len(h.tg.lastKeyboard(private(alice))) != 0 {
+		t.Fatal("quests card must not have buttons")
+	}
+}

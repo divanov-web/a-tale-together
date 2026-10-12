@@ -118,4 +118,23 @@ func TestApply_WorldPackage(t *testing.T) {
 	if exits := snap.Exits(forest); len(exits) != 2 || exits[0].Direction != model.North || exits[0].To.ID != 9 || exits[1].Direction != model.South {
 		t.Fatalf("forest exits = %+v", exits)
 	}
+	// Пункт 28: награда этапа квеста уходит в знания адресатов события, без повтора; событие без награды знаний не меняет.
+	who := []model.CharacterID{snap.Characters[0].ID, snap.Characters[1].ID}
+	reward := []model.Event{
+		{Seq: 5, Type: model.EventQuestStageDone, Visibility: model.VisibilityPrivate, VisibleTo: who, Payload: []byte(`{"quest_id":1,"stage_key":"trail","reward":{"fact":"Гонца увели на север."}}`)},
+		{Seq: 6, Type: model.EventQuestStageDone, Visibility: model.VisibilityPrivate, VisibleTo: who, Payload: []byte(`{"quest_id":1,"stage_key":"trail","reward":{"fact":"Гонца увели на север."}}`)},
+		{Seq: 7, Type: model.EventQuestDone, Visibility: model.VisibilityPrivate, VisibleTo: who, Payload: []byte(`{"quest_id":1}`)},
+	}
+	if err := Apply(&snap, reward); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range who {
+		c, _ := snap.Character(id)
+		if n := len(c.Knowledge); n != 1 || c.Knowledge[0] != "Гонца увели на север." {
+			t.Fatalf("knowledge of %d = %v", id, c.Knowledge)
+		}
+	}
+	if c, _ := snap.Character(snap.Characters[2].ID); len(c.Knowledge) != 0 {
+		t.Fatalf("reward leaked to non-addressee: %v", c.Knowledge)
+	}
 }

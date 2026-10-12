@@ -36,6 +36,8 @@ type Store struct {
 	outbox         []model.OutboxMessage
 	locations      map[model.LocationID]model.Location
 	discoveries    map[discoveryKey]bool
+	quests         map[model.QuestID]model.Quest
+	goals          map[model.FactionGoalID]model.FactionGoal
 	jobs           map[jobKey]model.GenerationJob // вне снимка транзакции: пишется автономно, как в Postgres
 	parties        map[model.PartyID]model.Party
 	events         []model.Event
@@ -70,6 +72,7 @@ func New(now func() time.Time) *Store {
 		rounds: map[model.RoundID]model.Round{}, subs: map[model.SubmissionID]model.Submission{},
 		llmProfiles: map[model.LLMProfileID]model.LLMProfile{}, settings: map[string]string{}, locations: map[model.LocationID]model.Location{},
 		parties: map[model.PartyID]model.Party{}, discoveries: map[discoveryKey]bool{}, jobs: map[jobKey]model.GenerationJob{},
+		quests: map[model.QuestID]model.Quest{}, goals: map[model.FactionGoalID]model.FactionGoal{},
 	}
 	cm := model.CharacterModel{ID: 1, Code: "basic_fantasy", Definition: BasicFantasy()}
 	s.cmodels[cm.ID] = cm
@@ -138,6 +141,8 @@ type state struct {
 	llmProfiles map[model.LLMProfileID]model.LLMProfile
 	llmRuns     []model.LLMRun
 	settings    map[string]string
+	quests      map[model.QuestID]model.Quest
+	goals       map[model.FactionGoalID]model.FactionGoal
 	nextID      int64
 }
 
@@ -152,6 +157,7 @@ func (s *Store) snapshot() state {
 		chars: maps.Clone(s.chars), rounds: maps.Clone(s.rounds), subs: maps.Clone(s.subs), outbox: slices.Clone(s.outbox),
 		locations: maps.Clone(s.locations), discoveries: maps.Clone(s.discoveries), parties: maps.Clone(s.parties), events: slices.Clone(s.events), resolved: slices.Clone(s.resolved), resolvedRnd: slices.Clone(s.resolvedRounds),
 		llmProfiles: maps.Clone(s.llmProfiles), llmRuns: slices.Clone(s.llmRuns), settings: maps.Clone(s.settings), nextID: s.nextID,
+		quests: maps.Clone(s.quests), goals: maps.Clone(s.goals),
 	}
 }
 
@@ -162,6 +168,7 @@ func (s *Store) restore(st state) {
 	s.discoveries = st.discoveries
 	s.events, s.resolved, s.resolvedRounds = st.events, st.resolved, st.resolvedRnd
 	s.llmProfiles, s.llmRuns, s.settings, s.nextID = st.llmProfiles, st.llmRuns, st.settings, st.nextID
+	s.quests, s.goals = st.quests, st.goals
 }
 
 // MarkUpdate — см. postgres.Store.

@@ -30,6 +30,8 @@ type Store interface {
 	CreateFaction(ctx context.Context, f model.Faction) (model.Faction, error)
 	UpdateFaction(ctx context.Context, f model.Faction) error
 	ListFactions(ctx context.Context, game model.GameID) ([]model.Faction, error)
+	ListQuests(ctx context.Context, game model.GameID) ([]model.Quest, error)
+	ListFactionGoals(ctx context.Context, game model.GameID) ([]model.FactionGoal, error)
 	AddMember(ctx context.Context, m model.GameMember) error
 	GetMember(ctx context.Context, game model.GameID, user model.UserID) (model.GameMember, error)
 	ListMembers(ctx context.Context, game model.GameID) ([]model.MemberInfo, error)
@@ -363,6 +365,24 @@ func (s *Service) Status(ctx context.Context, game model.Game) (Status, error) {
 		return Status{}, fmt.Errorf("game.Status: chat: %w", err)
 	}
 	return st, nil
+}
+
+// Quests возвращает квесты игры с этапами (пункт 28).
+func (s *Service) Quests(ctx context.Context, game model.GameID) ([]model.Quest, error) {
+	q, err := s.store.ListQuests(ctx, game)
+	if err != nil {
+		return nil, fmt.Errorf("game.Quests: %w", err)
+	}
+	return q, nil
+}
+
+// Goals возвращает текущие цели фракций игры (пункт 28).
+func (s *Service) Goals(ctx context.Context, game model.GameID) ([]model.FactionGoal, error) {
+	g, err := s.store.ListFactionGoals(ctx, game)
+	if err != nil {
+		return nil, fmt.Errorf("game.Goals: %w", err)
+	}
+	return g, nil
 }
 
 // Factions возвращает фракции игры.

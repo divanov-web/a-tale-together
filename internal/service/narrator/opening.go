@@ -14,7 +14,7 @@ import (
 )
 
 // OpeningPromptVersion — версия промпта завязки, пишется в `llm_runs.prompt_version`.
-const OpeningPromptVersion = "narrator/opening-v2"
+const OpeningPromptVersion = "narrator/opening-v3"
 
 // Границы текста завязки в рунах: короче — не завязка, длиннее — не влезает в сообщение; в выжимку для хроник
 // уходит начало до openingDigestRune.
@@ -28,11 +28,24 @@ const (
 var ErrOpening = errors.New("narrator: завязка не по правилам")
 
 // OpeningSchema — JSON-схема ответа: текст завязки и стартовый пакет (ADR-0019): стартовая клетка с объектами и
-// карточки соседей по направлениям.
+// карточки соседей по направлениям; цель и сюжетный квест каждой фракции (ADR-0020).
 var OpeningSchema = json.RawMessage(`{
   "type": "object",
   "properties": {
     "text": {"type": "string"},
+    "factions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {"type": "string"},
+          "goal": {"type": "object", "properties": {"text": {"type": "string"}, "stage": {"type": "string"}}, "required": ["text", "stage"], "additionalProperties": false},
+          "quest": ` + questSchema + `
+        },
+        "required": ["code", "goal", "quest"],
+        "additionalProperties": false
+      }
+    },
     "start": ` + cellSchema + `,
     "neighbors": {
       "type": "array",
@@ -49,7 +62,7 @@ var OpeningSchema = json.RawMessage(`{
       }
     }
   },
-  "required": ["text", "start", "neighbors"],
+  "required": ["text", "factions", "start", "neighbors"],
   "additionalProperties": false
 }`)
 
@@ -66,6 +79,9 @@ type OpeningParams struct {
 	Neighbors  []NeighborTask // недостающие соседи стартовой клетки
 	Def        model.CharacterModelDef
 	Characters []OpeningCharacter
+	Quests     []QuestTask          // сюжетный квест каждой фракции (пункт 28)
+	Goals      []GoalTask           // цель каждой фракции
+	Template   *model.QuestTemplate // сюжетный квест шаблона жанра при сбое
 }
 
 // OpeningStart — стартовая клетка шаблона жанра: что уже есть, модель может переписать описание и объекты.
@@ -116,7 +132,7 @@ func BuildOpeningInput(p OpeningParams) OpeningInput {
 		World:      openingWorld{Title: p.Title, Genre: p.Genre, Tone: p.Tone, Mode: string(p.Mode), Factions: nonNilFactions(p.Factions)},
 		Start:      start,
 		Characters: []OpeningCharacter{},
-		Generate:   generate{Cells: []CellTask{}, Neighbors: neighbors, Limits: generationLimits(), CharacterModel: modelKeys(p.Def)},
+		Generate:   generate{Cells: []CellTask{}, Neighbors: neighbors, Limits: generationLimits(), CharacterModel: modelKeys(p.Def), Quests: questTasks(Tasks{Quests: p.Quests, Goals: p.Goals})},
 	}
 	in.Characters = append(in.Characters, p.Characters...)
 	return in
@@ -133,7 +149,7 @@ func (in OpeningInput) Encode() string {
 
 // OpeningSystemPrompt — системная часть промпта завязки текущей версии.
 func OpeningSystemPrompt() string {
-	b, err := prompts.FS.ReadFile("narrator/opening-v2.md")
+	b, err := prompts.FS.ReadFile("narrator/opening-v3.md")
 	if err != nil {
 		panic("narrator: opening prompt: " + err.Error())
 	}
@@ -145,6 +161,8 @@ type OpeningResult struct {
 	Text      string
 	Start     *GeneratedCell      // стартовая клетка от модели; nil — объекты шаблона остаются
 	Neighbors []GeneratedNeighbor // карточки соседей по заданиям (шаблон там, где модель не ответила)
+	Quests    []GeneratedQuest    // сюжетный квест каждой фракции по заданиям (пункт 28)
+	Goals     []GeneratedGoal     // цель каждой фракции
 	Calls     int                 // вызовов модели (1 или 2)
 	Issues    []string            // замечания к ответам модели (для лога и eval)
 	TokensIn  int
@@ -185,14 +203,33 @@ func (s *Service) Opening(ctx context.Context, p OpeningParams) (OpeningResult, 
 	res.Text = cur.Text
 	res.Start, res.Neighbors, issues = validateOpeningWorld(cur, p)
 	res.Issues = append(res.Issues, issues...)
+	var quests []rawQuest
+	var goals []rawGoal
+	for _, f := range cur.Factions {
+		q := f.Quest
+		q.Faction = f.Code
+		quests = append(quests, q)
+		goals = append(goals, rawGoal{Faction: f.Code, Text: f.Goal.Text, Stage: f.Goal.Stage})
+	}
+	res.Quests, issues = validateQuests(quests, p.Quests, p.Template)
+	res.Issues = append(res.Issues, issues...)
+	res.Goals, issues = validateGoals(goals, p.Goals)
+	res.Issues = append(res.Issues, issues...)
 	return res, nil
 }
 
 // openingResponse — ответ модели по OpeningSchema.
 type openingResponse struct {
 	Text      string            `json:"text"`
+	Factions  []openingFaction  `json:"factions"`
 	Start     rawCell           `json:"start"`
 	Neighbors []openingNeighbor `json:"neighbors"`
+}
+
+type openingFaction struct {
+	Code  string   `json:"code"`
+	Goal  rawGoal  `json:"goal"`
+	Quest rawQuest `json:"quest"`
 }
 
 type openingNeighbor struct {
