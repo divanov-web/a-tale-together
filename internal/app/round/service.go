@@ -30,7 +30,16 @@ type Store interface {
 	GetCharacterModel(ctx context.Context, id model.CharacterModelID) (model.CharacterModel, error)
 	GetUser(ctx context.Context, id model.UserID) (model.User, error)
 	ListLocations(ctx context.Context, game model.GameID) ([]model.Location, error)
-	UpdateLocationObjects(ctx context.Context, game model.GameID, id model.LocationID, objects []model.LocationObject) error
+	CreateLocation(ctx context.Context, l model.Location) (model.Location, error)
+	UpdateLocation(ctx context.Context, l model.Location) error
+	CreateObjects(ctx context.Context, game model.GameID, loc model.LocationID, objects []model.LocationObject) error
+	SaveObjectState(ctx context.Context, game model.GameID, loc model.LocationID, o model.LocationObject) error
+	ReplaceObjects(ctx context.Context, game model.GameID, loc model.LocationID, objects []model.LocationObject) error
+	AddDiscovery(ctx context.Context, game model.GameID, loc model.LocationID, faction model.FactionID, round model.RoundID, character model.CharacterID) (bool, error)
+	ListDiscoveries(ctx context.Context, game model.GameID) (map[model.LocationID][]model.FactionID, error)
+	ResetWorld(ctx context.Context, game model.GameID) error
+	GetGenerationJob(ctx context.Context, game model.GameID, round *model.RoundID, role model.LLMRole, hash string) (model.GenerationJob, error)
+	SaveGenerationJob(ctx context.Context, j model.GenerationJob) error
 	SaveCharacterState(ctx context.Context, game model.GameID, c model.Character) error
 	NextEventSeq(ctx context.Context, game model.GameID) (int64, error)
 	AppendEvents(ctx context.Context, events []model.Event) error
@@ -129,8 +138,9 @@ func New(store Store, rights Rights, clock Clock, logger *slog.Logger) *Service 
 	return &Service{store: store, rights: rights, clock: clock, logger: logger, seed: rand.Int64, MaxAttempts: model.MaxRoundAttempts}
 }
 
-// Begin запускает кампанию: статус `active`, завязка истории от рассказчика (`opening.go`, ADR-0018; при сбое —
-// стартовая сцена шаблона жанра) в outbox и у игры, первый раунд (сразу внутри игрового окна, иначе в его начале).
+// Begin запускает кампанию: статус `active`, завязка истории и стартовый пакет мира от рассказчика (`opening.go`,
+// ADR-0018, ADR-0019; при сбое — стартовая сцена шаблона жанра и соседи «неизведанные земли») в outbox и у игры,
+// первый раунд (сразу внутри игрового окна, иначе в его начале).
 // Нужен хотя бы один персонаж. Вызов модели идёт внутри транзакции под блокировкой игры, как и в раунде.
 func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID) (model.Game, error) {
 	if err := s.canAdmin(ctx, game, actor); err != nil {
@@ -183,7 +193,9 @@ func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID
 		if err != nil {
 			return err
 		}
-		g.OpeningScene = s.opening(ctx, g, chat, genre, factions, chars, locs)
+		if g.OpeningScene, err = s.opening(ctx, g, chat, genre, factions, chars, locs); err != nil {
+			return err
+		}
 		g.Status = model.GameActive
 		g.SkippedStreak = 0
 		if err := s.enqueue(ctx, g, chat, nil, model.OutboxScene, openingScene(g, g.OpeningScene)); err != nil {
@@ -685,7 +697,11 @@ func (s *Service) freeze(ctx context.Context, g model.Game, chat model.Chat, r m
 	if err := s.ensureParties(ctx, g, r.SeasonID, chars, locations, genre); err != nil {
 		return err
 	}
-	snap := snapshot(g, chars, locations, subs, cm.Definition)
+	discoveries, err := s.store.ListDiscoveries(ctx, g.ID)
+	if err != nil {
+		return err
+	}
+	snap := snapshot(g, chars, locations, discoveries, subs, cm.Definition)
 	for i := range snap.Characters {
 		snap.Characters[i].Entry = entries[snap.Characters[i].ID]
 	}
@@ -858,7 +874,7 @@ func (s *Service) notifyOpen(ctx context.Context, g model.Game, last, r model.Ro
 	if err != nil {
 		return err
 	}
-	state := snapshot(g, chars, locations, nil, def)
+	state := snapshot(g, chars, locations, nil, nil, def)
 	opts := narrator.Options(&state, def, g.Mode)
 	for _, c := range state.Characters {
 		if notified[c.ID] || c.Status.Absent() {

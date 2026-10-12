@@ -14,7 +14,7 @@ import (
 )
 
 // OpeningPromptVersion — версия промпта завязки, пишется в `llm_runs.prompt_version`.
-const OpeningPromptVersion = "narrator/opening-v1"
+const OpeningPromptVersion = "narrator/opening-v2"
 
 // Границы текста завязки в рунах: короче — не завязка, длиннее — не влезает в сообщение; в выжимку для хроник
 // уходит начало до openingDigestRune.
@@ -27,32 +27,54 @@ const (
 // ErrOpening — ответ модели не годится в завязку после дозапроса; вызывающий публикует сцену шаблона жанра.
 var ErrOpening = errors.New("narrator: завязка не по правилам")
 
-// OpeningSchema — JSON-схема ответа: один текст завязки.
+// OpeningSchema — JSON-схема ответа: текст завязки и стартовый пакет (ADR-0019): стартовая клетка с объектами и
+// карточки соседей по направлениям.
 var OpeningSchema = json.RawMessage(`{
   "type": "object",
-  "properties": {"text": {"type": "string"}},
-  "required": ["text"],
+  "properties": {
+    "text": {"type": "string"},
+    "start": ` + cellSchema + `,
+    "neighbors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "direction": {"type": "string", "enum": ["north", "south", "west", "east"]},
+          "name": {"type": "string"},
+          "terrain": {"type": "string"},
+          "card": {"type": "string"}
+        },
+        "required": ["direction", "name", "terrain", "card"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["text", "start", "neighbors"],
   "additionalProperties": false
 }`)
 
-// OpeningParams — данные мира при `/begin` (ADR-0018): жанр, фракции, локации и персонажи с открытыми описаниями;
-// скрытые описания не передаются.
+// OpeningParams — данные мира при `/begin` (ADR-0018, ADR-0019): жанр, фракции, стартовая клетка шаблона с объектами
+// как подсказка, недостающие соседи, модель персонажа для подходов и персонажи с открытыми описаниями; скрытые
+// описания не передаются.
 type OpeningParams struct {
 	Title      string
 	Genre      string
 	Tone       string
 	Mode       model.GameMode
 	Factions   []Faction
-	Locations  []OpeningLocation
+	Start      OpeningStart
+	Neighbors  []NeighborTask // недостающие соседи стартовой клетки
+	Def        model.CharacterModelDef
 	Characters []OpeningCharacter
 }
 
-// OpeningLocation — локация для завязки: описание, признак стартовой и названия видимых выходов.
-type OpeningLocation struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Start       bool     `json:"start"`
-	Exits       []string `json:"exits"`
+// OpeningStart — стартовая клетка шаблона жанра: что уже есть, модель может переписать описание и объекты.
+type OpeningStart struct {
+	LocationID  model.LocationID `json:"location_id"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	Terrain     string           `json:"terrain"`
+	Objects     []string         `json:"objects"` // названия объектов шаблона как подсказка
 }
 
 // OpeningCharacter — персонаж для завязки: только открытые данные.
@@ -67,8 +89,9 @@ type OpeningCharacter struct {
 // OpeningInput — переменная часть вызова завязки.
 type OpeningInput struct {
 	World      openingWorld       `json:"world"`
-	Locations  []OpeningLocation  `json:"locations"`
+	Start      OpeningStart       `json:"start"`
 	Characters []OpeningCharacter `json:"characters"`
+	Generate   generate           `json:"generate"`
 }
 
 type openingWorld struct {
@@ -81,16 +104,19 @@ type openingWorld struct {
 
 // BuildOpeningInput собирает вход завязки; срезы всегда не nil, чтобы JSON был стабильным.
 func BuildOpeningInput(p OpeningParams) OpeningInput {
+	start := p.Start
+	if start.Objects == nil {
+		start.Objects = []string{}
+	}
+	neighbors := p.Neighbors
+	if neighbors == nil {
+		neighbors = []NeighborTask{}
+	}
 	in := OpeningInput{
 		World:      openingWorld{Title: p.Title, Genre: p.Genre, Tone: p.Tone, Mode: string(p.Mode), Factions: nonNilFactions(p.Factions)},
-		Locations:  []OpeningLocation{},
+		Start:      start,
 		Characters: []OpeningCharacter{},
-	}
-	for _, l := range p.Locations {
-		if l.Exits == nil {
-			l.Exits = []string{}
-		}
-		in.Locations = append(in.Locations, l)
+		Generate:   generate{Cells: []CellTask{}, Neighbors: neighbors, Limits: generationLimits(), CharacterModel: modelKeys(p.Def)},
 	}
 	in.Characters = append(in.Characters, p.Characters...)
 	return in
@@ -107,24 +133,27 @@ func (in OpeningInput) Encode() string {
 
 // OpeningSystemPrompt — системная часть промпта завязки текущей версии.
 func OpeningSystemPrompt() string {
-	b, err := prompts.FS.ReadFile("narrator/opening-v1.md")
+	b, err := prompts.FS.ReadFile("narrator/opening-v2.md")
 	if err != nil {
 		panic("narrator: opening prompt: " + err.Error())
 	}
 	return strings.TrimSpace(string(b))
 }
 
-// OpeningResult — текст завязки и учёт вызова.
+// OpeningResult — текст завязки, стартовый пакет и учёт вызова.
 type OpeningResult struct {
 	Text      string
-	Calls     int      // вызовов модели (1 или 2)
-	Issues    []string // замечания к ответам модели (для лога и eval)
+	Start     *GeneratedCell      // стартовая клетка от модели; nil — объекты шаблона остаются
+	Neighbors []GeneratedNeighbor // карточки соседей по заданиям (шаблон там, где модель не ответила)
+	Calls     int                 // вызовов модели (1 или 2)
+	Issues    []string            // замечания к ответам модели (для лога и eval)
 	TokensIn  int
 	TokensOut int
 }
 
-// Opening придумывает завязку истории одним вызовом; при замечаниях (объём, цифры вне «механики», не представленный
-// персонаж) — один дозапрос. После него объём вне границ → ErrOpening, остальные замечания только в Issues.
+// Opening придумывает завязку и стартовый пакет одним вызовом; при замечаниях к тексту (объём, цифры вне
+// «механики», не представленный персонаж) — один дозапрос. После него объём вне границ → ErrOpening, остальные
+// замечания только в Issues. Пакет мира проверяется по заданиям; что не прошло — шаблон.
 func (s *Service) Opening(ctx context.Context, p OpeningParams) (OpeningResult, error) {
 	if s.llm == nil {
 		return OpeningResult{}, ErrNoLLM
@@ -134,7 +163,7 @@ func (s *Service) Opening(ctx context.Context, p OpeningParams) (OpeningResult, 
 		return OpeningResult{}, fmt.Errorf("%w: %d байт", ErrBudget, len(input))
 	}
 	res := OpeningResult{}
-	text, issues, err := s.openingCall(ctx, input, p, &res)
+	cur, issues, err := s.openingCall(ctx, input, p, &res)
 	if err != nil {
 		return res, err
 	}
@@ -147,33 +176,47 @@ func (s *Service) Opening(ctx context.Context, p OpeningParams) (OpeningResult, 
 			break
 		}
 		res.Issues = append(res.Issues, issues...)
-		text, issues = again, moreIssues
+		cur, issues = again, moreIssues
 	}
 	res.Issues = append(res.Issues, issues...)
-	if n := utf8.RuneCountInString(text); n < openingMinRune || n > openingMaxRune {
+	if n := utf8.RuneCountInString(cur.Text); n < openingMinRune || n > openingMaxRune {
 		return res, fmt.Errorf("%w: %d символов", ErrOpening, n)
 	}
-	res.Text = text
+	res.Text = cur.Text
+	res.Start, res.Neighbors, issues = validateOpeningWorld(cur, p)
+	res.Issues = append(res.Issues, issues...)
 	return res, nil
 }
 
-// openingCall — один вызов модели и разбор ответа; возвращает текст и замечания к нему.
-func (s *Service) openingCall(ctx context.Context, input string, p OpeningParams, res *OpeningResult) (string, []string, error) {
+// openingResponse — ответ модели по OpeningSchema.
+type openingResponse struct {
+	Text      string            `json:"text"`
+	Start     rawCell           `json:"start"`
+	Neighbors []openingNeighbor `json:"neighbors"`
+}
+
+type openingNeighbor struct {
+	Direction model.Direction `json:"direction"`
+	Name      string          `json:"name"`
+	Terrain   string          `json:"terrain"`
+	Card      string          `json:"card"`
+}
+
+// openingCall — один вызов модели и разбор ответа; возвращает ответ и замечания к тексту.
+func (s *Service) openingCall(ctx context.Context, input string, p OpeningParams, res *OpeningResult) (openingResponse, []string, error) {
 	resp, err := s.llm.Complete(ctx, model.LLMRequest{Role: model.RoleOpening, System: s.opening, Input: input, JSONSchema: OpeningSchema})
 	res.Calls++
 	res.TokensIn += resp.TokensIn
 	res.TokensOut += resp.TokensOut
 	if err != nil {
-		return "", nil, fmt.Errorf("narrator: opening: %w", err)
+		return openingResponse{}, nil, fmt.Errorf("narrator: opening: %w", err)
 	}
-	var out struct {
-		Text string `json:"text"`
-	}
+	var out openingResponse
 	if err := json.Unmarshal(resp.JSON, &out); err != nil {
-		return "", nil, fmt.Errorf("narrator: opening: ответ не по схеме: %w", err)
+		return openingResponse{}, nil, fmt.Errorf("narrator: opening: ответ не по схеме: %w", err)
 	}
-	text := strings.TrimSpace(out.Text)
-	return text, openingIssues(text, p), nil
+	out.Text = strings.TrimSpace(out.Text)
+	return out, openingIssues(out.Text, p), nil
 }
 
 // openingIssues — замечания к тексту завязки для дозапроса.
@@ -194,6 +237,32 @@ func openingIssues(text string, p OpeningParams) []string {
 		}
 	}
 	return issues
+}
+
+// validateOpeningWorld — стартовый пакет: клетка (без валидных объектов — nil, объекты шаблона остаются) и соседи
+// по направлениям заданий (не из задания — отброшены, пропущенные — шаблон).
+func validateOpeningWorld(out openingResponse, p OpeningParams) (*GeneratedCell, []GeneratedNeighbor, []string) {
+	task := CellTask{LocationID: p.Start.LocationID, Name: p.Start.Name, Terrain: p.Start.Terrain, Card: p.Start.Description}
+	cell, issues := validateCell(out.Start, task, p.Def)
+	start := &cell
+	if len(cell.Objects) == 0 {
+		issues = append(issues, "стартовая клетка без объектов: остаются объекты шаблона")
+		start = nil
+	}
+	byDir := map[model.Direction]openingNeighbor{}
+	for _, n := range out.Neighbors {
+		if _, dup := byDir[n.Direction]; !dup {
+			byDir[n.Direction] = n
+		}
+	}
+	var neighbors []GeneratedNeighbor
+	for _, t := range p.Neighbors {
+		n, ok := byDir[t.Direction]
+		card, more := validateNeighbor(rawNeighbor{X: t.X, Y: t.Y, Name: n.Name, Terrain: n.Terrain, Card: n.Card}, ok, t)
+		issues = append(issues, more...)
+		neighbors = append(neighbors, card)
+	}
+	return start, neighbors, issues
 }
 
 // openingDigest — завязка для выжимки прошлых хроник: начало текста до openingDigestRune.

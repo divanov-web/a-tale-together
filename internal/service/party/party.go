@@ -1,5 +1,5 @@
 // Package party — чистые правила групп персонажей (пункт 19, docs/game/parties.md): выбор лидера, имя новой группы,
-// ближайшая группа по карте локаций. Без I/O; состояние групп меняют сценарии `app/game` и `app/round`, движок
+// ближайшая группа по сетке клеток. Без I/O; состояние групп меняют сценарии `app/game` и `app/round`, движок
 // `service/engine` создаёт группы событиями `party_split`.
 package party
 
@@ -89,44 +89,37 @@ func ValidateName(name string) error {
 	return nil
 }
 
-// Nearest — ближайшая к from локация из candidates по видимым выходам (поиск в ширину); при равной дальности —
-// первая по порядку candidates. false — ни одна недостижима.
+// Nearest — ближайшая к from клетка из candidates по расстоянию на сетке (|dx| + |dy|, пункт 27); при равной
+// дальности — первая по порядку candidates. false — ни одной клетки из candidates нет среди locations.
 func Nearest(locations []model.Location, from model.LocationID, candidates []model.LocationID) (model.LocationID, bool) {
-	byName := map[string]model.LocationID{}
 	byID := map[model.LocationID]model.Location{}
 	for _, l := range locations {
-		byName[strings.ToLower(l.Name)] = l.ID
 		byID[l.ID] = l
 	}
-	dist := map[model.LocationID]int{from: 0}
-	queue := []model.LocationID{from}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		for _, link := range byID[cur].Links {
-			to, ok := byName[strings.ToLower(link.To)]
-			if !ok {
-				continue
-			}
-			if _, seen := dist[to]; seen {
-				continue
-			}
-			dist[to] = dist[cur] + 1
-			queue = append(queue, to)
-		}
+	origin, ok := byID[from]
+	if !ok {
+		return 0, false
 	}
 	best, found := model.LocationID(0), false
 	bestDist := 0
 	for _, id := range candidates {
-		d, ok := dist[id]
+		l, ok := byID[id]
 		if !ok {
 			continue
 		}
+		d := abs(l.X-origin.X) + abs(l.Y-origin.Y)
 		if !found || d < bestDist {
 			best, bestDist, found = id, d, true
 		}
 	}
 	return best, found
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // Active — число активных групп.

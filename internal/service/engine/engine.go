@@ -149,19 +149,12 @@ func (r *resolver) move(c *model.SnapshotCharacter, loc *model.SnapshotLocation,
 		res.Status, res.Reason = model.ResultRejected, "персонаж вне локаций"
 		return
 	}
-	var dest *model.SnapshotLocation
-	if l, ok := visibleLink(loc, in.Target); ok {
-		dest, _ = r.snap.LocationByName(l.To)
-	}
-	if dest == nil {
-		if d, ok := r.snap.LocationByName(in.Target); ok && hasLink(loc, d.Name) {
-			dest = d
-		}
-	}
-	if dest == nil {
-		res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("из «%s» нет выхода «%s»; выходы: %s", loc.Name, in.Target, exits(loc))
+	exit, ok := r.exitTo(loc, in.Target)
+	if !ok {
+		res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("из «%s» нет выхода «%s»; выходы: %s", loc.Name, in.Target, exits(&r.snap, loc))
 		return
 	}
+	dest := exit.To
 	if in.FreeCheck() {
 		// Переход с испытанием: провал оставляет персонажа на месте и применяет on_fail.
 		ap := freeApproach(in)
@@ -180,10 +173,11 @@ func (r *resolver) propose(res *model.ActionResult, c *model.SnapshotCharacter, 
 }
 
 // moveTo переводит персонажа в локацию назначения; событие видно в обеих локациях. Итог res может быть nil
-// (участник группы, которого группа увела с собой без его заявки).
+// (участник группы, которого группа увела с собой без его заявки). Первый вход персонажа фракции в клетку (кроме
+// стартовой) — открытие: приватное событие `cell_discovered`, фракция добавляется к `discovered_by` клетки (пункт 27).
 func (r *resolver) moveTo(res *model.ActionResult, c *model.SnapshotCharacter, loc, dest *model.SnapshotLocation) {
 	from := loc.ID
-	r.emit(res, model.EventCharacterMoved, model.VisibilityLocation, nil, c, map[string]any{"character_id": c.ID, "from": from, "to": dest.ID, "from_name": loc.Name, "to_name": dest.Name})
+	r.emit(res, model.EventCharacterMoved, model.VisibilityLocation, nil, c, map[string]any{"character_id": c.ID, "from": from, "to": dest.ID, "from_name": loc.Name, "to_name": dest.Name, "x": dest.X, "y": dest.Y})
 	// Событие видно и в локации назначения: второе событие с той же сутью, адресованное новой локации.
 	ev := r.events[len(r.events)-1]
 	ev2 := ev
@@ -194,24 +188,16 @@ func (r *resolver) moveTo(res *model.ActionResult, c *model.SnapshotCharacter, l
 		res.EventSeqs = append(res.EventSeqs, ev2.Seq)
 	}
 	c.LocationID = &dest.ID
+	dest.Visited = true
+	if !dest.Start && c.FactionID != 0 && !dest.Discovered(c.FactionID) {
+		dest.DiscoveredBy = append(dest.DiscoveredBy, c.FactionID)
+		r.emit(res, model.EventCellDiscovered, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "faction_id": c.FactionID, "location_id": dest.ID, "x": dest.X, "y": dest.Y, "name": dest.Name})
+	}
 }
 
 // freeApproach — подход свободного испытания из намерения: сложность по таблице риска, эффекты от интерпретатора.
 func freeApproach(in model.Intent) model.Approach {
 	return model.Approach{Action: in.ActionType, Attribute: in.Attribute, Skill: in.Skill, Difficulty: rules.RiskDifficulty(in.Risk), OnSuccess: in.OnSuccess, OnFail: in.OnFail}
-}
-
-// visibleLink ищет видимый выход локации по имени назначения или названию.
-func visibleLink(loc *model.SnapshotLocation, target string) (model.LocationLink, bool) {
-	for _, l := range loc.Links {
-		if l.Hidden {
-			continue
-		}
-		if strings.EqualFold(l.To, target) || strings.EqualFold(l.Title, target) || matches(target, l.Title+" "+l.To) {
-			return l, true
-		}
-	}
-	return model.LocationLink{}, false
 }
 
 func (r *resolver) explore(c *model.SnapshotCharacter, loc *model.SnapshotLocation, in model.Intent, res *model.ActionResult) {
@@ -224,7 +210,7 @@ func (r *resolver) explore(c *model.SnapshotCharacter, loc *model.SnapshotLocati
 			r.check(c, loc, in, res, freeApproach(in), model.LocationObject{}, -1, "действует в локации «"+loc.Name+"»")
 			return
 		}
-		fact := fmt.Sprintf("%s: %s Выходы: %s. Объекты: %s.", loc.Name, loc.Description, exits(loc), objects(loc))
+		fact := fmt.Sprintf("%s: %s Выходы: %s. Объекты: %s.", loc.Name, loc.Description, exits(&r.snap, loc), objects(loc))
 		res.Status, res.Summary = model.ResultResolved, "осматривается в локации «"+loc.Name+"»"
 		r.learn(res, c, loc, fact)
 		return
@@ -360,12 +346,10 @@ func (r *resolver) applyApproach(res *model.ActionResult, c *model.SnapshotChara
 		r.learn(res, c, loc, fact)
 	}
 	if e.Move != "" {
-		if l, ok := visibleLink(loc, e.Move); ok {
-			if dest, ok := r.snap.LocationByName(l.To); ok {
-				summary := res.Summary
-				r.propose(res, c, loc, dest)
-				res.Summary = summary + "; " + res.Summary
-			}
+		if exit, ok := r.exitTo(loc, e.Move); ok {
+			summary := res.Summary
+			r.propose(res, c, loc, exit.To)
+			res.Summary = summary + "; " + res.Summary
 		}
 	}
 }
@@ -581,21 +565,25 @@ func sameParty(a, b *model.SnapshotCharacter) bool {
 	return a.PartyID != nil && b.PartyID != nil && *a.PartyID == *b.PartyID
 }
 
-func hasLink(loc *model.SnapshotLocation, name string) bool {
-	for _, l := range loc.Links {
-		if !l.Hidden && strings.EqualFold(l.To, name) {
-			return true
+// exitTo — выход клетки по цели: направление словом или имя соседа (`RoundSnapshot.ExitTo`), иначе имя соседа по
+// основе слов (`matches`: «к башне» ≈ «Зал Серой башни») — для запасного разбора кодом.
+func (r *resolver) exitTo(loc *model.SnapshotLocation, target string) (model.Exit, bool) {
+	if e, ok := r.snap.ExitTo(loc, target); ok {
+		return e, true
+	}
+	for _, e := range r.snap.Exits(loc) {
+		if matches(target, e.To.Name) {
+			return e, true
 		}
 	}
-	return false
+	return model.Exit{}, false
 }
 
-func exits(loc *model.SnapshotLocation) string {
+// exits — выходы клетки словами: «на север: Лес, на восток: Дорога».
+func exits(snap *model.RoundSnapshot, loc *model.SnapshotLocation) string {
 	var out []string
-	for _, l := range loc.Links {
-		if !l.Hidden {
-			out = append(out, fmt.Sprintf("%s (%s)", l.Title, l.To))
-		}
+	for _, e := range snap.Exits(loc) {
+		out = append(out, e.Title())
 	}
 	if len(out) == 0 {
 		return "нет"

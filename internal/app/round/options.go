@@ -19,7 +19,7 @@ var (
 
 // OptionRef — ссылка на вариант сцены в данных кнопки: `#<раунд>:<локация>:<объект>:<подход>`; умещается в 64 байта
 // `callback_data` вместо названия подхода. Раунд защищает от нажатия после закрытия, остальное находит подход заново по
-// текущему состоянию.
+// текущему состоянию. Переход по направлению (пункт 27): объект `move`, подход — номер направления.
 type OptionRef struct {
 	RoundNo    int
 	LocationID model.LocationID
@@ -96,7 +96,7 @@ func (s *Service) SubmitOption(ctx context.Context, game model.Game, c model.Cha
 	if err != nil {
 		return model.Round{}, model.Submission{}, fmt.Errorf("round.SubmitOption: %w", err)
 	}
-	state := snapshot(game, chars, locations, nil, def)
+	state := snapshot(game, chars, locations, nil, nil, def)
 	for _, o := range narrator.Options(&state, def, game.Mode) {
 		if o.LocationID == ref.LocationID && o.Object == ref.Object && o.Idx == ref.Idx {
 			return s.Submit(ctx, game, c, o.Title)

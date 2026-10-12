@@ -71,7 +71,7 @@ func (s *Service) renderCharacter(ctx context.Context, g model.Game, c model.Cha
 		if locs, err := s.games.Locations(ctx, g.ID); err == nil {
 			for _, l := range locs {
 				if l.ID == *c.LocationID {
-					location = l.Name
+					location = cellLabel(l)
 				}
 			}
 		}

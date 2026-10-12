@@ -15,9 +15,9 @@ func square(parties int) model.RoundSnapshot {
 	snap := model.RoundSnapshot{
 		SchemaVersion: model.SnapshotSchemaVersion, Mode: model.ModeBalanced, MaxParties: 3, NewPartyIDs: []model.PartyID{7, 8}, PartyNames: []string{"Ночной дозор", "Вольные клинки", "Странники"},
 		Locations: []model.SnapshotLocation{
-			{ID: 1, Name: "Площадь", Links: []model.LocationLink{{To: "Коридор", Title: "в коридор"}, {To: "Рынок", Title: "на рынок"}}},
-			{ID: 2, Name: "Коридор", Links: []model.LocationLink{{To: "Площадь", Title: "на площадь"}}},
-			{ID: 3, Name: "Рынок", Links: []model.LocationLink{{To: "Площадь", Title: "на площадь"}}},
+			{ID: 1, Name: "Площадь", X: 0, Y: 0, Stage: model.StageDetailed, Start: true},
+			{ID: 2, Name: "Коридор", X: 1, Y: 0, Stage: model.StageDetailed},
+			{ID: 3, Name: "Рынок", X: -1, Y: 0, Stage: model.StageDetailed},
 		},
 		Characters: []model.SnapshotCharacter{
 			{ID: 11, Nickname: "Вор", Status: model.CharacterActive, LocationID: loc(1), PartyID: &watch, Conditions: []string{}, Attributes: map[string]int{"will": 3}},

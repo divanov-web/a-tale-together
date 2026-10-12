@@ -28,9 +28,10 @@ func (s *Service) party(ctx context.Context, req *request) error {
 	names := map[model.LocationID]string{}
 	if locs, err := s.games.Locations(ctx, g.ID); err == nil {
 		for _, l := range locs {
-			names[l.ID] = l.Name
+			names[l.ID] = cellLabel(l)
 		}
 	}
+
 	var mine *game.PartyInfo
 	for i := range parties {
 		if c.PartyID != nil && parties[i].Party.ID == *c.PartyID {
@@ -73,4 +74,9 @@ func (s *Service) party(ctx context.Context, req *request) error {
 	}
 	b.WriteString("\n\nГруппы ведёт рассказчик: кто расходится по разным локациям, становится отдельной группой, пока групп меньше лимита; иначе группа держится вместе.")
 	return s.reply(ctx, req.in, b.String())
+}
+
+// cellLabel — клетка для карточек и `/status`: имя и координаты на сетке (пункт 27), например «Лес (0, 1)».
+func cellLabel(l model.Location) string {
+	return fmt.Sprintf("%s (%d, %d)", l.Name, l.X, l.Y)
 }

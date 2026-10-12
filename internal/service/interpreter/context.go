@@ -47,6 +47,7 @@ type scene struct {
 	Characters  []character      `json:"characters"`
 }
 
+// exit — выход клетки: ключ направления (`to`, его модель возвращает в `target`) и подпись с именем соседа.
 type exit struct {
 	To    string `json:"to"`
 	Title string `json:"title"`
@@ -86,7 +87,8 @@ type submission struct {
 	Text         string             `json:"text"`
 }
 
-// BuildInput собирает контекст вызова из снимка: только видимые объекты и выходы, персонажи без секретов,
+// BuildInput собирает контекст вызова из снимка: выходы по направлениям к существующим соседям (`to` — ключ
+// направления), только видимые объекты, персонажи без секретов,
 // знания — последние факты; заявки всех персонажей в одном блоке данных. Персонажи вне локаций и выбывшие
 // в сцены не попадают, их заявки передаются как есть (движок отклонит).
 func BuildInput(snap model.RoundSnapshot, def model.CharacterModelDef) Input {
@@ -115,10 +117,8 @@ func BuildInput(snap model.RoundSnapshot, def model.CharacterModelDef) Input {
 			continue // сцена без персонажей модели не нужна
 		}
 		sc := scene{LocationID: l.ID, Name: l.Name, Description: l.Description, Difficulty: l.Difficulty, Exits: []exit{}, Objects: []object{}, Characters: chars}
-		for _, link := range l.Links {
-			if !link.Hidden {
-				sc.Exits = append(sc.Exits, exit{To: link.To, Title: link.Title})
-			}
+		for _, e := range snap.Exits(&l) {
+			sc.Exits = append(sc.Exits, exit{To: string(e.Direction), Title: e.Title()})
 		}
 		for _, o := range l.Objects {
 			if o.HiddenUntil && !o.Revealed {

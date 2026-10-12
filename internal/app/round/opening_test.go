@@ -34,7 +34,8 @@ func TestBegin_Opening(t *testing.T) {
 		t.Fatalf("opening calls = %+v", calls)
 	}
 	in := llm.inputs[0]
-	if !strings.Contains(in, `"nickname":"Элис"`) || !strings.Contains(in, "Любит шумные площади") || !strings.Contains(in, `"start":true`) || !strings.Contains(in, `"exits":["Зал Серой башни"]`) {
+	// Стартовый пакет (ADR-0019): стартовая клетка с подсказкой объектов, задания на недостающих соседей (север занят залом).
+	if !strings.Contains(in, `"nickname":"Элис"`) || !strings.Contains(in, "Любит шумные площади") || !strings.Contains(in, `"name":"Рыночная площадь","description":"Сердце города.","terrain":"town","objects":["доска объявлений"]`) || !strings.Contains(in, `"neighbors":[{"x":0,"y":-1,"direction":"south"`) || strings.Contains(in, `"direction":"north"`) {
 		t.Fatalf("opening input = %s", in)
 	}
 	if strings.Contains(in, "Шпион") {

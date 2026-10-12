@@ -41,7 +41,7 @@ func TestNotifyOpen_PersonalOptions(t *testing.T) {
 	w.reload(t)
 	r1, _ := w.store.OpenRound(ctx, w.game.ID)
 	opens := byKind(model.OutboxPrivateOpen, r1.ID)
-	want := "«Мир» — раунд 1 открыт\n\nЗаявки до 12:10: напишите, что делает персонаж, или /act <текст>. Одна заявка на раунд.\n\nВарианты для вас (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%"
+	want := "«Мир» — раунд 1 открыт\n\nЗаявки до 12:10: напишите, что делает персонаж, или /act <текст>. Одна заявка на раунд.\n\nВарианты для вас (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%\n• идти на север: Зал Серой башни\n• идти на юг: Неизведанные земли\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли"
 	if len(opens) != 2 || opens[chatOf(alice)] != want || opens[chatOf(bob)] != want {
 		t.Fatalf("round 1 personal opens = %+v", opens)
 	}
@@ -57,10 +57,11 @@ func TestNotifyOpen_PersonalOptions(t *testing.T) {
 	if len(notices) != 2 {
 		t.Fatalf("notices = %+v", notices)
 	}
-	if text := notices[chatOf(alice)]; strings.Contains(text, "Варианты") || !strings.HasSuffix(text, "\n\nСледующая заявка: /act <текст> после открытия раунда.") {
-		t.Fatalf("alice notice (hall has no approaches) = %q", text)
+	// В зале нет объектов: варианты Элис — только переходы (пункт 27), в том числе к шаблонным соседям.
+	if text := notices[chatOf(alice)]; !strings.Contains(text, "\n\nВарианты на раунд 2 (Зал Серой башни):\n• идти на юг: Рыночная площадь\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли\n\nСледующая заявка") {
+		t.Fatalf("alice notice = %q", text)
 	}
-	if text := notices[chatOf(bob)]; !strings.Contains(text, "\n\nВарианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%\n\nСледующая заявка") {
+	if text := notices[chatOf(bob)]; !strings.Contains(text, "\n\nВарианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%\n• идти на север: Зал Серой башни\n• идти на юг: Неизведанные земли\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли\n\nСледующая заявка") {
 		t.Fatalf("bob notice = %q", text)
 	}
 	r2, _ := w.store.OpenRound(ctx, w.game.ID)

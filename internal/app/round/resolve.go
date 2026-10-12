@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"strings"
 	"time"
 
 	applm "taletogether/internal/app/llm"
@@ -17,9 +18,10 @@ import (
 	"taletogether/internal/service/visibility"
 )
 
-// snapshot собирает снимок: персонажи с характеристиками и группой, локации с объектами, заявки; группы, лимиты и
-// резерв идентификаторов дописывает `snapshotParties` при заморозке.
-func snapshot(g model.Game, chars []model.Character, locations []model.Location, subs []model.Submission, def model.CharacterModelDef) model.RoundSnapshot {
+// snapshot собирает снимок: персонажи с характеристиками и группой, клетки — только занятые и их соседи
+// (`relevant`, пункт 27) с координатами, стадией, посещением, открывшими фракциями и объектами, заявки; группы,
+// лимиты и резерв идентификаторов дописывает `snapshotParties` при заморозке.
+func snapshot(g model.Game, chars []model.Character, locations []model.Location, discoveries map[model.LocationID][]model.FactionID, subs []model.Submission, def model.CharacterModelDef) model.RoundSnapshot {
 	snap := model.RoundSnapshot{SchemaVersion: model.SnapshotSchemaVersion, Mode: g.Mode, RulesVersion: g.RulesVersion, Characters: []model.SnapshotCharacter{}, Locations: []model.SnapshotLocation{}, Submissions: []model.SnapshotSubmission{}}
 	for _, c := range chars {
 		maxHP, err := rules.HP(def, c.Attributes)
@@ -39,8 +41,13 @@ func snapshot(g model.Game, chars []model.Character, locations []model.Location,
 			Attributes: c.Attributes, Skills: c.Skills, Inventory: c.Inventory, Knowledge: knowledge,
 		})
 	}
-	for _, l := range locations {
-		snap.Locations = append(snap.Locations, model.SnapshotLocation{ID: l.ID, Name: l.Name, Description: l.Description, Difficulty: l.Difficulty, Links: l.Links, Objects: l.Objects})
+	for _, l := range relevant(locations, chars) {
+		objects := l.Objects
+		if objects == nil {
+			objects = []model.LocationObject{}
+		}
+		snap.Locations = append(snap.Locations, model.SnapshotLocation{ID: l.ID, Name: l.Name, Description: l.Description, Difficulty: l.Difficulty, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain,
+			Visited: l.VisitedAt != nil, Start: l.Start, DiscoveredBy: discoveries[l.ID], Objects: objects})
 	}
 	for _, sub := range subs {
 		snap.Submissions = append(snap.Submissions, model.SnapshotSubmission{SubmissionID: sub.ID, CharacterID: sub.CharacterID, Text: sub.RawText, SubmittedAt: sub.SubmittedAt})
@@ -86,7 +93,7 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 	if err := s.saveParties(ctx, g, r.SeasonID, r.Snapshot, &state); err != nil {
 		return err
 	}
-	if err := s.saveState(ctx, g, r.Snapshot, &state, now); err != nil {
+	if err := s.saveState(ctx, g, r, r.Snapshot, &state, now); err != nil {
 		return err
 	}
 	if err := s.syncParties(ctx, g, r.SeasonID); err != nil {
@@ -105,9 +112,22 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 	}
 	m.EngineMS, step = s.lap(step)
 	r.Status = model.RoundPublished
-	r.Narration = s.narrate(ctx, g, chat, r, genre, def, &state, chars, result.Events, m)
+	tasks, err := s.planTasks(ctx, g, &state)
+	if err != nil {
+		return err
+	}
+	var pkg narrator.WorldPackage
+	r.Narration, pkg = s.narrate(ctx, g, chat, r, genre, def, &state, chars, result.Events, tasks, m)
 	m.NarrateMS, step = s.lap(step)
-	s.journal(ctx, g, chat.TelegramChatID, r, "resolved", map[string]any{"results": result.Results, "events": result.Events})
+	generated, err := s.applyWorld(ctx, g, r, &state, pkg, now)
+	if err != nil {
+		return err
+	}
+	m.WorldCells, m.WorldTemplated = len(pkg.Cells)+len(pkg.Neighbors), pkg.Templated()
+	if r.Narration != nil {
+		relabel(r.Narration, &state)
+	}
+	s.journal(ctx, g, chat.TelegramChatID, r, "resolved", map[string]any{"results": result.Results, "events": result.Events, "world": generated})
 	if err := s.publish(ctx, g, chat, r, &state, result, def, m); err != nil {
 		return err
 	}
@@ -150,7 +170,7 @@ func (s *Service) interpret(ctx context.Context, g model.Game, chat model.Chat, 
 	}
 	call := applm.Call{Game: &g, Round: &r.ID, Role: model.RoleInterpreter, PromptVersion: interpreter.PromptVersion}
 	svc := interpreter.New(interpreter.Func(func(ctx context.Context, req model.LLMRequest) (model.LLMResponse, error) {
-		return s.LLM.Complete(ctx, call, req)
+		return s.complete(ctx, g, &r.ID, call, req, &m.LLMReused)
 	}), s.logger)
 	res, err := svc.Interpret(ctx, snap, def)
 	if err != nil {
@@ -169,15 +189,17 @@ func (s *Service) interpret(ctx context.Context, g model.Game, chat model.Chat, 
 }
 
 // narrate — вызов 2 из 2 (docs/llm/round-calls.md): публичные и локационные события, состояние после свёртки,
-// описания персонажей как данные и выжимка прошлых хроник → хроника по сценам через `app/llm.Complete` с ролью
-// `narrator`. Без провайдера, при сбое, утечке или превышении бюджета — nil: публикуется шаблонная хроника, раунд не откатывается.
-func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, state *model.RoundSnapshot, chars []model.Character, events []model.Event, m *model.RoundMetrics) *model.Narration {
+// описания персонажей как данные, выжимка прошлых хроник и задания на достройку мира (пункт 27) → хроника по сценам
+// и пакет мира через `app/llm.Complete` с ролью `narrator` (ответ сохраняется по ключу задания, ADR-0019). Без
+// провайдера, при сбое, утечке или превышении бюджета — nil и шаблонный пакет: публикуется шаблонная хроника,
+// клетки получают шаблон, раунд не откатывается.
+func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, state *model.RoundSnapshot, chars []model.Character, events []model.Event, tasks narrator.Tasks, m *model.RoundMetrics) (*model.Narration, narrator.WorldPackage) {
 	if s.LLM == nil {
 		m.NarratorFallback = true
-		s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"fallback": "рассказчик не настроен: шаблонная хроника"})
-		return nil
+		s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"fallback": "рассказчик не настроен: шаблонная хроника", "world_template": !tasks.Empty()})
+		return nil, narrator.TemplateWorld(tasks)
 	}
-	p := narrator.Params{Title: g.Title, Tone: genre.Template.Tone, Mode: g.Mode, RoundNo: r.RoundNo, Opening: g.OpeningScene, State: state, Bios: map[model.CharacterID]narrator.Bio{}, Events: visibility.Public(events), Def: def}
+	p := narrator.Params{Title: g.Title, Tone: genre.Template.Tone, Mode: g.Mode, RoundNo: r.RoundNo, Opening: g.OpeningScene, State: state, Bios: map[model.CharacterID]narrator.Bio{}, Events: visibility.Public(events), Def: def, Tasks: tasks}
 	for _, c := range chars {
 		p.Bios[c.ID] = narrator.Bio{Public: c.PublicBio, Secret: c.SecretBio}
 	}
@@ -197,26 +219,43 @@ func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r 
 	}
 	call := applm.Call{Game: &g, Round: &r.ID, Role: model.RoleNarrator, PromptVersion: narrator.PromptVersion}
 	svc := narrator.New(narrator.Func(func(ctx context.Context, req model.LLMRequest) (model.LLMResponse, error) {
-		return s.LLM.Complete(ctx, call, req)
+		return s.complete(ctx, g, &r.ID, call, req, &m.LLMReused)
 	}), s.logger)
 	res, err := svc.Narrate(ctx, p)
 	if err != nil {
 		s.logger.Warn("narrator unavailable, template chronicle", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Any("err", err))
 		m.NarratorFallback = true
-		s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"fallback": "шаблонная хроника", "error": err.Error()})
-		return nil
+		s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"fallback": "шаблонная хроника", "error": err.Error(), "world_template": !tasks.Empty()})
+		return nil, narrator.TemplateWorld(tasks)
 	}
 	s.logger.Info("round narrated", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)),
 		slog.Int("scenes", len(res.Narration.Scenes)), slog.Int("calls", res.Calls), slog.Int("patched", res.Patched), slog.Int("issues", len(res.Issues)),
+		slog.Int("cells", len(res.World.Cells)), slog.Int("neighbors", len(res.World.Neighbors)), slog.Int("templated", res.World.Templated()),
 		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
-	s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"calls": res.Calls, "patched": res.Patched, "issues": res.Issues, "narration": res.Narration})
+	s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"calls": res.Calls, "patched": res.Patched, "issues": res.Issues, "narration": res.Narration, "world": res.World})
 	m.LLMCalls, m.TokensIn, m.TokensOut, m.Patched, m.Issues = m.LLMCalls+res.Calls, m.TokensIn+res.TokensIn, m.TokensOut+res.TokensOut, res.Patched, len(res.Issues)
-	return &res.Narration
+	return &res.Narration, res.World
 }
 
-// saveState записывает изменившихся персонажей (включая группу после `party_split`) и локации; значения берутся
+// relabel обновляет подписи сцен после пакета мира: клетка могла получить имя от рассказчика.
+func relabel(n *model.Narration, state *model.RoundSnapshot) {
+	for i, sc := range n.Scenes {
+		l, ok := state.Location(sc.LocationID)
+		if !ok {
+			continue
+		}
+		if at := strings.LastIndex(sc.Party, " ("); at > 0 && strings.HasSuffix(sc.Party, ")") {
+			n.Scenes[i].Party = sc.Party[:at] + " (" + l.Name + ")"
+		} else {
+			n.Scenes[i].Party = l.Name
+		}
+	}
+}
+
+// saveState записывает изменившихся персонажей (включая группу после `party_split`) и клетки по id (пункт 27):
+// первое посещение, состояние объектов, открытия по фракциям со счётчиком исследования; значения берутся
 // только из свёртки событий.
-func (s *Service) saveState(ctx context.Context, g model.Game, before *model.RoundSnapshot, after *model.RoundSnapshot, now time.Time) error {
+func (s *Service) saveState(ctx context.Context, g model.Game, r model.Round, before *model.RoundSnapshot, after *model.RoundSnapshot, now time.Time) error {
 	for i, c := range after.Characters {
 		prev := before.Characters[i]
 		if reflect.DeepEqual(prev, c) {
@@ -241,12 +280,39 @@ func (s *Service) saveState(ctx context.Context, g model.Game, before *model.Rou
 			return err
 		}
 	}
-	for i, l := range after.Locations {
-		if reflect.DeepEqual(before.Locations[i].Objects, l.Objects) {
+	for _, l := range after.Locations {
+		prev, ok := before.Location(l.ID)
+		if !ok {
 			continue
 		}
-		if err := s.store.UpdateLocationObjects(ctx, g.ID, l.ID, l.Objects); err != nil {
-			return err
+		if !prev.Visited && l.Visited {
+			visited := now
+			if err := s.store.UpdateLocation(ctx, model.Location{ID: l.ID, GameID: g.ID, Name: l.Name, Description: l.Description, Difficulty: l.Difficulty, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain, VisitedAt: &visited, Start: l.Start}); err != nil {
+				return err
+			}
+		}
+		for _, o := range l.Objects {
+			po, _, found := prev.Object(o.Key)
+			if found && (po.State != o.State || po.Revealed != o.Revealed || po.Searched != o.Searched) {
+				if err := s.store.SaveObjectState(ctx, g.ID, l.ID, o); err != nil {
+					return err
+				}
+			}
+		}
+		for _, f := range l.DiscoveredBy {
+			if prev.Discovered(f) {
+				continue
+			}
+			var who model.CharacterID
+			for _, c := range after.Characters {
+				if c.FactionID == f && c.LocationID != nil && *c.LocationID == l.ID {
+					who = c.ID
+					break
+				}
+			}
+			if _, err := s.store.AddDiscovery(ctx, g.ID, l.ID, f, r.ID, who); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -316,7 +382,8 @@ func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r 
 }
 
 // Replay — проверка воспроизводимости (dev, S06): повторный прогон движка по снимку, намерениям и seed раунда
-// сравнивается с записанными событиями. Возвращает число событий и признак совпадения.
+// сравнивается с записанными событиями движка (события пакета мира не сравниваются: их создаёт сценарий после
+// вызова рассказчика, модель при воспроизведении не вызывается). Возвращает число событий и признак совпадения.
 func (s *Service) Replay(ctx context.Context, game model.Game, actor model.UserID, roundNo int) (int, bool, error) {
 	if err := s.canAdmin(ctx, game, actor); err != nil {
 		return 0, false, err
@@ -331,9 +398,15 @@ func (s *Service) Replay(ctx context.Context, game model.Game, actor model.UserI
 	if r.Snapshot == nil || (r.Status != model.RoundResolved && r.Status != model.RoundPublished) {
 		return 0, false, ErrNotResolved
 	}
-	stored, err := s.store.ListEvents(ctx, game.ID, r.ID)
+	all, err := s.store.ListEvents(ctx, game.ID, r.ID)
 	if err != nil {
 		return 0, false, fmt.Errorf("round.Replay: %w", err)
+	}
+	stored := make([]model.Event, 0, len(all))
+	for _, ev := range all {
+		if !model.GenerationEvents[ev.Type] {
+			stored = append(stored, ev) // пакет мира пишет сценарий после вызова рассказчика, движок его не воспроизводит
+		}
 	}
 	actions, err := s.store.ListResolvedActions(ctx, game.ID, r.ID)
 	if err != nil {

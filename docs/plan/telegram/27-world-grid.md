@@ -1,6 +1,6 @@
 # 27. Сетка и клетки от рассказчика
 
-- Статус: план
+- Статус: готово (2026-10-12)
 - Этап концепта: 3
 - Зависит от: 19, 22, [динамический мир](../../game/world.md); ADR до кода: генерация содержимого в контракте рассказчика (заменяет [ADR-0018](../../decisions/0018-opening-scene.md), уточняет [ADR-0011](../../decisions/0011-narrator-call.md) и [ADR-0013](../../decisions/0013-round-resilience.md))
 
@@ -13,18 +13,18 @@
 ## Шаги
 | № | Шаг | Слой / пакеты | Артефакты | Статус |
 |---|---|---|---|---|
-| 1 | Сценарий S16: старт из пяти клеток, шаг на север, достройка трёх соседей, возврат, две группы в одной клетке | геймдизайн | `docs/game/scenarios.md` | план |
-| 2 | ADR: генерация в контракте рассказчика, стартовый пакет вместо завязки, сохранение ответа по ключу задания | docs | `docs/decisions/0019-*.md` | план |
-| 3 | Данные: `locations.x`, `y`, `stage`, `terrain`, `visited_at`; уникальность `(game_id, x, y)`, имя — подпись; выходы по направлениям вместо `links` по имени; таблицы `world_objects`, `items`, `npcs` (поведение — пункт 30), объекты из `locations.objects` переезжают в `world_objects`; счётчик открытий на фракцию `factions.explored_since_reset` и первые открытия клетки по фракциям (`location_discoveries`); сохранение локаций по `id`, операции создания; снимок v4 | `migrations/`, `model`, `adapter/postgres`, `app/round` | миграция, `TestSaveState_ByID` | план |
-| 4 | Движок: `move` по направлению (`north`/`south`/`west`/`east`) и по имени соседа; первое посещение → событие `cell_discovered` и инкремент счётчика; шаблон жанра даёт только стартовую клетку | `service/engine`, `service/rules` | `TestScenario_S16_*` | план |
-| 5 | Стартовый пакет: роль `opening` возвращает пять клеток и текст завязки; при сбое — стартовая клетка шаблона, соседи «дорога», шаблон завязки | `service/narrator`, `app/round` | промпт `narrator/opening-v2`, схема | план |
-| 6 | Рассказчик v4: во входе задания на генерацию (клетки для детализации, недостающие соседи с координатами и направлениями, лимиты); в ответе `world: {cells[], neighbors[]}` рядом с хроникой; валидация: координаты только из задания, уникальные ключи, лимиты числа, стадии; сбой → шаблонная клетка; принятый пакет → события `cell_generated`, `object_created` в той же транзакции | `service/narrator`, `app/round`, `service/engine` | промпт `narrator/v4`, `TestNarrator_WorldPackage`, eval | план |
-| 7 | Сохранение результата вызова по ключу задания (`round_id`, роль, хэш входа): повтор раунда после отката берёт готовый ответ; `/replay` без модели | `app/round`, `adapter/postgres` | `generation_jobs` или поле `llm_runs`, `TestRound_RetryReusesGeneration` | план |
-| 8 | Интерфейс: хроника и «Варианты» для новой клетки, направления в `/status` и кнопках, карточки соседей в сцене | `app/round`, `app/bot` | тексты, `guide/` | план |
-| 9 | Документы: модель локации, модель данных, round-calls, глоссарий; `docs/concept` — удалить реализованное | docs | | план |
+| 1 | Сценарий S16: старт из пяти клеток, шаг на север, достройка трёх соседей, возврат, две группы в одной клетке | геймдизайн | `docs/game/scenarios.md` | готово |
+| 2 | ADR: генерация в контракте рассказчика, стартовый пакет вместо завязки, сохранение ответа по ключу задания | docs | `docs/decisions/0019-*.md` | готово |
+| 3 | Данные: `locations.x`, `y`, `stage`, `terrain`, `visited_at`; уникальность `(game_id, x, y)`, имя — подпись; выходы по направлениям вместо `links` по имени; таблицы `world_objects`, `items`, `npcs` (поведение — пункт 30), объекты из `locations.objects` переезжают в `world_objects`; счётчик открытий на фракцию `factions.explored_since_reset` и первые открытия клетки по фракциям (`location_discoveries`); сохранение локаций по `id`, операции создания; снимок v4 | `migrations/`, `model`, `adapter/postgres`, `app/round` | миграция, `TestSaveState_ByID` | готово |
+| 4 | Движок: `move` по направлению (`north`/`south`/`west`/`east`) и по имени соседа; первое посещение → событие `cell_discovered` и инкремент счётчика; шаблон жанра даёт только стартовую клетку | `service/engine`, `service/rules` | `TestScenario_S16_*` | готово |
+| 5 | Стартовый пакет: роль `opening` возвращает пять клеток и текст завязки; при сбое — стартовая клетка шаблона, соседи «дорога», шаблон завязки | `service/narrator`, `app/round` | промпт `narrator/opening-v2`, схема | готово |
+| 6 | Рассказчик v4: во входе задания на генерацию (клетки для детализации, недостающие соседи с координатами и направлениями, лимиты); в ответе `world: {cells[], neighbors[]}` рядом с хроникой; валидация: координаты только из задания, уникальные ключи, лимиты числа, стадии; сбой → шаблонная клетка; принятый пакет → события `cell_generated`, `object_created` в той же транзакции | `service/narrator`, `app/round`, `service/engine` | промпт `narrator/v4`, `TestNarrator_WorldPackage`, eval | готово |
+| 7 | Сохранение результата вызова по ключу задания (`round_id`, роль, хэш входа): повтор раунда после отката берёт готовый ответ; `/replay` без модели | `app/round`, `adapter/postgres` | `generation_jobs` или поле `llm_runs`, `TestRound_RetryReusesGeneration` | готово |
+| 8 | Интерфейс: хроника и «Варианты» для новой клетки, направления в `/status` и кнопках, карточки соседей в сцене | `app/round`, `app/bot` | тексты, `guide/` | готово |
+| 9 | Документы: модель локации, модель данных, round-calls, глоссарий; `docs/concept` — удалить реализованное | docs | | готово |
 
 ## Проверка
-`make test`, `make eval-narrator` с заданиями на генерацию; интеграционный тест на 6 ходов по прямой; песочница: старт, три хода, возврат, `/replay`.
+`make test` (S16: `TestScenario_S16_*`, `TestApply_WorldPackage`, `TestParseDirection`, `TestPlanTasks`, `TestNarrate_WorldPackage`, `TestTemplateWorld`, `TestOpening_*`; `app/round`: `TestBegin_StartPackage`, `TestSixSteps_North` — 23 клетки после 6 шагов, `TestRound_RetryReusesGeneration`, `TestSaveState_ByID`), `make test-integration` (миграция `00023`, `world_objects`, открытия, `generation_jobs`); миграция применена к `tale` и `tale_test`, запущенная игра песочницы получила координаты и карточки-соседи. Живой прогон `make eval-narrator` (случай `world_generation`) и `EVAL_ARGS="-opening"` — по решению руководителя (подписка). Песочница: старт, три хода, возврат, `/replay` — ручное тестирование руководителя, замечания в `backlog.md`.
 
 ## Открытые вопросы
-[G17, G18](../../game/open-questions.md). Вопрос отдельного вызова генератора решается в пункте [31](31-local-context-budgets.md), допущение — один вызов рассказчика.
+[G17, G18](../../game/open-questions.md). Вопрос отдельного вызова генератора решается в пункте [31](31-local-context-budgets.md), допущение — один вызов рассказчика (реализовано так). Решения: [ADR-0019](../../decisions/0019-world-generation.md).

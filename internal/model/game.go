@@ -173,6 +173,8 @@ type Faction struct {
 	Description string
 	Tone        string
 	Relations   map[FactionCode]string
+	// ExploredSinceReset — счётчик исследования: клеток, открытых фракцией с последнего сброса (пункт 27; выдача квестов — пункт 28).
+	ExploredSinceReset int
 }
 
 // FactionTemplate — фракция в шаблоне жанра.

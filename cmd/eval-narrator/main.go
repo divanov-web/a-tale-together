@@ -38,6 +38,14 @@ type evalCase struct {
 	Required  []string   `json:"required"`  // подстроки, которые должны быть в тексте
 	Forbidden []string   `json:"forbidden"` // подстроки, которых быть не должно (без учёта регистра)
 	NoDigits  bool       `json:"no_digits"` // в тексте нет цифр
+	World     *caseWorld `json:"world"`     // ожидания к пакету мира (пункт 27); nil — пакет не проверяется
+}
+
+// caseWorld — ожидания к пакету мира: число клеток и карточек от модели, минимум объектов в клетке, без шаблонов.
+type caseWorld struct {
+	Cells      int `json:"cells"`
+	Neighbors  int `json:"neighbors"`
+	MinObjects int `json:"min_objects"`
 }
 
 type caseParams struct {
@@ -47,6 +55,7 @@ type caseParams struct {
 	Bios     map[model.CharacterID]narrator.Bio `json:"bios"`
 	Previous []model.Narration                  `json:"previous"`
 	State    *model.RoundSnapshot               `json:"state"`
+	Tasks    narrator.Tasks                     `json:"tasks"` // задания на достройку мира (пункт 27)
 }
 
 var digits = regexp.MustCompile(`\d`)
@@ -100,7 +109,7 @@ func run() error {
 		}
 		total++
 		p := narrator.Params{Title: set.Title, Tone: set.Tone, Factions: set.Factions, Def: set.CharacterModel,
-			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State}
+			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks}
 		started := time.Now()
 		res, err := svc.Narrate(context.Background(), p)
 		elapsed += time.Since(started)
@@ -120,6 +129,12 @@ func run() error {
 			fmt.Printf("     %s\n", res.Narration.Chronicle)
 			for _, sc := range res.Narration.Scenes {
 				fmt.Printf("     [%d %s] %s %v\n", sc.LocationID, sc.Party, sc.Text, sc.EventSeqs)
+			}
+			for _, cell := range res.World.Cells {
+				fmt.Printf("     [клетка %d] %s (%d объектов, шаблон=%v): %s\n", cell.LocationID, cell.Name, len(cell.Objects), cell.Template, cell.Description)
+			}
+			for _, n := range res.World.Neighbors {
+				fmt.Printf("     [сосед %d,%d] %s (%s): %s\n", n.X, n.Y, n.Name, n.Terrain, n.Card)
 			}
 			for _, is := range res.Issues {
 				fmt.Printf("     замечание: %s\n", is)
@@ -163,25 +178,39 @@ func check(c evalCase, res narrator.Result) []string {
 	if c.NoDigits && digits.MatchString(text) {
 		out = append(out, "есть цифры")
 	}
+	if w := c.World; w != nil {
+		if len(res.World.Cells) != w.Cells || len(res.World.Neighbors) != w.Neighbors {
+			out = append(out, fmt.Sprintf("пакет мира: клеток %d/%d, соседей %d/%d", len(res.World.Cells), w.Cells, len(res.World.Neighbors), w.Neighbors))
+		}
+		if n := res.World.Templated(); n > 0 {
+			out = append(out, fmt.Sprintf("пакет мира: %d заданий закрыто шаблоном", n))
+		}
+		for _, cell := range res.World.Cells {
+			if len(cell.Objects) < w.MinObjects {
+				out = append(out, fmt.Sprintf("клетка «%s»: объектов %d, нужно не меньше %d", cell.Name, len(cell.Objects), w.MinObjects))
+			}
+		}
+	}
 	return out
 }
 
-// runOpening — живой вызов завязки по миру, локациям и персонажам первого случая набора; проверка кодом: объём, цифры,
-// никнеймы (замечания печатаются, после дозапроса не считаются ошибкой).
+// runOpening — живой вызов завязки и стартового пакета по миру, первой локации и персонажам первого случая набора;
+// проверка кодом: объём, цифры, никнеймы (замечания печатаются, после дозапроса не считаются ошибкой), пакет: клетка
+// с объектами и четыре карточки соседей.
 func runOpening(svc *narrator.Service, set evalSet) error {
-	if len(set.Cases) == 0 || set.Cases[0].Params.State == nil {
+	if len(set.Cases) == 0 || set.Cases[0].Params.State == nil || len(set.Cases[0].Params.State.Locations) == 0 {
 		return fmt.Errorf("в наборе нет случая с состоянием")
 	}
 	st := set.Cases[0].Params.State
-	p := narrator.OpeningParams{Title: set.Title, Genre: "Классическое фэнтези", Tone: set.Tone, Mode: model.ModeBalanced, Factions: set.Factions}
-	for i, l := range st.Locations {
-		exits := []string{}
-		for _, link := range l.Links {
-			if !link.Hidden {
-				exits = append(exits, link.To)
-			}
-		}
-		p.Locations = append(p.Locations, narrator.OpeningLocation{Name: l.Name, Description: l.Description, Start: i == 0, Exits: exits})
+	start := st.Locations[0]
+	p := narrator.OpeningParams{Title: set.Title, Genre: "Классическое фэнтези", Tone: set.Tone, Mode: model.ModeBalanced, Factions: set.Factions, Def: set.CharacterModel,
+		Start: narrator.OpeningStart{LocationID: start.ID, Name: start.Name, Description: start.Description, Terrain: start.Terrain, Objects: []string{}}}
+	for _, o := range start.Objects {
+		p.Start.Objects = append(p.Start.Objects, o.Title)
+	}
+	for _, d := range model.Directions {
+		dx, dy := d.Offset()
+		p.Neighbors = append(p.Neighbors, narrator.NeighborTask{X: start.X + dx, Y: start.Y + dy, Direction: d, Of: start.ID, OfName: start.Name})
 	}
 	for _, c := range st.Characters {
 		p.Characters = append(p.Characters, narrator.OpeningCharacter{Nickname: c.Nickname, Gender: string(c.Gender), PublicBio: set.Cases[0].Params.Bios[c.ID].Public})
@@ -192,6 +221,15 @@ func runOpening(svc *narrator.Service, set evalSet) error {
 		return fmt.Errorf("завязка: %w", err)
 	}
 	fmt.Println(res.Text)
+	if res.Start != nil {
+		fmt.Printf("\n[старт] %s: %s\n", res.Start.Name, res.Start.Description)
+		for _, o := range res.Start.Objects {
+			fmt.Printf("  объект %s «%s» (%d подходов)\n", o.Key, o.Title, len(o.Approaches))
+		}
+	}
+	for _, n := range res.Neighbors {
+		fmt.Printf("[сосед %d,%d] %s (%s, шаблон=%v): %s\n", n.X, n.Y, n.Name, n.Terrain, n.Template, n.Card)
+	}
 	for _, is := range res.Issues {
 		fmt.Printf("замечание: %s\n", is)
 	}

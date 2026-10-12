@@ -47,7 +47,7 @@ func New(llm LLM, logger *slog.Logger) *Service {
 
 // SystemPrompt — системная часть промпта текущей версии (стабильный префикс для кэширования).
 func SystemPrompt() string {
-	b, err := prompts.FS.ReadFile("interpreter/v1.md")
+	b, err := prompts.FS.ReadFile("interpreter/v2.md")
 	if err != nil {
 		panic("interpreter: prompt: " + err.Error())
 	}

@@ -1,8 +1,10 @@
 // Package narrator — вызов 2 из 2 на раунд (docs/llm/round-calls.md): публичные и локационные события → хроника
 // раунда в группу одним запросом к модели: общий текст и блок на сцену. Факты и исходы не меняет; код проверяет,
 // что каждое событие упомянуто по ID, скрытые описания не раскрыты; пропуски дозапрашиваются адресно, затем
-// дописываются кодом. При сбое вызывающий публикует шаблонную хронику. Отдельный вызов на игру — завязка истории
-// при `/begin` (`opening.go`, ADR-0018): та же роль рассказчика, свой промпт и схема.
+// дописываются кодом. В том же вызове модель достраивает мир по заданиям кода (`world.go`, пункт 27, ADR-0019):
+// клетки, в которые вошли группы, и карточки недостающих соседей; пакет проверяется по заданиям и лимитам, остаток
+// закрывает шаблон. При сбое вызывающий публикует шаблонную хронику и шаблонные клетки. Отдельный вызов на игру —
+// завязка истории и стартовый пакет при `/begin` (`opening.go`, ADR-0018, ADR-0019).
 package narrator
 
 import (
@@ -59,19 +61,20 @@ func New(llm LLM, logger *slog.Logger) *Service {
 
 // SystemPrompt — системная часть промпта текущей версии (стабильный префикс для кэширования).
 func SystemPrompt() string {
-	b, err := prompts.FS.ReadFile("narrator/v3.md")
+	b, err := prompts.FS.ReadFile("narrator/v4.md")
 	if err != nil {
 		panic("narrator: prompt: " + err.Error())
 	}
 	return strings.TrimSpace(string(b))
 }
 
-// Result — хроника и учёт вызова.
+// Result — хроника, пакет мира и учёт вызова.
 type Result struct {
 	Narration model.Narration
-	Calls     int      // вызовов модели (1 или 2)
-	Patched   int      // событий, дописанных кодом после дозапроса
-	Issues    []string // замечания к ответам модели (для лога и eval)
+	World     WorldPackage // клетки и карточки по заданиям (пункт 27); пустой без заданий
+	Calls     int          // вызовов модели (1 или 2)
+	Patched   int          // событий, дописанных кодом после дозапроса
+	Issues    []string     // замечания к ответам модели (для лога и eval)
 	TokensIn  int
 	TokensOut int
 }
@@ -111,6 +114,8 @@ func (s *Service) Narrate(ctx context.Context, p Params) (Result, error) {
 	}
 	res.Narration = cur.narration
 	res.Narration.PromptVersion = PromptVersion
+	res.World = cur.world
+	res.Issues = append(res.Issues, cur.world.Issues...)
 	res.Patched = len(cur.missing)
 	if len(cur.missing) > 0 {
 		v.patch(&res.Narration, cur.missing)

@@ -227,6 +227,11 @@ func (h *harness) createGame() string {
 	if err != nil {
 		h.t.Fatalf("game not stored: %v", err)
 	}
+	// Пункт 27: мир достраивает рассказчик; в тестах без модели к северу от площади заранее стоит зал башни,
+	// чтобы «идти к башне» было переходом к соседу.
+	if _, err := h.store.CreateLocation(context.Background(), model.Location{GameID: g.ID, Name: "Зал Серой башни", Description: "Пыльный зал.", Terrain: "ruins", X: 0, Y: 1}); err != nil {
+		h.t.Fatalf("hall not created: %v", err)
+	}
 	return g.JoinCode
 }
 
@@ -1073,14 +1078,14 @@ func TestParty_Card(t *testing.T) {
 	if strings.Contains(strings.ToLower(reply), "лидер") || len(h.tg.lastKeyboard(private(bob))) != 0 {
 		t.Fatalf("party card leaks leader or has buttons: %q", reply)
 	}
-	mustContain(t, h.send(alice, groupChat, "/status"), "Группы:\n• Ночной дозор (2), Рыночная площадь: Элис, Боб")
+	mustContain(t, h.send(alice, groupChat, "/status"), "Группы:\n• Ночной дозор (2), Рыночная площадь (0, 0): Элис, Боб")
 	mustContain(t, h.send(alice, private(alice), "/character"), "Группа: «Ночной дозор»")
 
 	// Элис уходит в башню одна: лимит свободен — отделяется своей группой.
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Зал Серой башни", "Группа: «Вольные клинки»")
-	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Ночной дозор»", "• Боб — waiting", "Другие группы:\n• Вольные клинки (1, Зал Серой башни): Элис")
+	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Ночной дозор»", "• Боб — waiting", "Другие группы:\n• Вольные клинки (1, Зал Серой башни (0, 1)): Элис")
 }
 
 // TestParty_NewcomerInRunningGame (пункт 19): новичок в идущей игре входит в группу своей стартовой локации; если
@@ -1097,7 +1102,7 @@ func TestParty_NewcomerInRunningGame(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 	// Группа ушла в башню; Боб появляется на площади и получает свою группу.
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
-	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Вольные клинки»", "Локация: Рыночная площадь", "• Боб — active", "Другие группы:\n• Ночной дозор (1, Зал Серой башни): Элис")
+	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Вольные клинки»", "Локация: Рыночная площадь", "• Боб — active", "Другие группы:\n• Ночной дозор (1, Зал Серой башни (0, 1)): Элис")
 	// Лимит занят: следующий новичок идёт в ближайшую группу и входит в историю в её локации.
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
 	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)

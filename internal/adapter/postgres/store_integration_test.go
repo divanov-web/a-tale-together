@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -503,27 +504,54 @@ func TestGameFlow(t *testing.T) {
 	}
 
 	// Пункт 07: локации, события, итоги заявок, состояние персонажа.
-	if len(genre.Template.Locations) != 4 || !genre.Template.Locations[0].Start || !genre.Template.Locations[3].Objects[2].HiddenUntil {
+	// Пункт 27: шаблон жанра — только стартовая клетка; клетки уникальны по координатам, объекты в world_objects.
+	if len(genre.Template.Locations) != 1 || !genre.Template.Locations[0].Start || len(genre.Template.Locations[0].Objects) != 2 {
 		t.Fatalf("genre locations = %+v", genre.Template.Locations)
 	}
-	loc, err := s.CreateLocation(ctx, model.Location{GameID: game.ID, Name: "Подвал", Difficulty: 1, Links: []model.LocationLink{{To: "Зал", Title: "наверх"}},
-		Objects: []model.LocationObject{{Key: "door", Title: "дверь", State: "locked", Approaches: []model.Approach{{Action: model.ActionInteract, Attribute: "strength", Difficulty: 2, OnSuccess: json.RawMessage(`{"state":"broken"}`)}}}}, Active: true, Start: true})
+	loc, err := s.CreateLocation(ctx, model.Location{GameID: game.ID, Name: "Подвал", Difficulty: 1, Terrain: "cellar",
+		Objects: []model.LocationObject{{Key: "door", Title: "дверь", State: "locked", Approaches: []model.Approach{{Action: model.ActionInteract, Attribute: "strength", Difficulty: 2, OnSuccess: json.RawMessage(`{"state":"broken"}`)}}}}, Start: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateLocation(ctx, model.Location{GameID: game.ID, Name: "Подвал"}); err == nil {
-		t.Fatal("duplicate location accepted")
+	if _, err := s.CreateLocation(ctx, model.Location{GameID: game.ID, Name: "Подвал", X: 0, Y: 0}); err == nil {
+		t.Fatal("duplicate coordinates accepted")
+	}
+	if _, err := s.CreateLocation(ctx, model.Location{GameID: game.ID, Name: "Подвал", X: 0, Y: 1, Stage: model.StageCard}); err != nil {
+		t.Fatalf("same name at other coordinates rejected: %v", err)
 	}
 	locs, err := s.ListLocations(ctx, game.ID)
-	if err != nil || len(locs) != 1 || locs[0].Objects[0].Approaches[0].Difficulty != 2 || locs[0].Links[0].To != "Зал" {
+	if err != nil || len(locs) != 2 || locs[0].Objects[0].Approaches[0].Difficulty != 2 || locs[0].Stage != model.StageDetailed || locs[1].Stage != model.StageCard || len(locs[1].Objects) != 0 {
 		t.Fatalf("ListLocations = %+v, %v", locs, err)
 	}
 	locs[0].Objects[0].State = "broken"
-	if err := s.UpdateLocationObjects(ctx, game.ID, loc.ID, locs[0].Objects); err != nil {
+	if err := s.SaveObjectState(ctx, game.ID, loc.ID, locs[0].Objects[0]); err != nil {
 		t.Fatal(err)
 	}
 	if locs, _ = s.ListLocations(ctx, game.ID); locs[0].Objects[0].State != "broken" {
 		t.Fatalf("objects not updated: %+v", locs[0].Objects)
+	}
+	f1 := factions[0]
+	if ok, err := s.AddDiscovery(ctx, game.ID, loc.ID, f1.ID, r2.ID, 0); err != nil || !ok {
+		t.Fatalf("AddDiscovery = %v, %v", ok, err)
+	}
+	if ok, _ := s.AddDiscovery(ctx, game.ID, loc.ID, f1.ID, r2.ID, 0); ok {
+		t.Fatal("duplicate discovery counted")
+	}
+	if d, _ := s.ListDiscoveries(ctx, game.ID); len(d[loc.ID]) != 1 || d[loc.ID][0] != f1.ID {
+		t.Fatalf("ListDiscoveries = %+v", d)
+	}
+	if fs, _ := s.ListFactions(ctx, game.ID); fs[0].ExploredSinceReset != 1 {
+		t.Fatalf("explored_since_reset = %+v", fs)
+	}
+	rid := r2.ID
+	if err := s.SaveGenerationJob(ctx, model.GenerationJob{GameID: game.ID, RoundID: &rid, Role: model.RoleNarrator, InputHash: "abc", Response: model.LLMResponse{JSON: json.RawMessage(`{"x":1}`), TokensIn: 5}}); err != nil {
+		t.Fatal(err)
+	}
+	if job, err := s.GetGenerationJob(ctx, game.ID, &rid, model.RoleNarrator, "abc"); err != nil || !strings.Contains(strings.ReplaceAll(string(job.Response.JSON), " ", ""), `{"x":1}`) || job.Response.TokensIn != 5 {
+		t.Fatalf("GetGenerationJob = %+v, %v", job, err)
+	}
+	if _, err := s.GetGenerationJob(ctx, game.ID, nil, model.RoleNarrator, "abc"); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("job without round found: %v", err)
 	}
 	if seq, _ := s.NextEventSeq(ctx, game.ID); seq != 1 {
 		t.Fatalf("NextEventSeq = %d", seq)

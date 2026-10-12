@@ -64,6 +64,19 @@ func Describe(ev model.Event, state *model.RoundSnapshot) (actor, summary string
 		return actor, fmt.Sprintf("%s: HP %s", actor, payloadStr(ev, "to"))
 	case model.EventFactLearned:
 		return actor, fmt.Sprintf("%s узнаёт: %s", actor, payloadStr(ev, "fact"))
+	case model.EventCellDiscovered:
+		return actor, fmt.Sprintf("%s первым из своих открывает «%s»", actor, payloadStr(ev, "name"))
+	case model.EventCellGenerated:
+		if payloadStr(ev, "stage") == string(model.StageCard) {
+			return "мир", fmt.Sprintf("на горизонте «%s» (%s, %s)", payloadStr(ev, "name"), payloadStr(ev, "x"), payloadStr(ev, "y"))
+		}
+		return "мир", fmt.Sprintf("открывается «%s»: %s", payloadStr(ev, "name"), payloadStr(ev, "description"))
+	case model.EventObjectCreated:
+		var p struct {
+			Object model.LocationObject `json:"object"`
+		}
+		_ = json.Unmarshal(ev.Payload, &p)
+		return "мир", fmt.Sprintf("появляется объект «%s»", p.Object.Title)
 	}
 	return actor, fmt.Sprintf("%s: %s", actor, strings.ReplaceAll(string(ev.Type), "_", " "))
 }

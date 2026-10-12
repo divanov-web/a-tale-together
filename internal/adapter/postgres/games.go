@@ -157,7 +157,7 @@ func (s *Store) UpdateFaction(ctx context.Context, f model.Faction) error {
 
 // ListFactions возвращает фракции игры: стартовые good, evil, затем созданные по сюжету по id.
 func (s *Store) ListFactions(ctx context.Context, game model.GameID) ([]model.Faction, error) {
-	const q = `SELECT id, game_id, code, title, description, tone, relations FROM factions WHERE game_id = $1
+	const q = `SELECT id, game_id, code, title, description, tone, relations, explored_since_reset FROM factions WHERE game_id = $1
 ORDER BY array_position(ARRAY['good', 'evil'], code), id`
 	rows, err := s.db(ctx).Query(ctx, q, game)
 	if err != nil {
@@ -167,7 +167,7 @@ ORDER BY array_position(ARRAY['good', 'evil'], code), id`
 	var out []model.Faction
 	for rows.Next() {
 		var f model.Faction
-		if err := rows.Scan(&f.ID, &f.GameID, &f.Code, &f.Title, &f.Description, &f.Tone, &f.Relations); err != nil {
+		if err := rows.Scan(&f.ID, &f.GameID, &f.Code, &f.Title, &f.Description, &f.Tone, &f.Relations, &f.ExploredSinceReset); err != nil {
 			return nil, fmt.Errorf("postgres.ListFactions: scan: %w", err)
 		}
 		out = append(out, f)

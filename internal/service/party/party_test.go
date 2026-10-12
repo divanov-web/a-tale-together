@@ -70,19 +70,19 @@ func TestSplitLeaderAndNames(t *testing.T) {
 func TestNearestAndFind(t *testing.T) {
 	t.Parallel()
 	locs := []model.Location{
-		{ID: 1, Name: "Площадь", Links: []model.LocationLink{{To: "Зал"}}},
-		{ID: 2, Name: "Зал", Links: []model.LocationLink{{To: "Площадь"}, {To: "Подвал"}}},
-		{ID: 3, Name: "Подвал", Links: []model.LocationLink{{To: "Зал"}}},
-		{ID: 4, Name: "Остров"},
+		{ID: 1, Name: "Площадь", X: 0, Y: 0},
+		{ID: 2, Name: "Зал", X: 1, Y: 0},
+		{ID: 3, Name: "Подвал", X: 2, Y: 0},
+		{ID: 4, Name: "Остров", X: 5, Y: 5},
 	}
 	if got, ok := Nearest(locs, 1, []model.LocationID{3, 2}); !ok || got != 2 {
 		t.Errorf("nearest = %d, %v", got, ok)
 	}
-	if got, ok := Nearest(locs, 1, []model.LocationID{3, 4}); !ok || got != 3 {
+	if got, ok := Nearest(locs, 1, []model.LocationID{4, 3}); !ok || got != 3 {
 		t.Errorf("nearest far = %d, %v", got, ok)
 	}
-	if _, ok := Nearest(locs, 1, []model.LocationID{4}); ok {
-		t.Error("unreachable found")
+	if _, ok := Nearest(locs, 1, []model.LocationID{9}); ok {
+		t.Error("unknown location found")
 	}
 	parties := []model.Party{{ID: 5, Name: "Ночной дозор", Status: model.PartyActive}, {ID: 6, Name: "Старые", Status: model.PartyDisbanded}}
 	if p, ok := Find(parties, "ночной ДОЗОР"); !ok || p.ID != 5 {
@@ -102,9 +102,9 @@ func TestNearestAndFind(t *testing.T) {
 func TestAssignAndStale(t *testing.T) {
 	t.Parallel()
 	locs := []model.Location{
-		{ID: 1, Name: "Площадь", Links: []model.LocationLink{{To: "Зал"}}},
-		{ID: 2, Name: "Зал", Links: []model.LocationLink{{To: "Площадь"}, {To: "Подвал"}}},
-		{ID: 3, Name: "Подвал", Links: []model.LocationLink{{To: "Зал"}}},
+		{ID: 1, Name: "Площадь", X: 0, Y: 0},
+		{ID: 2, Name: "Зал", X: 1, Y: 0},
+		{ID: 3, Name: "Подвал", X: 2, Y: 0},
 	}
 	loc := func(id model.LocationID) *model.LocationID { return &id }
 	active := []model.Party{{ID: 5, Status: model.PartyActive, LocationID: loc(3)}, {ID: 6, Status: model.PartyActive, LocationID: loc(2)}, {ID: 7, Status: model.PartyDisbanded, LocationID: loc(1)}}

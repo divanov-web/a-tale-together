@@ -19,6 +19,8 @@ var digits = regexp.MustCompile(`\d`)
 type validator struct {
 	in       Input
 	mode     model.GameMode
+	tasks    Tasks
+	def      model.CharacterModelDef
 	scenes   map[int]scene   // по scene_id
 	groups   map[int64]int64 // seq события → ключ группы (у перехода два seq с одной сутью)
 	required map[int64]bool  // ключи групп, которые должны быть упомянуты
@@ -34,12 +36,13 @@ type checked struct {
 	missing   []int64 // ключи групп событий без упоминания
 	leak      bool
 	suspect   string
+	world     WorldPackage // пакет мира по заданиям; замечания к нему дозапроса не вызывают
 }
 
 func (c checked) needsRetry() bool { return len(c.issues) > 0 }
 
 func newValidator(in Input, p Params) *validator {
-	v := &validator{in: in, mode: p.Mode, scenes: map[int]scene{}, groups: map[int64]int64{}, required: map[int64]bool{}, events: map[int64]event{}, secrets: map[string]string{}, failed: map[int64]string{}}
+	v := &validator{in: in, mode: p.Mode, tasks: p.Tasks, def: p.Def, scenes: map[int]scene{}, groups: map[int64]int64{}, required: map[int64]bool{}, events: map[int64]event{}, secrets: map[string]string{}, failed: map[int64]string{}}
 	for _, sc := range in.Scenes {
 		v.scenes[sc.SceneID] = sc
 		for _, c := range sc.Characters {
@@ -133,6 +136,7 @@ func (v *validator) validate(raw json.RawMessage) (checked, error) {
 		out.issues = append(out.issues, fmt.Sprintf("текст слишком длинный (%d символов): сократи до %d", n, MaxOutputRunes))
 	}
 	out.suspect = v.suspectOutcome(out.narration)
+	out.world = validateWorld(resp.World, v.tasks, v.def)
 	return out, nil
 }
 

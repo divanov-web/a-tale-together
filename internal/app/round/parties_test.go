@@ -99,12 +99,14 @@ func TestRound_PartySplitAndLeader(t *testing.T) {
 	if *chars["Элис"].PartyID != parties[1].ID || *chars["Боб"].PartyID != parties[0].ID || *chars["Кэт"].PartyID != parties[0].ID {
 		t.Fatalf("characters after split: %+v", chars)
 	}
+	// Пункт 27: за событиями движка (ожидание, разделение, пара перехода, открытие клетки) идут две шаблонные
+	// карточки соседей зала; воспроизведение сравнивает только события движка.
 	events, _ := w.store.ListEvents(ctx, w.game.ID, info.Last.ID)
-	if len(events) != 4 || events[1].Type != model.EventPartySplit {
+	if len(events) != 7 || events[1].Type != model.EventPartySplit || events[4].Type != model.EventCellDiscovered || events[6].Type != model.EventCellGenerated {
 		t.Fatalf("events = %+v", events)
 	}
 	// Воспроизведение раунда с зарезервированным id даёт те же события.
-	if n, same, err := w.svc.Replay(ctx, w.game, 1, 1); err != nil || !same || n != 4 {
+	if n, same, err := w.svc.Replay(ctx, w.game, 1, 1); err != nil || !same || n != 5 {
 		t.Fatalf("replay = %d, %v, %v", n, same, err)
 	}
 }

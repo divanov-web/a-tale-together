@@ -79,6 +79,11 @@ func (s *Store) DeleteGameProgress(_ context.Context, game model.GameID) error {
 	}
 	s.outbox = slices.DeleteFunc(s.outbox, func(m model.OutboxMessage) bool { return m.GameID == game })
 	s.events = slices.DeleteFunc(s.events, func(ev model.Event) bool { return ev.GameID == game })
+	for k := range s.jobs {
+		if k.game == game {
+			delete(s.jobs, k)
+		}
+	}
 	for id, p := range s.parties {
 		if p.GameID == game {
 			delete(s.parties, id)

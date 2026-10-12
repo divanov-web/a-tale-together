@@ -77,7 +77,7 @@ func newPGWorld(t *testing.T) *pgWorld {
 	}
 	var start *model.LocationID
 	for i, lt := range genre.Template.Locations {
-		l, err := store.CreateLocation(ctx, model.Location{GameID: g.ID, Name: lt.Name, Description: lt.Description, Difficulty: lt.Difficulty, Links: lt.Links, Objects: lt.Objects, Active: true, Start: lt.Start || i == 0})
+		l, err := store.CreateLocation(ctx, model.Location{GameID: g.ID, Name: lt.Name, Description: lt.Description, Difficulty: lt.Difficulty, Terrain: lt.Terrain, Objects: lt.Objects, Start: lt.Start || i == 0, X: i, Y: 0})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -85,6 +85,10 @@ func newPGWorld(t *testing.T) *pgWorld {
 			id := l.ID
 			start = &id
 		}
+	}
+	// Пункт 27: к северу от площади зал башни, чтобы «идти к башне» было переходом к соседу (остальное достроил бы рассказчик).
+	if _, err := store.CreateLocation(ctx, model.Location{GameID: g.ID, Name: "Зал Серой башни", Description: "Пыльный зал.", Terrain: "ruins", X: 0, Y: 1}); err != nil {
+		t.Fatal(err)
 	}
 	if err := store.AddMember(ctx, model.GameMember{GameID: g.ID, UserID: user.ID, Role: model.RoleAdmin, Status: model.MemberActive}); err != nil {
 		t.Fatal(err)
@@ -184,7 +188,13 @@ func TestIntegration_RestartMidRound(t *testing.T) {
 	if open, err := w.store.OpenRound(ctx, w.game.ID); err != nil || open.RoundNo != 2 {
 		t.Fatalf("next round = %+v, %v", open, err)
 	}
-	if n, same, err := w.svc.Replay(ctx, g, 1, 1); err != nil || !same || n != len(events) {
+	engineEvents := 0
+	for _, ev := range events {
+		if !model.GenerationEvents[ev.Type] {
+			engineEvents++
+		}
+	}
+	if n, same, err := w.svc.Replay(ctx, g, 1, 1); err != nil || !same || n != engineEvents {
 		t.Fatalf("replay = %d, %v, %v", n, same, err)
 	}
 }

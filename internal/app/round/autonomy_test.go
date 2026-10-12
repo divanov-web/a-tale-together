@@ -55,8 +55,10 @@ func (o *oracleLLM) Complete(ctx context.Context, call applm.Call, req model.LLM
 	for _, sub := range r.Snapshot.Submissions {
 		c, _ := r.Snapshot.Character(sub.CharacterID)
 		in := map[string]any{"submission_id": sub.SubmissionID, "character_id": sub.CharacterID, "action_type": "wait", "target": "", "approach_idx": nil, "attribute": nil, "skill": nil, "risk": nil, "on_success": nil, "on_fail": nil, "push": false, "ambiguities": []string{}, "fallback": nil}
-		if loc, ok := r.Snapshot.Location(*c.LocationID); ok && sub.Text == "идти дальше" && len(loc.Links) > 0 {
-			in["action_type"], in["target"] = "move", loc.Links[0].To
+		if loc, ok := r.Snapshot.Location(*c.LocationID); ok && sub.Text == "идти дальше" {
+			if exits := r.Snapshot.Exits(loc); len(exits) > 0 {
+				in["action_type"], in["target"] = "move", string(exits[0].Direction)
+			}
 		}
 		intents = append(intents, in)
 	}
@@ -258,7 +260,13 @@ func TestTenRounds_Autonomous(t *testing.T) {
 			}
 			lastSeq = ev.Seq
 		}
-		if n, same, err := w.svc.Replay(ctx, g, 1, no); err != nil || !same || n != len(events) {
+		engineEvents := 0
+		for _, ev := range events {
+			if !model.GenerationEvents[ev.Type] {
+				engineEvents++
+			}
+		}
+		if n, same, err := w.svc.Replay(ctx, g, 1, no); err != nil || !same || n != engineEvents {
 			t.Fatalf("round %d replay = %d, %v, %v", no, n, same, err)
 		}
 		// Состояние мира: снимок раунда равен свёртке предыдущего опубликованного снимка с его событиями.

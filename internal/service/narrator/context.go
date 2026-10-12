@@ -45,14 +45,16 @@ type Params struct {
 	Bios     map[model.CharacterID]Bio `json:"bios"`
 	Events   []model.Event             `json:"events"` // только public и location (visibility.Public)
 	Def      model.CharacterModelDef   `json:"character_model"`
+	Tasks    Tasks                     `json:"tasks"` // задания на достройку мира (пункт 27); пусто — пакет мира не нужен
 }
 
-// Input — переменная часть вызова: мир, сцены, события, подходы следующего раунда.
+// Input — переменная часть вызова: мир, сцены, события, подходы следующего раунда, задания на достройку мира.
 type Input struct {
 	World      world        `json:"world"`
 	Scenes     []scene      `json:"scenes"`
 	Events     []event      `json:"events"`
 	Approaches []approachIn `json:"approaches"`
+	Generate   *generate    `json:"generate,omitempty"` // пункт 27: что достроить; nil — заданий нет
 }
 
 type world struct {
@@ -64,15 +66,45 @@ type world struct {
 	Previous []string  `json:"previous"`
 }
 
+// generate — задания на генерацию с лимитами и ключами модели персонажа для подходов.
+type generate struct {
+	Cells          []CellTask     `json:"cells"`
+	Neighbors      []NeighborTask `json:"neighbors"`
+	Limits         limits         `json:"limits"`
+	CharacterModel modelInfo      `json:"character_model"`
+}
+
+type limits struct {
+	ObjectsPerCell    int `json:"objects_per_cell"`
+	ApproachesPerObj  int `json:"approaches_per_object"`
+	DescriptionRunes  int `json:"description_max_chars"`
+	CardRunes         int `json:"card_max_chars"`
+	DifficultyUsual   int `json:"difficulty_usual"`
+	DifficultyHard    int `json:"difficulty_hard"`
+	DifficultyExtreme int `json:"difficulty_extreme"`
+	CellDifficultyMax int `json:"cell_difficulty_max"`
+}
+
 type scene struct {
-	SceneID     int              `json:"scene_id"`
-	LocationID  model.LocationID `json:"location_id"`
-	Party       string           `json:"party,omitempty"` // имя группы; пусто — персонажи без группы в этой локации (пункт 19)
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Exits       []string         `json:"exits"`
-	Objects     []sceneObject    `json:"objects"`
-	Characters  []sceneCharacter `json:"characters"`
+	SceneID     int                 `json:"scene_id"`
+	LocationID  model.LocationID    `json:"location_id"`
+	Party       string              `json:"party,omitempty"` // имя группы; пусто — персонажи без группы в этой локации (пункт 19)
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	X           int                 `json:"x"`
+	Y           int                 `json:"y"`
+	Stage       model.LocationStage `json:"stage"`
+	Terrain     string              `json:"terrain,omitempty"`
+	Exits       []sceneExit         `json:"exits"`
+	Objects     []sceneObject       `json:"objects"`
+	Characters  []sceneCharacter    `json:"characters"`
+}
+
+// sceneExit — выход по направлению: имя соседа и его карточка.
+type sceneExit struct {
+	Direction model.Direction `json:"direction"`
+	Name      string          `json:"name"`
+	Card      string          `json:"card,omitempty"`
 }
 
 // Label — подпись сцены в хронике: имя группы с локацией в скобках, у одиночек — название локации.
@@ -180,14 +212,16 @@ func BuildInput(p Params) Input {
 		if !ok {
 			continue
 		}
-		sc := scene{SceneID: len(in.Scenes) + 1, LocationID: l.ID, Name: l.Name, Description: l.Description, Exits: []string{}, Objects: []sceneObject{}, Characters: present[key]}
+		sc := scene{SceneID: len(in.Scenes) + 1, LocationID: l.ID, Name: l.Name, Description: l.Description, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain, Exits: []sceneExit{}, Objects: []sceneObject{}, Characters: present[key]}
 		if pt, ok := p.State.Party(key.party); ok && key.party != 0 {
 			sc.Party = pt.Name
 		}
-		for _, link := range l.Links {
-			if !link.Hidden {
-				sc.Exits = append(sc.Exits, link.Title)
+		for _, e := range p.State.Exits(l) {
+			x := sceneExit{Direction: e.Direction, Name: e.To.Name}
+			if e.To.Stage == model.StageCard {
+				x.Card = e.To.Description
 			}
+			sc.Exits = append(sc.Exits, x)
 		}
 		for _, o := range l.Objects {
 			if o.HiddenUntil && !o.Revealed {
@@ -214,13 +248,33 @@ func BuildInput(p Params) Input {
 		in.Events = append(in.Events, e)
 	}
 	for _, opt := range Options(p.State, p.Def, p.Mode) {
+		if opt.Move != "" {
+			continue // выходы уже в сценах
+		}
 		a := approachIn{LocationID: opt.LocationID, Object: opt.ObjectTitle, Title: opt.Title, Attribute: opt.Attribute, Skill: opt.Skill}
 		if p.Mode != model.ModeNarrative {
 			a.Difficulty = opt.Difficulty
 		}
 		in.Approaches = append(in.Approaches, a)
 	}
+	if !p.Tasks.Empty() {
+		cells, neighbors := p.Tasks.Cells, p.Tasks.Neighbors
+		if cells == nil {
+			cells = []CellTask{}
+		}
+		if neighbors == nil {
+			neighbors = []NeighborTask{}
+		}
+		in.Generate = &generate{Cells: cells, Neighbors: neighbors, Limits: generationLimits(), CharacterModel: modelKeys(p.Def)}
+	}
 	return in
+}
+
+// generationLimits — лимиты пакета мира для модели (docs/game/world.md): число объектов и подходов, длины,
+// ориентиры сложности подходов (база без надбавки клетки).
+func generationLimits() limits {
+	return limits{ObjectsPerCell: model.MaxObjectsPerCell, ApproachesPerObj: model.MaxApproachesPerObj, DescriptionRunes: model.MaxCellDescRunes, CardRunes: model.MaxCardRunes,
+		DifficultyUsual: 5, DifficultyHard: 7, DifficultyExtreme: 9, CellDifficultyMax: 2}
 }
 
 // Encode — JSON контекста для поля Input запроса.
@@ -260,10 +314,12 @@ func nonNilFactions(f []Faction) []Faction {
 	return f
 }
 
-// Option — подход объекта для следующего раунда с посчитанной кодом сложностью и шансом каждого присутствующего персонажа.
+// Option — вариант следующего раунда: подход объекта с посчитанной кодом сложностью и шансом каждого присутствующего
+// персонажа либо переход по направлению к соседней клетке (`Move`, пункт 27; `Object` = MoveObject, `Idx` — номер
+// направления в model.Directions).
 type Option struct {
 	LocationID  model.LocationID
-	Object      string // ключ объекта
+	Object      string // ключ объекта или MoveObject
 	ObjectTitle string
 	Idx         int
 	Title       string
@@ -271,7 +327,11 @@ type Option struct {
 	Skill       string // название навыка
 	Difficulty  int    // итоговая: подход + локация; 0 — без броска
 	Chances     []Chance
+	Move        model.Direction // переход: направление; пусто у подхода объекта
 }
+
+// MoveObject — значение Option.Object у варианта-перехода (ссылка кнопки `#раунд:локация:move:направление`).
+const MoveObject = "move"
 
 // Chance — параметр и шанс персонажа на подход, в процентах (в группу не выводится, для личных подсказок; B15).
 type Chance struct {
@@ -280,9 +340,10 @@ type Chance struct {
 	Pct      int
 }
 
-// Options считает подходы видимых объектов каждой сцены для следующего раунда (шаг 8 в docs/llm/round-calls.md):
-// сложность по пресету режима плюс сложность локации, шанс по пулу каждого присутствующего персонажа. Исчерпанные
-// подходы (`engine.ApproachDone`: объект уже в целевом состоянии, факт известен всем присутствующим; B8) не предлагаются.
+// Options считает варианты каждой занятой клетки для следующего раунда (шаг 8 в docs/llm/round-calls.md): подходы
+// видимых объектов (сложность по пресету режима плюс сложность локации, шанс по параметру каждого присутствующего
+// персонажа), затем переходы по направлениям к существующим соседям (пункт 27). Исчерпанные подходы
+// (`engine.ApproachDone`: объект уже в целевом состоянии, факт известен всем присутствующим; B8) не предлагаются.
 func Options(state *model.RoundSnapshot, def model.CharacterModelDef, mode model.GameMode) []Option {
 	var out []Option
 	if state == nil {
@@ -333,8 +394,21 @@ func Options(state *model.RoundSnapshot, def model.CharacterModelDef, mode model
 				out = append(out, opt)
 			}
 		}
+		for _, e := range state.Exits(&l) {
+			out = append(out, Option{LocationID: l.ID, Object: MoveObject, ObjectTitle: e.To.Name, Idx: directionIndex(e.Direction), Title: "идти " + e.Title(), Move: e.Direction})
+		}
 	}
 	return out
+}
+
+// directionIndex — номер направления в model.Directions.
+func directionIndex(d model.Direction) int {
+	for i, x := range model.Directions {
+		if x == d {
+			return i
+		}
+	}
+	return -1
 }
 
 // OptionsText — блок подходов сцены для сообщения в группу: заголовок и пункт на подход с новой строки,
@@ -343,6 +417,10 @@ func Options(state *model.RoundSnapshot, def model.CharacterModelDef, mode model
 func OptionsText(opts []Option, mode model.GameMode) string {
 	parts := make([]string, 0, len(opts))
 	for _, o := range opts {
+		if o.Move != "" {
+			parts = append(parts, "• "+o.Title)
+			continue
+		}
 		if o.Attribute == "" {
 			parts = append(parts, "• "+o.Title+" (без броска)")
 			continue

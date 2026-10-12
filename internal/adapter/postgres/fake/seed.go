@@ -40,7 +40,7 @@ func BasicFantasy() model.CharacterModelDef {
 	}
 }
 
-// FantasyTemplate — шаблон жанра fantasy, как в миграциях 00003 и 00015 (сокращённый набор локаций).
+// FantasyTemplate — шаблон жанра fantasy, как в миграциях 00003, 00015 и 00023 (только стартовая клетка).
 func FantasyTemplate() model.GenreTemplate {
 	return model.GenreTemplate{
 		SchemaVersion:  1,
@@ -51,14 +51,8 @@ func FantasyTemplate() model.GenreTemplate {
 			{Code: model.FactionEvil, Title: "Гильдия теней", Description: "Контрабандисты и шпионы; хотят свободы от Ордена.", Tone: "сторона конфликта, не злодеи", Relations: map[string]string{"good": "hostile"}},
 		},
 		Locations: []model.LocationTemplate{
-			{Name: "Рыночная площадь", Description: "Сердце города.", Start: true, Links: []model.LocationLink{{To: "Зал Серой башни", Title: "к башне"}},
+			{Name: "Рыночная площадь", Description: "Сердце города.", Start: true, Terrain: "town",
 				Objects: []model.LocationObject{{Key: "notice_board", Title: "доска объявлений", Description: "Объявление о награде.", Approaches: []model.Approach{{Action: model.ActionExplore, Title: "разобрать приписку", Attribute: "wits", Skill: "awareness", Difficulty: 5, OnSuccess: json.RawMessage(`{"fact":"Гонца видели у башни."}`)}}}}},
-			{Name: "Зал Серой башни", Description: "Пыльный зал.", Links: []model.LocationLink{{To: "Рыночная площадь", Title: "на площадь"}, {To: "Подвал башни", Title: "вниз в подвал"}}},
-			{Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, Links: []model.LocationLink{{To: "Зал Серой башни", Title: "наверх в зал"}},
-				Objects: []model.LocationObject{{Key: "cellar_door", Title: "запертая дверь", State: "locked", Approaches: []model.Approach{
-					{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Skill: "athletics", Difficulty: 4, OnSuccess: json.RawMessage(`{"state":"broken"}`), OnFail: json.RawMessage(`{"condition":"exhausted"}`)},
-					{Action: model.ActionInteract, Title: "отпереть", Attribute: "agility", Skill: "thievery", Difficulty: 4, OnSuccess: json.RawMessage(`{"state":"open"}`)},
-				}}}},
 		},
 		OpeningScene: "В {{world_title}} наступает осень.",
 		PartyNames:   []string{"Ночной дозор", "Вольные клинки", "Странники", "Искатели", "Тени башни"},

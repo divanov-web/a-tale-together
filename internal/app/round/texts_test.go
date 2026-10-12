@@ -89,33 +89,36 @@ func TestTexts_OptionsFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state := snapshot(w.game, chars, locations, nil, def)
+	state := snapshot(w.game, chars, locations, nil, nil, def)
 	opts := narrator.Options(&state, def, model.ModeBalanced)
 	alice := state.Characters[0]
-	want := "Варианты для вас (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%"
+	want := "Варианты для вас (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%\n• идти на север: Зал Серой башни"
 	if got := optionsFor(alice, &state, opts, "Варианты для вас"); got != want {
 		t.Errorf("balanced =\n%q\nwant\n%q", got, want)
 	}
 	// B19: в «повествовании» личный шанс тоже в процентах, сложность берётся из вариантов этого режима.
-	if got := optionsFor(alice, &state, narrator.Options(&state, def, model.ModeNarrative), "Варианты на раунд 2"); got != "Варианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%" {
+	if got := optionsFor(alice, &state, narrator.Options(&state, def, model.ModeNarrative), "Варианты на раунд 2"); got != "Варианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 5, шанс 60%\n• идти на север: Зал Серой башни" {
 		t.Errorf("narrative = %q", got)
 	}
-	// Подвал: сложность локации 1, у плута без атлетики и воровства шансы 20 % и 30 %.
+	// Подвал: сложность локации 1, у плута без атлетики и воровства шансы 20 % и 30 %; снимок локальный (пункт 27):
+	// персонаж переносится в подвал до сборки, иначе подвала и его соседей в снимке нет.
 	var cellar model.LocationID
 	for _, l := range locations {
 		if l.Name == "Подвал башни" {
 			cellar = l.ID
 		}
 	}
-	state.Characters[0].LocationID = &cellar
+	chars[0].LocationID = &cellar
+	state = snapshot(w.game, chars, locations, nil, nil, def)
 	opts = narrator.Options(&state, def, model.ModeBalanced)
-	if got := optionsFor(state.Characters[0], &state, opts, "Варианты для вас"); got != "Варианты для вас (Подвал башни):\n• выбить (Сила/атлетика): параметр 2, сложность 5, шанс 20%\n• отпереть (Ловкость/воровство): параметр 3, сложность 5, шанс 30%" {
+	if got := optionsFor(state.Characters[0], &state, opts, "Варианты для вас"); got != "Варианты для вас (Подвал башни):\n• выбить (Сила/атлетика): параметр 2, сложность 5, шанс 20%\n• отпереть (Ловкость/воровство): параметр 3, сложность 5, шанс 30%\n• идти на юг: Зал Серой башни" {
 		t.Errorf("cellar = %q", got)
 	}
 	state.Characters[0].LocationID = nil
 	if got := optionsFor(state.Characters[0], &state, opts, "Варианты для вас"); got != "" {
 		t.Errorf("no location = %q", got)
 	}
+	// Клетка без объектов: только переходы.
 	var hall model.LocationID
 	for _, l := range locations {
 		if l.Name == "Зал Серой башни" {
@@ -123,7 +126,7 @@ func TestTexts_OptionsFor(t *testing.T) {
 		}
 	}
 	state.Characters[0].LocationID = &hall
-	if got := optionsFor(state.Characters[0], &state, narrator.Options(&state, def, model.ModeBalanced), "Варианты для вас"); got != "" {
+	if got := optionsFor(state.Characters[0], &state, narrator.Options(&state, def, model.ModeBalanced), "Варианты для вас"); got != "Варианты для вас (Зал Серой башни):\n• идти на север: Подвал башни\n• идти на юг: Рыночная площадь" {
 		t.Errorf("no approaches = %q", got)
 	}
 }

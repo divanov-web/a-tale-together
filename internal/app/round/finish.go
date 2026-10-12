@@ -112,8 +112,10 @@ func (s *Service) characterDef(ctx context.Context, g model.Game) (model.Charact
 }
 
 // Reset — сброс игры для повторных прогонов в песочнице (dev): ход игры удаляется (раунды, заявки, события, итоги,
-// outbox), персонажи возвращаются к стартовому состоянию (HP по формуле, стартовая локация, без состояний и знаний,
-// `active`), объекты локаций — из шаблона жанра, игра — в `draft`; участники и персонажи остаются. `llm_runs` не трогаются.
+// outbox, сохранённые ответы модели), мир сворачивается до стартовой клетки шаблона жанра (остальные клетки,
+// открытия и счётчики исследования удаляются; пункт 27), персонажи возвращаются к стартовому состоянию (HP по
+// формуле, стартовая клетка, без состояний и знаний, `active`), игра — в `draft`; участники и персонажи остаются.
+// `llm_runs` не трогаются.
 func (s *Service) Reset(ctx context.Context, game model.Game, actor model.UserID) (model.Game, error) {
 	if err := s.canAdmin(ctx, game, actor); err != nil {
 		return model.Game{}, err
@@ -139,22 +141,32 @@ func (s *Service) Reset(ctx context.Context, game model.Game, actor model.UserID
 		if err != nil {
 			return err
 		}
+		if err := s.store.ResetWorld(ctx, g.ID); err != nil {
+			return err
+		}
 		locations, err := s.store.ListLocations(ctx, g.ID)
 		if err != nil {
 			return err
 		}
 		var start *model.LocationID
 		for _, l := range locations {
-			if l.Start || start == nil {
-				id := l.ID
-				start = &id
+			if !l.Start && start != nil {
+				continue
 			}
+			id := l.ID
+			start = &id
 			for _, lt := range genre.Template.Locations {
-				if lt.Name == l.Name {
-					if err := s.store.UpdateLocationObjects(ctx, g.ID, l.ID, lt.Objects); err != nil {
-						return err
-					}
+				if !lt.Start && len(genre.Template.Locations) > 1 {
+					continue
 				}
+				l.Name, l.Description, l.Difficulty, l.Terrain, l.Stage, l.VisitedAt = lt.Name, lt.Description, lt.Difficulty, lt.Terrain, model.StageDetailed, nil
+				if err := s.store.UpdateLocation(ctx, l); err != nil {
+					return err
+				}
+				if err := s.store.ReplaceObjects(ctx, g.ID, l.ID, lt.Objects); err != nil {
+					return err
+				}
+				break
 			}
 		}
 		season, err := s.store.ActiveSeason(ctx, g.ID)

@@ -167,17 +167,21 @@ func (s *Service) createFactions(ctx context.Context, game model.GameID, t model
 	return nil
 }
 
-// createLocations создаёт стартовые локации из шаблона жанра; первая помечается стартовой, если шаблон не указал.
+// createLocations создаёт стартовую клетку `(0,0)` из шаблона жанра (пункт 27: остальной мир достраивает рассказчик
+// при `/begin` и по ходу игры); стартовой считается помеченная `start`, иначе первая локация шаблона.
 func (s *Service) createLocations(ctx context.Context, game model.GameID, t model.GenreTemplate) error {
-	hasStart := false
-	for _, lt := range t.Locations {
-		hasStart = hasStart || lt.Start
+	if len(t.Locations) == 0 {
+		return nil
 	}
-	for i, lt := range t.Locations {
-		l := model.Location{GameID: game, Name: lt.Name, Description: lt.Description, Difficulty: lt.Difficulty, Links: lt.Links, Objects: lt.Objects, Active: true, Start: lt.Start || (!hasStart && i == 0)}
-		if _, err := s.store.CreateLocation(ctx, l); err != nil {
-			return err
+	lt := t.Locations[0]
+	for _, candidate := range t.Locations {
+		if candidate.Start {
+			lt = candidate
 		}
+	}
+	l := model.Location{GameID: game, Name: lt.Name, Description: lt.Description, Difficulty: lt.Difficulty, Terrain: lt.Terrain, Stage: model.StageDetailed, Objects: lt.Objects, Start: true}
+	if _, err := s.store.CreateLocation(ctx, l); err != nil {
+		return err
 	}
 	return nil
 }

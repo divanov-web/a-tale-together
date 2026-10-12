@@ -469,8 +469,9 @@ func (f *fakeLLM) byRole(role model.LLMRole) []applm.Call {
 	return out
 }
 
-// towerWorld — мир с локациями жанра и персонажами на стартовой локации с характеристиками (в app/game это делает
-// создание игры и персонажа).
+// towerWorld — мир на сетке (пункт 27) с персонажами на стартовой клетке: площадь жанра `(0,0)` с доской объявлений,
+// к северу зал Серой башни `(0,1)`, за ним подвал `(0,2)` с запертой дверью (в app/game стартовую клетку создаёт
+// создание игры, остальное достраивает рассказчик).
 func towerWorld(t *testing.T) *world {
 	t.Helper()
 	s := model.DefaultGameSettings()
@@ -478,13 +479,23 @@ func towerWorld(t *testing.T) *world {
 	w := newWorld(t, s)
 	ctx := context.Background()
 	genre, _ := w.store.GetGenre(ctx, w.game.GenreID)
+	lt := genre.Template.Locations[0]
+	cells := []model.Location{
+		{GameID: w.game.ID, Name: lt.Name, Description: lt.Description, Difficulty: lt.Difficulty, Terrain: lt.Terrain, Objects: lt.Objects, Start: true, X: 0, Y: 0},
+		{GameID: w.game.ID, Name: "Зал Серой башни", Description: "Пыльный зал.", Terrain: "ruins", X: 0, Y: 1},
+		{GameID: w.game.ID, Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, Terrain: "cellar", X: 0, Y: 2,
+			Objects: []model.LocationObject{{Key: "cellar_door", Title: "запертая дверь", State: "locked", Approaches: []model.Approach{
+				{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Skill: "athletics", Difficulty: 4, OnSuccess: json.RawMessage(`{"state":"broken"}`), OnFail: json.RawMessage(`{"condition":"exhausted"}`)},
+				{Action: model.ActionInteract, Title: "отпереть", Attribute: "agility", Skill: "thievery", Difficulty: 4, OnSuccess: json.RawMessage(`{"state":"open"}`)},
+			}}}},
+	}
 	var start model.LocationID
-	for i, lt := range genre.Template.Locations {
-		l, err := w.store.CreateLocation(ctx, model.Location{GameID: w.game.ID, Name: lt.Name, Description: lt.Description, Difficulty: lt.Difficulty, Links: lt.Links, Objects: lt.Objects, Active: true, Start: lt.Start})
+	for i, cell := range cells {
+		l, err := w.store.CreateLocation(ctx, cell)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if lt.Start || i == 0 {
+		if i == 0 {
 			start = l.ID
 		}
 	}
@@ -538,7 +549,7 @@ func TestResolve_Interpreter(t *testing.T) {
 	if free.Status != model.ResultResolved || free.Check == nil || free.Check.Attribute != "wits" || free.Check.Difficulty != 5 || !free.Intent.FreeCheck() {
 		t.Fatalf("free action = %+v", free)
 	}
-	if mv := byChar[w.chars[1].ID]; mv.Status != model.ResultResolved || mv.Intent.Target != "Зал Серой башни" {
+	if mv := byChar[w.chars[1].ID]; mv.Status != model.ResultResolved || mv.Intent.Target != "north" {
 		t.Fatalf("move = %+v", mv)
 	}
 	// Сбой модели: разбор кодом, безопасное толкование, раунд опубликован.
@@ -582,9 +593,15 @@ func TestResolve_Narrator(t *testing.T) {
 		byName[l.Name] = l.ID
 	}
 	events, _ := w.store.ListEvents(ctx, w.game.ID, r1.ID)
-	// Пункт 19: уход Элис из группы по умолчанию даёт `party_split` и пару событий перехода.
-	if len(events) != 3 || events[0].Type != model.EventPartySplit || events[1].Type != model.EventCharacterMoved {
+	// Пункт 19: уход Элис из группы по умолчанию даёт `party_split` и пару событий перехода; пункт 27: первый вход
+	// фракции в зал — приватное `cell_discovered`, недостающие соседи зала (запад, восток) — шаблонные карточки
+	// `cell_generated`, потому что рассказчик упал.
+	if len(events) != 6 || events[0].Type != model.EventPartySplit || events[1].Type != model.EventCharacterMoved || events[3].Type != model.EventCellDiscovered || events[4].Type != model.EventCellGenerated || events[5].Type != model.EventCellGenerated {
 		t.Fatalf("events = %+v", events)
+	}
+	// Карта: три клетки мира, три шаблонных соседа площади от стартового пакета без модели, два соседа зала.
+	if locs, _ := w.store.ListLocations(ctx, w.game.ID); len(locs) != 8 || locs[6].Stage != model.StageCard || locs[6].Name != model.TemplateCardName || locs[6].X != -1 || locs[6].Y != 1 || locs[7].X != 1 {
+		t.Fatalf("locations after templated neighbors = %+v", locs)
 	}
 	// Рассказчик вызван и упал (ответа нет): шаблонная хроника с подходами, раунд опубликован, хроника у раунда пуста.
 	calls := llm.byRole(model.RoleNarrator)
@@ -611,7 +628,8 @@ func TestResolve_Narrator(t *testing.T) {
 	llm.json = fmt.Sprintf(`{"intents":[{"submission_id":%d,"character_id":%d,"action_type":"explore","target":"notice_board","approach_idx":0,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}]}`, sub.ID, sub.CharacterID)
 	square, hall := byName["Рыночная площадь"], byName["Зал Серой башни"]
 	// Сцены по группам (пункт 19): 1 — «Ночной дозор» на площади, 2 — «Вольные клинки» в зале.
-	llm.narr = `{"chronicle":"Осень в Мире густеет.","scenes":[{"scene_id":1,"text":"Боб читает объявление.","event_seqs":[4]},{"scene_id":2,"text":"Элис ждёт в зале.","event_seqs":[]}]}`
+	// Событие осмотра — seq 7: в первом раунде шесть событий (пункт 27 добавил открытие клетки и две карточки).
+	llm.narr = `{"chronicle":"Осень в Мире густеет.","scenes":[{"scene_id":1,"text":"Боб читает объявление.","event_seqs":[7]},{"scene_id":2,"text":"Элис ждёт в зале.","event_seqs":[]}]}`
 	w.tick(t, 10*time.Minute)
 	info, _ = w.svc.Info(ctx, w.game)
 	r2 := *info.Last
@@ -634,7 +652,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if chron.ID == 0 {
 		t.Fatalf("chronicle message for round 2 missing: %+v", w.outbox(t))
 	}
-	want := "Раунд 2\n\nОсень в Мире густеет.\n\n— Ночной дозор (Рыночная площадь) —\nБоб (@Боб) читает объявление.\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n\n— Вольные клинки (Зал Серой башни) —\nЭлис (@Элис) ждёт в зале."
+	want := "Раунд 2\n\nОсень в Мире густеет.\n\n— Ночной дозор (Рыночная площадь) —\nБоб (@Боб) читает объявление.\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 5)\n• идти на север: Зал Серой башни\n• идти на юг: Неизведанные земли\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли\n\n— Вольные клинки (Зал Серой башни) —\nЭлис (@Элис) ждёт в зале.\n\nВарианты:\n• идти на север: Подвал башни\n• идти на юг: Рыночная площадь\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли"
 	if chron.Text != want {
 		t.Fatalf("chronicle text = %q\nwant %q", chron.Text, want)
 	}

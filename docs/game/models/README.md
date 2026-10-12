@@ -9,7 +9,7 @@
 | Фракции | [factions.md](factions.md) | `genres.template.factions` по умолчанию → строки `factions` игры |
 | Группа | [party.md](party.md) | `parties`, `characters.party_id`, `settings.max_parties` |
 | Жанр | [genre.md](genre.md) | `genres.template` |
-| Локация и объекты | [location.md](location.md) | `locations`, `locations.objects` |
-| NPC | [npc.md](npc.md) | `npcs` (пункт 13), поздний этап |
+| Клетка и объекты | [location.md](location.md) | `locations` (сетка `x`, `y`, стадия), `world_objects` |
+| NPC | [npc.md](npc.md) | `npcs` (таблица с пункта 27, поведение — пункт 30) |
 
 Правила моделей: ключи в JSON на английском в snake_case; русские названия для игрока в поле `title`; каждая модель несёт `schema_version`; движок валидирует данные по модели, LLM их не меняет.

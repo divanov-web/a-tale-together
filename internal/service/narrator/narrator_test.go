@@ -21,9 +21,9 @@ func tower() model.RoundSnapshot {
 	return model.RoundSnapshot{
 		SchemaVersion: 2, Mode: model.ModeBalanced,
 		Locations: []model.SnapshotLocation{
-			{ID: 1, Name: "Зал башни", Description: "Пыльный зал.", Links: []model.LocationLink{{To: "Подвал башни", Title: "вниз в подвал"}, {To: "Тайный ход", Title: "тайный ход", Hidden: true}},
+			{ID: 1, Name: "Зал башни", Description: "Пыльный зал.", X: 0, Y: 0, Stage: model.StageDetailed, Start: true,
 				Objects: []model.LocationObject{{Key: "statue", Title: "статуя", Approaches: []model.Approach{{Action: model.ActionExplore, Title: "осмотреть статую", Attribute: "wits", Skill: "awareness", Difficulty: 5}}}}},
-			{ID: 2, Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, Links: []model.LocationLink{{To: "Зал башни", Title: "наверх в зал"}},
+			{ID: 2, Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, X: 0, Y: -1, Stage: model.StageDetailed,
 				Objects: []model.LocationObject{
 					{Key: "cellar_door", Title: "дверь", State: "open", Approaches: []model.Approach{
 						{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Skill: "athletics", Difficulty: 4},
@@ -288,10 +288,14 @@ func TestOptions(t *testing.T) {
 	t.Parallel()
 	st := tower()
 	opts := Options(&st, def(), model.ModeBalanced)
-	if len(opts) != 3 || opts[0].LocationID != 1 || opts[0].Title != "осмотреть статую" || len(opts[0].Chances) != 1 || opts[0].Chances[0].Nickname != "Маг" {
+	// Подходы объектов, затем переходы по направлениям (пункт 27): зал → юг (подвал), подвал → север (зал).
+	if len(opts) != 5 || opts[0].LocationID != 1 || opts[0].Title != "осмотреть статую" || len(opts[0].Chances) != 1 || opts[0].Chances[0].Nickname != "Маг" {
 		t.Fatalf("options = %+v", opts)
 	}
-	door, pick := opts[1], opts[2]
+	if mv := opts[1]; mv.Move != model.South || mv.Object != MoveObject || mv.Idx != 1 || mv.Title != "идти на юг: Подвал башни" || opts[4].Move != model.North {
+		t.Fatalf("move options = %+v / %+v", opts[1], opts[4])
+	}
+	door, pick := opts[2], opts[3]
 	if door.Difficulty != 5 || door.Attribute != "Сила" || door.Skill != "Атлетика" || len(door.Chances) != 2 || door.Chances[0].Nickname != "Вор" || door.Chances[0].Pct != 20 || door.Chances[1].Pct != 70 {
 		t.Errorf("door option = %+v", door)
 	}
@@ -299,16 +303,16 @@ func TestOptions(t *testing.T) {
 	if pick.Difficulty != 5 || pick.Skill != "Воровство" || pick.Chances[0].Pct != 80 || pick.Chances[1].Pct != 10 {
 		t.Errorf("pick option = %+v", pick)
 	}
-	text := OptionsText(opts[1:], model.ModeBalanced)
-	if text != "Варианты:\n• выбить (Сила/атлетика, сложность 5)\n• отпереть (Ловкость/воровство, сложность 5)" {
+	text := OptionsText(opts[2:], model.ModeBalanced)
+	if text != "Варианты:\n• выбить (Сила/атлетика, сложность 5)\n• отпереть (Ловкость/воровство, сложность 5)\n• идти на север: Зал башни" {
 		t.Errorf("text = %q", text)
 	}
-	words := OptionsText(opts[1:], model.ModeNarrative)
+	words := OptionsText(opts[2:], model.ModeNarrative)
 	if strings.ContainsAny(words, "0123456789") || !strings.Contains(words, "• выбить (Сила/атлетика, обычно)\n• отпереть (Ловкость/воровство, обычно)") {
 		t.Errorf("narrative text = %q", words)
 	}
 	st.Locations[1].Objects[1].Revealed = true
-	if o := Options(&st, def(), model.ModeBalanced); len(o) != 4 || o[3].Attribute != "" || !strings.Contains(OptionsText(o[3:], model.ModeBalanced), "• дёрнуть (без броска)") {
+	if o := Options(&st, def(), model.ModeBalanced); len(o) != 6 || o[4].Attribute != "" || !strings.Contains(OptionsText(o[4:], model.ModeBalanced), "• дёрнуть (без броска)") {
 		t.Errorf("revealed options = %+v", o)
 	}
 	if OptionsText(nil, model.ModeBalanced) != "" {
@@ -319,7 +323,7 @@ func TestOptions(t *testing.T) {
 	st.Locations[1].Objects[0].Approaches[1].OnSuccess = json.RawMessage(`{"state":"open"}`)
 	st.Characters[2].Knowledge = []string{"статуя: ничего примечательного"}
 	o := Options(&st, def(), model.ModeBalanced)
-	if len(o) != 2 || o[0].Title != "выбить" || o[1].Title != "дёрнуть" {
+	if len(o) != 4 || o[0].Move != model.South || o[1].Title != "выбить" || o[2].Title != "дёрнуть" || o[3].Move != model.North {
 		t.Errorf("exhausted options = %+v", o)
 	}
 }

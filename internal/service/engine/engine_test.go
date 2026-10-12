@@ -17,9 +17,9 @@ func cellar(mode model.GameMode) model.RoundSnapshot {
 	return model.RoundSnapshot{
 		SchemaVersion: 2, Mode: mode,
 		Locations: []model.SnapshotLocation{
-			{ID: hall, Name: "Зал башни", Description: "Пыльный зал.", Links: []model.LocationLink{{To: "Подвал башни", Title: "вниз в подвал"}, {To: "Тайный ход", Title: "тайный ход", Hidden: true}},
+			{ID: hall, Name: "Зал башни", Description: "Пыльный зал.", X: 0, Y: 0, Stage: model.StageDetailed, Start: true,
 				Objects: []model.LocationObject{{Key: "statue", Title: "статуя", Description: "каменный рыцарь"}}},
-			{ID: cellarID, Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, Links: []model.LocationLink{{To: "Зал башни", Title: "наверх в зал"}},
+			{ID: cellarID, Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, X: 0, Y: -1, Stage: model.StageDetailed, Visited: true,
 				Objects: []model.LocationObject{
 					{Key: "cellar_door", Title: "запертая дверь", State: "locked", Approaches: []model.Approach{
 						{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Skill: "athletics", Difficulty: 4, OnSuccess: json.RawMessage(`{"state":"broken"}`), OnFail: json.RawMessage(`{"condition":"exhausted"}`)},
@@ -129,7 +129,7 @@ func TestScenario_S06_Replay(t *testing.T) {
 	}
 }
 
-// TestScenario_S10_Move: переход по выходу, скрытый выход и несуществующий отклоняются; событие видно в обеих локациях.
+// TestScenario_S10_Move: переход по имени соседа, несуществующие выходы отклоняются с перечнем; событие видно в обеих локациях.
 func TestScenario_S10_Move(t *testing.T) {
 	t.Parallel()
 	snap := cellar(model.ModeBalanced)
@@ -141,7 +141,7 @@ func TestScenario_S10_Move(t *testing.T) {
 	if res.Results[0].Status != model.ResultResolved || res.Results[1].Status != model.ResultRejected || res.Results[2].Status != model.ResultRejected {
 		t.Fatalf("results = %+v", res.Results)
 	}
-	if res.Results[2].Reason != "из «Подвал башни» нет выхода «крыша»; выходы: наверх в зал (Зал башни)" {
+	if res.Results[2].Reason != "из «Подвал башни» нет выхода «крыша»; выходы: на север: Зал башни" {
 		t.Fatalf("reason = %q", res.Results[2].Reason)
 	}
 	moved := 0
@@ -187,7 +187,7 @@ func TestScenario_S11_Explore(t *testing.T) {
 		t.Fatal(err)
 	}
 	mage, _ := after.Character(13)
-	if len(mage.Knowledge) != 1 || mage.Knowledge[0] != "Зал башни: Пыльный зал. Выходы: вниз в подвал (Подвал башни). Объекты: статуя." {
+	if len(mage.Knowledge) != 1 || mage.Knowledge[0] != "Зал башни: Пыльный зал. Выходы: на юг: Подвал башни. Объекты: статуя." {
 		t.Fatalf("knowledge = %q", mage.Knowledge)
 	}
 }
@@ -282,7 +282,7 @@ func TestHelp(t *testing.T) {
 func TestScenario_S13_FreeCheck(t *testing.T) {
 	t.Parallel()
 	free := model.Intent{SubmissionID: 1, CharacterID: 14, ActionType: model.ActionInteract, Attribute: "agility", Risk: model.RiskHard,
-		OnSuccess: json.RawMessage(`{"fact":"Ров преодолён: тропа к башне.","move":"вниз в подвал","state":"broken"}`), OnFail: json.RawMessage(`{"condition":"wounded"}`)}
+		OnSuccess: json.RawMessage(`{"fact":"Ров преодолён: тропа к башне.","move":"south","state":"broken"}`), OnFail: json.RawMessage(`{"condition":"wounded"}`)}
 	var successes, failures int
 	for seed := int64(1); seed <= 60; seed++ {
 		snap := cellar(model.ModeBalanced)

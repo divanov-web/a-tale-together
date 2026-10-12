@@ -8,8 +8,10 @@ import (
 )
 
 // Apply сворачивает события в состояние снимка: персонажи (локация, группа, HP, состояния, знания, статус), группы
-// (`party_split` добавляет группу) и объекты локаций. `party_held` состояние не меняет: переходы записаны отдельно.
-// Состояние после раунда равно Apply(снимок до раунда, события) — критерий пункта 07.
+// (`party_split` добавляет группу), объекты локаций, клетки (`character_moved` отмечает посещение, `cell_discovered`
+// добавляет фракцию, `cell_generated` создаёт или детализирует клетку, `object_created` добавляет объект; пункт 27).
+// `party_held` состояние не меняет: переходы записаны отдельно. Состояние после раунда равно
+// Apply(снимок до раунда, события) — критерий пункта 07.
 func Apply(snap *model.RoundSnapshot, events []model.Event) error {
 	for _, ev := range events {
 		var p map[string]any
@@ -21,6 +23,47 @@ func Apply(snap *model.RoundSnapshot, events []model.Event) error {
 			if c := char(snap, p, "character_id"); c != nil {
 				to := model.LocationID(num(p, "to"))
 				c.LocationID = &to
+				if l, ok := snap.Location(to); ok {
+					l.Visited = true
+				}
+			}
+		case model.EventCellDiscovered:
+			if l, ok := snap.Location(model.LocationID(num(p, "location_id"))); ok {
+				if f := model.FactionID(num(p, "faction_id")); f != 0 && !l.Discovered(f) {
+					l.DiscoveredBy = append(l.DiscoveredBy, f)
+				}
+			}
+		case model.EventCellGenerated:
+			var cell struct {
+				LocationID  model.LocationID    `json:"location_id"`
+				X           int                 `json:"x"`
+				Y           int                 `json:"y"`
+				Name        string              `json:"name"`
+				Description string              `json:"description"`
+				Difficulty  int                 `json:"difficulty"`
+				Terrain     string              `json:"terrain"`
+				Stage       model.LocationStage `json:"stage"`
+			}
+			if err := json.Unmarshal(ev.Payload, &cell); err != nil {
+				return fmt.Errorf("engine.Apply: event %d: %w", ev.Seq, err)
+			}
+			if l, ok := snap.Location(cell.LocationID); ok {
+				l.Name, l.Description, l.Difficulty, l.Terrain, l.Stage = cell.Name, cell.Description, cell.Difficulty, cell.Terrain, cell.Stage
+			} else {
+				snap.Locations = append(snap.Locations, model.SnapshotLocation{ID: cell.LocationID, X: cell.X, Y: cell.Y, Name: cell.Name, Description: cell.Description, Difficulty: cell.Difficulty, Terrain: cell.Terrain, Stage: cell.Stage, Objects: []model.LocationObject{}})
+			}
+		case model.EventObjectCreated:
+			var created struct {
+				LocationID model.LocationID     `json:"location_id"`
+				Object     model.LocationObject `json:"object"`
+			}
+			if err := json.Unmarshal(ev.Payload, &created); err != nil {
+				return fmt.Errorf("engine.Apply: event %d: %w", ev.Seq, err)
+			}
+			if l, ok := snap.Location(created.LocationID); ok {
+				if _, _, exists := l.Object(created.Object.Key); !exists {
+					l.Objects = append(l.Objects, created.Object)
+				}
 			}
 		case model.EventConditionAdded:
 			if c := char(snap, p, "character_id"); c != nil && !c.HasCondition(str(p, "condition")) {

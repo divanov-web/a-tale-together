@@ -122,7 +122,7 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 		locNames := map[model.LocationID]string{}
 		if locs, err := s.games.Locations(ctx, g.ID); err == nil {
 			for _, l := range locs {
-				locNames[l.ID] = l.Name
+				locNames[l.ID] = cellLabel(l) // имя и координаты клетки (пункт 27)
 			}
 		}
 		for _, p := range infos {

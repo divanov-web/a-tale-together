@@ -87,11 +87,11 @@ func (v *validator) intent(sub model.SnapshotSubmission, ri rawIntent) (model.In
 	}
 	switch in.ActionType {
 	case model.ActionMove:
-		l, ok := findExit(loc, in.Target)
+		e, ok := findExit(v.snap, loc, in.Target)
 		if !ok {
-			return in, fmt.Errorf("нет видимого выхода %q; выходы: %s", in.Target, exitsList(loc))
+			return in, fmt.Errorf("нет выхода %q; выходы: %s", in.Target, exitsList(v.snap, loc))
 		}
-		in.Target = l.To
+		in.Target = string(e.Direction)
 	case model.ActionExplore:
 		if in.Target != "" && !strings.EqualFold(in.Target, loc.Name) {
 			o, ok := findObject(loc, in.Target)
@@ -179,11 +179,11 @@ func (v *validator) successEffect(loc *model.SnapshotLocation, e *successEff) (j
 		out["fact"] = strings.TrimSpace(*e.Fact)
 	}
 	if e.Move != nil && *e.Move != "" {
-		l, ok := findExit(loc, *e.Move)
+		x, ok := findExit(v.snap, loc, *e.Move)
 		if !ok {
-			return nil, fmt.Errorf("on_success.move: нет видимого выхода %q", *e.Move)
+			return nil, fmt.Errorf("on_success.move: нет выхода %q", *e.Move)
 		}
-		out["move"] = l.To
+		out["move"] = string(x.Direction)
 	}
 	if e.Reveal != nil && *e.Reveal != "" {
 		o, _, ok := loc.Object(*e.Reveal)
@@ -238,14 +238,10 @@ func (v *validator) safe(sub model.SnapshotSubmission, fb *rawFallback, reason s
 	return model.Intent{SubmissionID: sub.SubmissionID, CharacterID: sub.CharacterID, ActionType: model.ActionWait, Ambiguities: []string{reason}, RawText: sub.Text}
 }
 
-func findExit(loc *model.SnapshotLocation, target string) (model.LocationLink, bool) {
-	t := strings.TrimSpace(target)
-	for _, l := range loc.Links {
-		if !l.Hidden && (strings.EqualFold(l.To, t) || strings.EqualFold(l.Title, t)) {
-			return l, true
-		}
-	}
-	return model.LocationLink{}, false
+// findExit — выход клетки по цели модели: направление (`north`, «на север») или имя соседа; цель нормализуется в
+// ключ направления, который понимает движок.
+func findExit(snap model.RoundSnapshot, loc *model.SnapshotLocation, target string) (model.Exit, bool) {
+	return snap.ExitTo(loc, target)
 }
 
 func findObject(loc *model.SnapshotLocation, target string) (model.LocationObject, bool) {
@@ -280,12 +276,10 @@ func hasApproach(o model.LocationObject, t model.ActionType) bool {
 	return false
 }
 
-func exitsList(loc *model.SnapshotLocation) string {
+func exitsList(snap model.RoundSnapshot, loc *model.SnapshotLocation) string {
 	var out []string
-	for _, l := range loc.Links {
-		if !l.Hidden {
-			out = append(out, l.To)
-		}
+	for _, e := range snap.Exits(loc) {
+		out = append(out, string(e.Direction)+" ("+e.To.Name+")")
 	}
 	return strings.Join(out, ", ")
 }

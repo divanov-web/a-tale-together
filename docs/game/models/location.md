@@ -1,45 +1,48 @@
-# Модель локации и объектов
+# Модель клетки и объектов
 
-Поведение: [испытания](../checks.md) (предлагаемые действия, сложность локации). Пункт [27](../../plan/telegram/27-world-grid.md) превращает локацию в клетку сетки: координаты, стадия, выходы по направлениям, объекты в таблице `world_objects` ([динамический мир](../world.md)); поля ниже — текущая реализация.
+Поведение: [динамический мир](../world.md) (сетка, стадии, достройка), [испытания](../checks.md) (предлагаемые действия, сложность локации), [ADR-0019](../../decisions/0019-world-generation.md). Таблицы `locations` и `world_objects` (миграция `00023`), `model.Location`, `model.LocationObject`.
 
-## Поля локации
+## Поля клетки
 | Поле | Тип | Назначение |
 |---|---|---|
-| `name` | строка, уникально в игре | |
-| `description` | ≤ 300 | для рассказчика и игроков |
-| `difficulty` | 0–2 | прибавляется к сложности всех проверок в локации |
-| `links` | список `{to, title, hidden}` | выходы; `hidden` открывается событием |
-| `objects` | список объектов | с чем можно взаимодействовать |
-| `active` | bool | входит ли в лимит активных локаций |
-| `start` | bool | стартовая локация новых персонажей (одна на игру; без флага — первая в шаблоне) |
+| `x`, `y` | целые, уникальны в игре | координаты от стартовой `(0,0)`; север `(x, y+1)`, восток `(x+1, y)` |
+| `name` | строка ≤ 60 | подпись, не ключ: одноимённые клетки допустимы |
+| `stage` | `card` / `detailed` | карточка соседа (имя, местность, одно предложение) или описанная клетка; клетка без строки — стадия «none» |
+| `terrain` | строка латиницей | тип местности (`forest`, `road`, `town`, `ruins`…); у шаблона «Неизведанные земли» — `unknown` |
+| `description` | ≤ 600 (карточка ≤ 200) | для рассказчика и игроков |
+| `difficulty` | 0–2 | прибавляется к сложности всех проверок в клетке |
+| `visited_at` | время, nullable | первый вход персонажа |
+| `start` | bool | стартовая клетка персонажей, `(0,0)`; открытием не считается |
 
-## Объект
+Выходы по направлениям считает код по существующим соседям (`RoundSnapshot.Exits`): все четыре перехода доступны, непроходимые границы — после первого среза. Открытия клетки по фракциям — `location_discoveries` (`location_id`, `faction_id`, раунд, персонаж), счётчик фракции `factions.explored_since_reset`.
+
+## Объект (`world_objects`)
 | Поле | Назначение |
 |---|---|
-| `key`, `title` | идентификатор для интерпретатора, имя для игрока |
-| `state` | `locked / open / broken / hidden …`; меняется событиями |
-| `approaches` | предлагаемые подходы: `action`, `title`, `attribute`, `skill`, `difficulty` (0 и без характеристики — без броска), `on_success` (`{"state": …}` для объекта или `{"object": key, "state": …}`, `{"reveal": key}`, `{"fact": текст}`), `on_fail` (`{"condition": …}`, `{"damage": N}`), `deadly` (провал не заменяется успехом с ценой в повествовании) |
-| `hidden_until_revealed` | объект не виден и не доступен до события `reveal` (поле `revealed`) |
-| `visible_when` | условие видимости по состоянию другого объекта или знанию персонажа — поздний этап |
+| `key`, `title` | ключ латиницей в snake_case, уникален внутри клетки; имя для игрока |
+| `state` | `locked / open / broken / closed …`; меняется событиями `object_changed` |
+| `approaches` | предлагаемые подходы (JSONB): `action` (`explore` / `interact`), `title`, `attribute`, `skill`, `difficulty` (0 и без характеристики — без броска; база 5 обычно, 7 трудно, 9 почти невозможно), `on_success` (`{"state": …}` для объекта или `{"object": key, "state": …}`, `{"reveal": key}`, `{"fact": текст}`), `on_fail` (`{"condition": …}`, `{"damage": N}`, `{"fact": …}`), `deadly` (провал не заменяется успехом с ценой в повествовании) |
+| `hidden_until_revealed`, `revealed` | объект не виден и не доступен до события `reveal` |
+| `searched` | «ничего полезного»: повторный осмотр без изменения состояния находку не даёт (пункт 29) |
+
+Объекты рождаются в стартовом пакете и пакете мира рассказчика по лимитам (до 2 на клетку, до 3 подходов на объект); код проверяет ключи, характеристики и навыки по модели персонажа, `reveal` — только на скрытый объект той же клетки; новые объекты пишутся событиями `object_created`.
 
 ```json
 {
-  "name": "Подвал башни",
-  "description": "Сырой подвал, запертая дверь в глубине и следы сапог на пыли.",
+  "x": 0, "y": 1, "name": "Еловый бор", "stage": "detailed", "terrain": "forest",
+  "description": "Густой ельник, тропа теряется в хвое; у корней старой ели перекошенная хижина.",
   "difficulty": 1,
-  "links": [{"to": "tower_hall", "title": "наверх в зал", "hidden": false}],
   "objects": [
     {
-      "key": "cellar_door", "title": "запертая дверь", "state": "locked",
+      "key": "old_hut", "title": "заброшенная хижина", "state": "closed",
       "approaches": [
-        {"action": "interact", "attribute": "strength", "skill": "athletics", "difficulty": 4, "on_success": {"state": "broken"}, "on_fail": {"condition": "exhausted"}},
-        {"action": "interact", "attribute": "agility", "skill": "thievery", "difficulty": 4, "on_success": {"state": "open"}},
-        {"action": "explore", "attribute": "wits", "skill": "awareness", "difficulty": 4, "on_success": {"reveal": "hidden_lever"}}
+        {"action": "interact", "title": "открыть дверь", "attribute": "strength", "skill": "athletics", "difficulty": 5, "on_success": {"state": "open"}, "on_fail": {"condition": "exhausted"}},
+        {"action": "explore", "title": "осмотреть следы", "attribute": "wits", "skill": "awareness", "difficulty": 5, "on_success": {"reveal": "cache", "fact": "Следы ведут к тайнику под корнями."}}
       ]
     },
-    {"key": "hidden_lever", "title": "потайной рычаг", "state": "hidden", "visible_when": {"revealed": true}, "approaches": [{"action": "interact", "attribute": null, "skill": null, "difficulty": 0, "on_success": {"object": "cellar_door", "state": "open"}}]}
+    {"key": "cache", "title": "тайник под корнями", "hidden_until_revealed": true, "approaches": [{"action": "interact", "title": "вскрыть", "difficulty": 0, "on_success": {"state": "open", "fact": "Внутри печать Ордена."}}]}
   ]
 }
 ```
 
-Сложность в `approaches` — базовая; движок прибавляет `difficulty` локации, показывает в группе итог, а игроку — его шанс по параметру ([испытания](../checks.md)). Обычный подход — 5 итого: в локации с надбавкой 1 база 4.
+Сложность в `approaches` — базовая; движок прибавляет `difficulty` клетки, показывает в группе итог, а игроку — его шанс по параметру ([испытания](../checks.md)). Обычный подход — 5 итого: в клетке с надбавкой 1 база 4.

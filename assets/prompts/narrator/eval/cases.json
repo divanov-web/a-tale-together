@@ -173,17 +173,6 @@
        "name": "Зал башни",
        "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
        "difficulty": 0,
-       "links": [
-        {
-         "to": "Подвал башни",
-         "title": "вниз в подвал"
-        },
-        {
-         "to": "Тайный ход",
-         "title": "тайный ход",
-         "hidden": true
-        }
-       ],
        "objects": [
         {
          "key": "statue",
@@ -199,23 +188,17 @@
           }
          ]
         }
-       ]
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
       },
       {
        "id": 2,
        "name": "Подвал башни",
        "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
        "difficulty": 1,
-       "links": [
-        {
-         "to": "Зал башни",
-         "title": "наверх в зал"
-        },
-        {
-         "to": "Коридор",
-         "title": "в коридор"
-        }
-       ],
        "objects": [
         {
          "key": "cellar_door",
@@ -249,7 +232,10 @@
          "title": "потайной рычаг",
          "hidden_until_revealed": true
         }
-       ]
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
       }
      ],
      "characters": [
@@ -422,17 +408,6 @@
        "name": "Зал башни",
        "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
        "difficulty": 0,
-       "links": [
-        {
-         "to": "Подвал башни",
-         "title": "вниз в подвал"
-        },
-        {
-         "to": "Тайный ход",
-         "title": "тайный ход",
-         "hidden": true
-        }
-       ],
        "objects": [
         {
          "key": "statue",
@@ -448,23 +423,17 @@
           }
          ]
         }
-       ]
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
       },
       {
        "id": 2,
        "name": "Подвал башни",
        "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
        "difficulty": 1,
-       "links": [
-        {
-         "to": "Зал башни",
-         "title": "наверх в зал"
-        },
-        {
-         "to": "Коридор",
-         "title": "в коридор"
-        }
-       ],
        "objects": [
         {
          "key": "cellar_door",
@@ -498,7 +467,10 @@
          "title": "потайной рычаг",
          "hidden_until_revealed": true
         }
-       ]
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
       }
      ],
      "characters": [
@@ -683,17 +655,6 @@
        "name": "Зал башни",
        "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
        "difficulty": 0,
-       "links": [
-        {
-         "to": "Подвал башни",
-         "title": "вниз в подвал"
-        },
-        {
-         "to": "Тайный ход",
-         "title": "тайный ход",
-         "hidden": true
-        }
-       ],
        "objects": [
         {
          "key": "statue",
@@ -709,23 +670,17 @@
           }
          ]
         }
-       ]
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
       },
       {
        "id": 2,
        "name": "Подвал башни",
        "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
        "difficulty": 1,
-       "links": [
-        {
-         "to": "Зал башни",
-         "title": "наверх в зал"
-        },
-        {
-         "to": "Коридор",
-         "title": "в коридор"
-        }
-       ],
        "objects": [
         {
          "key": "cellar_door",
@@ -759,7 +714,10 @@
          "title": "потайной рычаг",
          "hidden_until_revealed": true
         }
-       ]
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
       }
      ],
      "characters": [
@@ -923,17 +881,6 @@
        "name": "Зал башни",
        "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
        "difficulty": 0,
-       "links": [
-        {
-         "to": "Подвал башни",
-         "title": "вниз в подвал"
-        },
-        {
-         "to": "Тайный ход",
-         "title": "тайный ход",
-         "hidden": true
-        }
-       ],
        "objects": [
         {
          "key": "statue",
@@ -949,23 +896,17 @@
           }
          ]
         }
-       ]
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
       },
       {
        "id": 2,
        "name": "Подвал башни",
        "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
        "difficulty": 1,
-       "links": [
-        {
-         "to": "Зал башни",
-         "title": "наверх в зал"
-        },
-        {
-         "to": "Коридор",
-         "title": "в коридор"
-        }
-       ],
        "objects": [
         {
          "key": "cellar_door",
@@ -999,7 +940,10 @@
          "title": "потайной рычаг",
          "hidden_until_revealed": true
         }
-       ]
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
       }
      ],
      "characters": [
@@ -1163,17 +1107,6 @@
        "name": "Зал башни",
        "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
        "difficulty": 0,
-       "links": [
-        {
-         "to": "Подвал башни",
-         "title": "вниз в подвал"
-        },
-        {
-         "to": "Тайный ход",
-         "title": "тайный ход",
-         "hidden": true
-        }
-       ],
        "objects": [
         {
          "key": "statue",
@@ -1189,23 +1122,17 @@
           }
          ]
         }
-       ]
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
       },
       {
        "id": 2,
        "name": "Подвал башни",
        "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
        "difficulty": 1,
-       "links": [
-        {
-         "to": "Зал башни",
-         "title": "наверх в зал"
-        },
-        {
-         "to": "Коридор",
-         "title": "в коридор"
-        }
-       ],
        "objects": [
         {
          "key": "cellar_door",
@@ -1239,7 +1166,10 @@
          "title": "потайной рычаг",
          "hidden_until_revealed": true
         }
-       ]
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
       }
      ],
      "characters": [
@@ -1413,17 +1343,6 @@
        "name": "Зал башни",
        "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
        "difficulty": 0,
-       "links": [
-        {
-         "to": "Подвал башни",
-         "title": "вниз в подвал"
-        },
-        {
-         "to": "Тайный ход",
-         "title": "тайный ход",
-         "hidden": true
-        }
-       ],
        "objects": [
         {
          "key": "statue",
@@ -1439,23 +1358,17 @@
           }
          ]
         }
-       ]
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
       },
       {
        "id": 2,
        "name": "Подвал башни",
        "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
        "difficulty": 1,
-       "links": [
-        {
-         "to": "Зал башни",
-         "title": "наверх в зал"
-        },
-        {
-         "to": "Коридор",
-         "title": "в коридор"
-        }
-       ],
        "objects": [
         {
          "key": "cellar_door",
@@ -1489,7 +1402,10 @@
          "title": "потайной рычаг",
          "hidden_until_revealed": true
         }
-       ]
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
       }
      ],
      "characters": [
@@ -1675,17 +1591,6 @@
        "name": "Зал башни",
        "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
        "difficulty": 0,
-       "links": [
-        {
-         "to": "Подвал башни",
-         "title": "вниз в подвал"
-        },
-        {
-         "to": "Тайный ход",
-         "title": "тайный ход",
-         "hidden": true
-        }
-       ],
        "objects": [
         {
          "key": "statue",
@@ -1701,23 +1606,17 @@
           }
          ]
         }
-       ]
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
       },
       {
        "id": 2,
        "name": "Подвал башни",
        "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
        "difficulty": 1,
-       "links": [
-        {
-         "to": "Зал башни",
-         "title": "наверх в зал"
-        },
-        {
-         "to": "Коридор",
-         "title": "в коридор"
-        }
-       ],
        "objects": [
         {
          "key": "cellar_door",
@@ -1751,7 +1650,10 @@
          "title": "потайной рычаг",
          "hidden_until_revealed": true
         }
-       ]
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
       }
      ],
      "characters": [
@@ -1893,17 +1795,6 @@
        "name": "Зал башни",
        "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
        "difficulty": 0,
-       "links": [
-        {
-         "to": "Подвал башни",
-         "title": "вниз в подвал"
-        },
-        {
-         "to": "Тайный ход",
-         "title": "тайный ход",
-         "hidden": true
-        }
-       ],
        "objects": [
         {
          "key": "statue",
@@ -1919,23 +1810,17 @@
           }
          ]
         }
-       ]
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
       },
       {
        "id": 2,
        "name": "Подвал башни",
        "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
        "difficulty": 1,
-       "links": [
-        {
-         "to": "Зал башни",
-         "title": "наверх в зал"
-        },
-        {
-         "to": "Коридор",
-         "title": "в коридор"
-        }
-       ],
        "objects": [
         {
          "key": "cellar_door",
@@ -1969,7 +1854,10 @@
          "title": "потайной рычаг",
          "hidden_until_revealed": true
         }
-       ]
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
       }
      ],
      "characters": [
@@ -2131,17 +2019,6 @@
        "name": "Зал башни",
        "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
        "difficulty": 0,
-       "links": [
-        {
-         "to": "Подвал башни",
-         "title": "вниз в подвал"
-        },
-        {
-         "to": "Тайный ход",
-         "title": "тайный ход",
-         "hidden": true
-        }
-       ],
        "objects": [
         {
          "key": "statue",
@@ -2157,23 +2034,17 @@
           }
          ]
         }
-       ]
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
       },
       {
        "id": 2,
        "name": "Подвал башни",
        "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
        "difficulty": 1,
-       "links": [
-        {
-         "to": "Зал башни",
-         "title": "наверх в зал"
-        },
-        {
-         "to": "Коридор",
-         "title": "в коридор"
-        }
-       ],
        "objects": [
         {
          "key": "cellar_door",
@@ -2207,7 +2078,10 @@
          "title": "потайной рычаг",
          "hidden_until_revealed": true
         }
-       ]
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
       }
      ],
      "characters": [
@@ -2436,17 +2310,6 @@
        "name": "Зал башни",
        "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
        "difficulty": 0,
-       "links": [
-        {
-         "to": "Подвал башни",
-         "title": "вниз в подвал"
-        },
-        {
-         "to": "Тайный ход",
-         "title": "тайный ход",
-         "hidden": true
-        }
-       ],
        "objects": [
         {
          "key": "statue",
@@ -2462,23 +2325,17 @@
           }
          ]
         }
-       ]
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
       },
       {
        "id": 2,
        "name": "Подвал башни",
        "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
        "difficulty": 1,
-       "links": [
-        {
-         "to": "Зал башни",
-         "title": "наверх в зал"
-        },
-        {
-         "to": "Коридор",
-         "title": "в коридор"
-        }
-       ],
        "objects": [
         {
          "key": "cellar_door",
@@ -2512,7 +2369,10 @@
          "title": "потайной рычаг",
          "hidden_until_revealed": true
         }
-       ]
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
       }
      ],
      "characters": [
@@ -2620,6 +2480,236 @@
     "движок",
     "раунд 9"
    ]
+  },
+  {
+   "name": "world_generation",
+   "comment": "Пункт 27: группа вошла в карточку «Опушка» (0,1); задание на клетку и трёх соседей; ожидание: клетка с объектом, три соседа, без шаблонов, прибытие описано.",
+   "params": {
+    "mode": "balanced",
+    "round_no": 3,
+    "state": {
+     "schema_version": 4,
+     "mode": "balanced",
+     "locations": [
+      {
+       "id": 1,
+       "name": "Зал башни",
+       "description": "Пыльный зал с каменной статуей рыцаря.",
+       "difficulty": 0,
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true,
+       "visited": true,
+       "objects": [
+        {
+         "key": "statue",
+         "title": "статуя рыцаря",
+         "description": "каменный рыцарь"
+        }
+       ]
+      },
+      {
+       "id": 3,
+       "name": "Опушка",
+       "description": "Кромка леса за рвом; за деревьями виден дым.",
+       "difficulty": 0,
+       "x": 0,
+       "y": 1,
+       "stage": "card",
+       "terrain": "forest",
+       "visited": true,
+       "discovered_by": [
+        1
+       ],
+       "objects": []
+      }
+     ],
+     "characters": [
+      {
+       "id": 13,
+       "nickname": "Маг",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "faction_id": 1,
+       "party_id": 1,
+       "location_id": 3,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 2,
+        "wits": 4,
+        "will": 4
+       },
+       "skills": {
+        "awareness": 3
+       }
+      },
+      {
+       "id": 14,
+       "nickname": "Паладин",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "faction_id": 1,
+       "party_id": 1,
+       "location_id": 3,
+       "conditions": [],
+       "attributes": {
+        "strength": 4,
+        "agility": 3,
+        "wits": 2,
+        "will": 3
+       },
+       "skills": {
+        "melee": 2
+       }
+      }
+     ],
+     "parties": [
+      {
+       "id": 1,
+       "name": "Ночной дозор"
+      }
+     ]
+    },
+    "events": [
+     {
+      "seq": 301,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 1,
+      "character_id": 13
+     },
+     {
+      "seq": 302,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 3,
+      "character_id": 13
+     },
+     {
+      "seq": 303,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 14,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 1,
+      "character_id": 14
+     },
+     {
+      "seq": 304,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 14,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 3,
+      "character_id": 14
+     }
+    ],
+    "bios": {
+     "13": {
+      "public": "молчаливый маг",
+      "secret": ""
+     },
+     "14": {
+      "public": "паладин Ордена",
+      "secret": ""
+     }
+    },
+    "previous": [
+     {
+      "chronicle": "Башня молчала всю ночь; к утру за рвом потянуло дымом."
+     }
+    ],
+    "tasks": {
+     "cells": [
+      {
+       "location_id": 3,
+       "x": 0,
+       "y": 1,
+       "name": "Опушка",
+       "terrain": "forest",
+       "card": "Кромка леса за рвом; за деревьями виден дым.",
+       "parties": [
+        "Ночной дозор"
+       ]
+      }
+     ],
+     "neighbors": [
+      {
+       "x": 0,
+       "y": 2,
+       "direction": "north",
+       "of_location_id": 3,
+       "of_name": "Опушка"
+      },
+      {
+       "x": -1,
+       "y": 1,
+       "direction": "west",
+       "of_location_id": 3,
+       "of_name": "Опушка"
+      },
+      {
+       "x": 1,
+       "y": 1,
+       "direction": "east",
+       "of_location_id": 3,
+       "of_name": "Опушка"
+      }
+     ]
+    }
+   },
+   "required": [
+    "Маг",
+    "Паладин"
+   ],
+   "forbidden": [
+    "лидер",
+    "модель",
+    "движок",
+    "координат"
+   ],
+   "no_digits": true,
+   "world": {
+    "cells": 1,
+    "neighbors": 3,
+    "min_objects": 1
+   }
   }
  ]
 }

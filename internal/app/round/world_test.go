@@ -1,0 +1,363 @@
+package round
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	applm "taletogether/internal/app/llm"
+	"taletogether/internal/model"
+	"taletogether/internal/service/narrator"
+)
+
+// worldLLM — рассказчик, который достраивает мир по заданиям из входа (как сделала бы модель): каждой клетке из
+// `generate.cells` — описание и объект с подходом без броска, каждому соседу — карточка; сцены по входу, все события
+// упомянуты. Интерпретатор недоступен: заявки разбирает код (`идти north`). Завязка — стартовый пакет из opening.
+type worldLLM struct {
+	opening   string
+	calls     map[model.LLMRole]int
+	generated int // клеток и соседей, выданных моделью
+	inputs    []string
+}
+
+func (w *worldLLM) Complete(_ context.Context, call applm.Call, req model.LLMRequest) (model.LLMResponse, error) {
+	if w.calls == nil {
+		w.calls = map[model.LLMRole]int{}
+	}
+	w.calls[call.Role]++
+	w.inputs = append(w.inputs, req.Input)
+	switch call.Role {
+	case model.RoleOpening:
+		if w.opening == "" {
+			return model.LLMResponse{}, errors.New("opening down")
+		}
+		return model.LLMResponse{JSON: json.RawMessage(w.opening), TokensIn: 10, TokensOut: 5}, nil
+	case model.RoleInterpreter:
+		return model.LLMResponse{}, errors.New("interpreter down")
+	}
+	var in struct {
+		Scenes []struct {
+			SceneID int `json:"scene_id"`
+		} `json:"scenes"`
+		Events []struct {
+			Seq int64 `json:"seq"`
+		} `json:"events"`
+		Generate *struct {
+			Cells     []narrator.CellTask     `json:"cells"`
+			Neighbors []narrator.NeighborTask `json:"neighbors"`
+		} `json:"generate"`
+	}
+	if err := json.Unmarshal([]byte(req.Input), &in); err != nil {
+		return model.LLMResponse{}, err
+	}
+	seqs := []int64{}
+	for _, e := range in.Events {
+		seqs = append(seqs, e.Seq)
+	}
+	scenes := []map[string]any{}
+	for i, sc := range in.Scenes {
+		own := []int64{}
+		if i == 0 {
+			own = seqs
+		}
+		scenes = append(scenes, map[string]any{"scene_id": sc.SceneID, "text": "Группа идёт дальше.", "event_seqs": own})
+	}
+	cells, neighbors := []map[string]any{}, []map[string]any{}
+	if in.Generate != nil {
+		for _, c := range in.Generate.Cells {
+			w.generated++
+			cells = append(cells, map[string]any{"location_id": c.LocationID, "name": c.Name + " (подробно)", "description": "Описание клетки " + c.Name + ".", "difficulty": 0,
+				"objects": []map[string]any{{"key": "sign_" + fmt.Sprint(c.LocationID), "title": "указатель", "description": "", "state": "", "hidden": false,
+					"approaches": []map[string]any{{"action": "explore", "title": "прочитать указатель", "attribute": nil, "skill": nil, "difficulty": 0, "on_success": map[string]any{"state": nil, "reveal": nil, "fact": "На указателе стёртая надпись."}, "on_fail": nil}}}}})
+		}
+		for _, n := range in.Generate.Neighbors {
+			w.generated++
+			neighbors = append(neighbors, map[string]any{"x": n.X, "y": n.Y, "name": fmt.Sprintf("Клетка %d,%d", n.X, n.Y), "terrain": "forest", "card": "Лес шумит."})
+		}
+	}
+	raw, _ := json.Marshal(map[string]any{"chronicle": "Ветер.", "scenes": scenes, "world": map[string]any{"cells": cells, "neighbors": neighbors}})
+	return model.LLMResponse{JSON: raw, TokensIn: 100, TokensOut: 50}, nil
+}
+
+// startPackageJSON — ответ завязки: стартовая клетка с объектом и четыре карточки соседей.
+const startPackageJSON = `{"text":"Над площадью туман, Элис, Боб и Кэт ждут вестей. Ветер приносит запах дыма с севера, и никто не знает, откуда он. Торговцы закрывают лавки раньше времени. Кто-то должен пойти и посмотреть.",
+ "start":{"location_id":%d,"name":"Площадь у колодца","description":"Сердце города; у колодца толпа.","difficulty":0,"objects":[{"key":"well","title":"колодец","description":"","state":"","hidden":false,"approaches":[{"action":"explore","title":"заглянуть в колодец","attribute":"wits","skill":"awareness","difficulty":5,"on_success":{"state":null,"reveal":null,"fact":"На дне блестит кольцо."},"on_fail":null}]}]},
+ "neighbors":[{"direction":"north","name":"Опушка","terrain":"forest","card":"Кромка леса."},{"direction":"south","name":"Южные ворота","terrain":"town","card":"Ворота на тракт."},{"direction":"west","name":"Переулки","terrain":"town","card":"Тесные дворы."},{"direction":"east","name":"Рынок","terrain":"town","card":"Торговые ряды."}]}`
+
+// startWorld — мир только со стартовой клеткой (как после `/create`): остальное достраивают завязка и рассказчик.
+func startWorld(t *testing.T) *world {
+	t.Helper()
+	s := model.DefaultGameSettings()
+	s.MinRoundAnswers = 1
+	w := newWorld(t, s)
+	ctx := context.Background()
+	genre, _ := w.store.GetGenre(ctx, w.game.GenreID)
+	lt := genre.Template.Locations[0]
+	start, err := w.store.CreateLocation(ctx, model.Location{GameID: w.game.ID, Name: lt.Name, Description: lt.Description, Terrain: lt.Terrain, Objects: lt.Objects, Start: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range w.chars {
+		w.chars[i].LocationID = &start.ID
+		if err := w.store.SaveCharacterState(ctx, w.game.ID, w.chars[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return w
+}
+
+func (w *world) locations(t *testing.T) []model.Location {
+	t.Helper()
+	locs, err := w.store.ListLocations(context.Background(), w.game.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return locs
+}
+
+func (w *world) at(t *testing.T, x, y int) model.Location {
+	t.Helper()
+	for _, l := range w.locations(t) {
+		if l.X == x && l.Y == y {
+			return l
+		}
+	}
+	t.Fatalf("no cell at (%d, %d)", x, y)
+	return model.Location{}
+}
+
+// TestBegin_StartPackage: `/begin` создаёт центр `detailed` (описание и объекты от модели заменяют шаблон), четырёх
+// соседей `card` и завязку; при сбое модели центр остаётся шаблонным, соседи — «неизведанные земли».
+func TestBegin_StartPackage(t *testing.T) {
+	t.Parallel()
+	w := startWorld(t)
+	ctx := context.Background()
+	start := w.locations(t)[0]
+	llm := &worldLLM{opening: fmt.Sprintf(startPackageJSON, start.ID)}
+	w.svc.LLM = llm
+	for _, c := range w.chars {
+		_ = w.store.MarkStarted(ctx, c.UserID)
+	}
+	g, err := w.svc.Begin(ctx, w.game, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(g.OpeningScene, "Над площадью туман") {
+		t.Fatalf("opening = %q", g.OpeningScene)
+	}
+	locs := w.locations(t)
+	if len(locs) != 5 || locs[0].Name != "Площадь у колодца" || locs[0].Stage != model.StageDetailed || len(locs[0].Objects) != 1 || locs[0].Objects[0].Key != "well" || locs[0].Terrain != "town" {
+		t.Fatalf("start after package = %+v", locs[0])
+	}
+	if n := w.at(t, 0, 1); n.Name != "Опушка" || n.Stage != model.StageCard || n.Terrain != "forest" || n.Description != "Кромка леса." || n.VisitedAt != nil {
+		t.Fatalf("north card = %+v", n)
+	}
+	if e := w.at(t, 1, 0); e.Name != "Рынок" {
+		t.Fatalf("east card = %+v", e)
+	}
+	// Личное «раунд открыт» предлагает колодец и четыре перехода.
+	var open string
+	for _, m := range w.outbox(t) {
+		if m.Kind == model.OutboxPrivateOpen {
+			open = m.Text
+		}
+	}
+	if !strings.Contains(open, "• заглянуть в колодец (Разум/внимательность): параметр 6, сложность 5, шанс 60%\n• идти на север: Опушка\n• идти на юг: Южные ворота\n• идти на запад: Переулки\n• идти на восток: Рынок") {
+		t.Fatalf("personal open = %q", open)
+	}
+
+	down := startWorld(t)
+	down.svc.LLM = &worldLLM{}
+	if _, err := down.svc.Begin(ctx, down.game, 1); err != nil {
+		t.Fatal(err)
+	}
+	locs = down.locations(t)
+	if len(locs) != 5 || locs[0].Name != "Рыночная площадь" || len(locs[0].Objects) != 1 || locs[0].Objects[0].Key != "notice_board" {
+		t.Fatalf("start after fallback = %+v", locs[0])
+	}
+	if n := down.at(t, 0, -1); n.Name != model.TemplateCardName || n.Stage != model.StageCard || n.Terrain != model.TemplateCardTerrain {
+		t.Fatalf("template card = %+v", n)
+	}
+}
+
+// TestSixSteps_North — критерий готовности пункта 27: после старта из пяти клеток и шести шагов по прямой на север в
+// игре ровно 23 клетки; каждая пройденная клетка детализирована рассказчиком с объектом; возврат в известную клетку
+// не даёт заданий на генерацию; каждая новая клетка — одно открытие фракции; `/replay` любого раунда не обращается к
+// модели и совпадает.
+func TestSixSteps_North(t *testing.T) {
+	t.Parallel()
+	w := startWorld(t)
+	ctx := context.Background()
+	start := w.locations(t)[0]
+	llm := &worldLLM{opening: fmt.Sprintf(startPackageJSON, start.ID)}
+	w.svc.LLM = llm
+	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
+		t.Fatal(err)
+	}
+	for step := 1; step <= 6; step++ {
+		w.reload(t)
+		for _, c := range w.chars {
+			if _, _, err := w.svc.Submit(ctx, w.game, c, "идти на север"); err != nil {
+				t.Fatalf("step %d: %v", step, err)
+			}
+		}
+		w.tick(t, 10*time.Minute)
+		if got := len(w.locations(t)); got != 5+3*step {
+			t.Fatalf("after step %d: %d cells, want %d", step, got, 5+3*step)
+		}
+		cell := w.at(t, 0, step)
+		if cell.Stage != model.StageDetailed || !strings.HasSuffix(cell.Name, "(подробно)") || len(cell.Objects) != 1 || cell.VisitedAt == nil {
+			t.Fatalf("step %d: entered cell = %+v", step, cell)
+		}
+		for _, d := range []model.Direction{model.North, model.West, model.East} {
+			dx, dy := d.Offset()
+			if n := w.at(t, dx, step+dy); n.Stage != model.StageCard || n.Description != "Лес шумит." {
+				t.Fatalf("step %d: neighbor %s = %+v", step, d, n)
+			}
+		}
+		info, _ := w.svc.Info(ctx, w.game)
+		if m := info.Last.Metrics; m == nil || m.WorldCells != 4 || m.WorldTemplated != 0 || m.NarratorFallback {
+			t.Fatalf("step %d: metrics = %+v", step, m)
+		}
+		if n, same, err := w.svc.Replay(ctx, w.game, 1, step); err != nil || !same || n == 0 {
+			t.Fatalf("step %d: replay = %d, %v, %v", step, n, same, err)
+		}
+	}
+	if llm.generated != 6*4 || llm.calls[model.RoleNarrator] != 6 {
+		t.Fatalf("generated = %d, narrator calls = %d", llm.generated, llm.calls[model.RoleNarrator])
+	}
+	factions, _ := w.store.ListFactions(ctx, w.game.ID)
+	if factions[0].ExploredSinceReset != 6 || factions[1].ExploredSinceReset != 0 {
+		t.Fatalf("explored = %+v", factions)
+	}
+	// Возврат на юг в известную клетку: заданий нет, карта не растёт, открытий нет.
+	w.reload(t)
+	for _, c := range w.chars {
+		if _, _, err := w.svc.Submit(ctx, w.game, c, "идти на юг"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.tick(t, 10*time.Minute)
+	if got := len(w.locations(t)); got != 23 {
+		t.Fatalf("after return: %d cells", got)
+	}
+	if last := llm.inputs[len(llm.inputs)-1]; strings.Contains(last, `"generate"`) {
+		t.Fatalf("return generated tasks: %s", last)
+	}
+	factions, _ = w.store.ListFactions(ctx, w.game.ID)
+	if factions[0].ExploredSinceReset != 6 {
+		t.Fatalf("explored after return = %+v", factions)
+	}
+	if d, _ := w.store.ListDiscoveries(ctx, w.game.ID); len(d) != 6 || len(d[w.at(t, 0, 3).ID]) != 1 {
+		t.Fatalf("discoveries = %+v", d)
+	}
+}
+
+// crashJournal — журнал, который один раз паникует на записи «resolved»: сбой конвейера после вызова рассказчика.
+type crashJournal struct {
+	fakeJournal
+	crashes int
+}
+
+func (j *crashJournal) Write(ctx context.Context, rec model.ChatLogRecord) {
+	if rec.Event == "resolved" && j.crashes > 0 {
+		j.crashes--
+		panic("pipeline crashed after narrator")
+	}
+	j.fakeJournal.Write(ctx, rec)
+}
+
+// TestRound_RetryReusesGeneration: сбой после вызова рассказчика откатывает транзакцию, но ответ модели сохранён по
+// ключу задания (ADR-0019): повтор раунда берёт его без второго вызова, клетка генерируется один раз, мир тот же.
+func TestRound_RetryReusesGeneration(t *testing.T) {
+	t.Parallel()
+	w := startWorld(t)
+	ctx := context.Background()
+	start := w.locations(t)[0]
+	llm := &worldLLM{opening: fmt.Sprintf(startPackageJSON, start.ID)}
+	w.svc.LLM = llm
+	j := &crashJournal{crashes: 1}
+	w.svc.Journal = j
+	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
+		t.Fatal(err)
+	}
+	w.reload(t)
+	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "идти north"); err != nil {
+		t.Fatal(err)
+	}
+	w.clock.t = w.clock.t.Add(10 * time.Minute)
+	if err := w.svc.Tick(ctx, w.clock.Now()); err == nil {
+		t.Fatal("tick with panic must fail")
+	}
+	if got := len(w.locations(t)); got != 5 {
+		t.Fatalf("cells committed despite rollback: %d", got)
+	}
+	if llm.calls[model.RoleNarrator] != 1 {
+		t.Fatalf("narrator calls before retry = %d", llm.calls[model.RoleNarrator])
+	}
+	w.tick(t, 10*time.Second)
+	info, _ := w.svc.Info(ctx, w.game)
+	if info.Last == nil || info.Last.Status != model.RoundPublished || info.Last.Attempts != 1 {
+		t.Fatalf("round after retry = %+v", info.Last)
+	}
+	if llm.calls[model.RoleNarrator] != 1 || llm.generated != 4 {
+		t.Fatalf("narrator called again: calls = %d, generated = %d", llm.calls[model.RoleNarrator], llm.generated)
+	}
+	if m := info.Last.Metrics; m == nil || m.LLMReused != 1 || m.Attempt != 2 || m.WorldCells != 4 {
+		t.Fatalf("metrics = %+v", m)
+	}
+	if got := len(w.locations(t)); got != 8 {
+		t.Fatalf("cells after retry = %d", got)
+	}
+	if cell := w.at(t, 0, 1); cell.Name != "Опушка (подробно)" || len(cell.Objects) != 1 {
+		t.Fatalf("entered cell = %+v", cell)
+	}
+}
+
+// TestSaveState_ByID: клетки снимка сохраняются по id, а не по позиции: персонаж в клетке, которая в снимке стоит
+// не на том месте, что в карте игры, меняет состояние объекта — обновляется именно эта клетка.
+func TestSaveState_ByID(t *testing.T) {
+	t.Parallel()
+	w := startWorld(t)
+	ctx := context.Background()
+	for _, cell := range []model.Location{
+		{GameID: w.game.ID, Name: "Опушка", X: 0, Y: 1, Stage: model.StageDetailed, Terrain: "forest"},
+		{GameID: w.game.ID, Name: "Сторожка", X: 0, Y: 2, Stage: model.StageDetailed, Terrain: "forest",
+			Objects: []model.LocationObject{{Key: "lever", Title: "рычаг", State: "up", Approaches: []model.Approach{{Action: model.ActionInteract, Title: "дёрнуть рычаг", Difficulty: 0, OnSuccess: json.RawMessage(`{"state":"down"}`)}}}}},
+		{GameID: w.game.ID, Name: "Бор", X: 0, Y: 3, Stage: model.StageCard, Terrain: "forest"},
+	} {
+		if _, err := w.store.CreateLocation(ctx, cell); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hut := w.at(t, 0, 2)
+	for i := range w.chars {
+		w.chars[i].LocationID = &hut.ID
+		if err := w.store.SaveCharacterState(ctx, w.game.ID, w.chars[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.svc.LLM = &worldLLM{}
+	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
+		t.Fatal(err)
+	}
+	w.reload(t)
+	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "дёрнуть рычаг"); err != nil {
+		t.Fatal(err)
+	}
+	w.tick(t, 10*time.Minute)
+	info, _ := w.svc.Info(ctx, w.game)
+	if len(info.Last.Snapshot.Locations) >= len(w.locations(t)) || info.Last.Snapshot.Locations[0].ID == w.locations(t)[0].ID {
+		t.Fatalf("snapshot is not local: %d of %d cells, first %d", len(info.Last.Snapshot.Locations), len(w.locations(t)), info.Last.Snapshot.Locations[0].ID)
+	}
+	if after := w.at(t, 0, 2); after.Objects[0].State != "down" {
+		t.Fatalf("lever not saved by id: %+v", after.Objects)
+	}
+	if start := w.at(t, 0, 0); len(start.Objects) != 1 || start.Objects[0].Key != "notice_board" {
+		t.Fatalf("start cell touched: %+v", start.Objects)
+	}
+}

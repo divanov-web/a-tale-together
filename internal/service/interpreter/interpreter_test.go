@@ -19,9 +19,9 @@ func cellar() model.RoundSnapshot {
 	return model.RoundSnapshot{
 		SchemaVersion: 2, Mode: model.ModeBalanced,
 		Locations: []model.SnapshotLocation{
-			{ID: 1, Name: "Зал башни", Description: "Пыльный зал.", Links: []model.LocationLink{{To: "Подвал башни", Title: "вниз в подвал"}, {To: "Тайный ход", Title: "тайный ход", Hidden: true}},
+			{ID: 1, Name: "Зал башни", Description: "Пыльный зал.", X: 0, Y: 0, Stage: model.StageDetailed, Start: true,
 				Objects: []model.LocationObject{{Key: "statue", Title: "статуя", Description: "каменный рыцарь"}}},
-			{ID: 2, Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, Links: []model.LocationLink{{To: "Зал башни", Title: "наверх в зал"}},
+			{ID: 2, Name: "Подвал башни", Description: "Сырой подвал.", Difficulty: 1, X: 0, Y: -1, Stage: model.StageDetailed,
 				Objects: []model.LocationObject{
 					{Key: "cellar_door", Title: "запертая дверь", State: "locked", Approaches: []model.Approach{
 						{Action: model.ActionInteract, Title: "выбить", Attribute: "strength", Difficulty: 2},
@@ -76,10 +76,10 @@ func newService(f *fakeLLM) *Service {
 const goodResponse = `{"intents":[
  {"submission_id":71,"character_id":11,"action_type":"interact","target":"cellar_door","approach_idx":1,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null},
  {"submission_id":72,"character_id":12,"action_type":"explore","target":"cellar_door","approach_idx":null,"attribute":"wits","skill":"awareness","risk":"hard","on_success":{"fact":"За стеной пустота.","move":null,"reveal":"hidden_lever"},"on_fail":{"condition":"exhausted","damage":null,"fact":null},"push":true,"ambiguities":[],"fallback":null},
- {"submission_id":73,"character_id":13,"action_type":"move","target":"вниз в подвал","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}
+ {"submission_id":73,"character_id":13,"action_type":"move","target":"Подвал башни","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":null}
 ]}`
 
-// TestInterpret_Valid: подход объекта, свободное испытание с эффектами, переход по названию выхода → цель нормализована.
+// TestInterpret_Valid: подход объекта, свободное испытание с эффектами, переход по имени соседа → цель нормализована в направление.
 func TestInterpret_Valid(t *testing.T) {
 	t.Parallel()
 	f := &fakeLLM{responses: []string{goodResponse}}
@@ -98,7 +98,7 @@ func TestInterpret_Valid(t *testing.T) {
 		string(b.OnSuccess) != `{"fact":"За стеной пустота.","reveal":"hidden_lever"}` || string(b.OnFail) != `{"condition":"exhausted"}` {
 		t.Errorf("free intent = %+v %s %s", b, b.OnSuccess, b.OnFail)
 	}
-	if c.ActionType != model.ActionMove || c.Target != "Подвал башни" {
+	if c.ActionType != model.ActionMove || c.Target != "south" {
 		t.Errorf("move intent = %+v", c)
 	}
 	req := f.requests[0]

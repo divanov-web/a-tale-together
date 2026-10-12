@@ -82,9 +82,16 @@ const (
 	EventActionRejected    EventType = "action_rejected"
 	EventCharacterDied     EventType = "character_died"
 	EventCharacterReturned EventType = "character_returned"
-	EventPartySplit        EventType = "party_split" // часть группы ушла в другую локацию новой группой (пункт 19)
-	EventPartyHeld         EventType = "party_held"  // лимит не дал разделиться: группа идёт за лидером (пункт 19)
+	EventPartySplit        EventType = "party_split"     // часть группы ушла в другую локацию новой группой (пункт 19)
+	EventPartyHeld         EventType = "party_held"      // лимит не дал разделиться: группа идёт за лидером (пункт 19)
+	EventCellDiscovered    EventType = "cell_discovered" // первый вход персонажа фракции в клетку (пункт 27, приватно)
+	EventCellGenerated     EventType = "cell_generated"  // клетка создана или детализирована пакетом рассказчика или шаблоном (пункт 27)
+	EventObjectCreated     EventType = "object_created"  // объект клетки создан пакетом рассказчика (пункт 27)
 )
+
+// GenerationEvents — события пакета мира: их создаёт сценарий раунда после вызова рассказчика, не движок;
+// воспроизведение раунда (`/replay`) их не сравнивает.
+var GenerationEvents = map[EventType]bool{EventCellGenerated: true, EventObjectCreated: true}
 
 // Event — событие мира: единственный способ изменить состояние (docs/architecture/data-model.md, `world_events`).
 type Event struct {
@@ -146,13 +153,6 @@ type ActionResult struct {
 	EventSeqs    []int64      `json:"event_seqs"`
 }
 
-// LocationLink — выход из локации.
-type LocationLink struct {
-	To     string `json:"to"` // имя локации
-	Title  string `json:"title"`
-	Hidden bool   `json:"hidden,omitempty"`
-}
-
 // Approach — предлагаемый подход к объекту (docs/game/models/location.md).
 type Approach struct {
 	Action     ActionType      `json:"action"`
@@ -173,41 +173,72 @@ type LocationObject struct {
 	State       string     `json:"state,omitempty"`
 	Revealed    bool       `json:"revealed,omitempty"`
 	HiddenUntil bool       `json:"hidden_until_revealed,omitempty"` // объект не виден до события reveal
+	Searched    bool       `json:"searched,omitempty"`              // «ничего полезного»: повторный осмотр без изменения состояния находку не даёт
 	Approaches  []Approach `json:"approaches,omitempty"`
 }
 
-// Location — место мира с выходами и объектами.
+// Location — клетка сетки мира (docs/game/world.md): координаты от стартовой `(0,0)`, стадия, тип местности, имя
+// как подпись (не ключ), объекты из `world_objects`. Выходы по четырём направлениям считает код по соседям.
 type Location struct {
 	ID          LocationID
 	GameID      GameID
 	Name        string
-	Description string
+	Description string // у `card` — одно предложение карточки соседа
 	Difficulty  int
-	Links       []LocationLink
+	X, Y        int
+	Stage       LocationStage
+	Terrain     string
+	VisitedAt   *time.Time // первый вход персонажа; nil у непосещённой
 	Objects     []LocationObject
-	Active      bool
-	Start       bool // стартовая локация персонажей
+	Start       bool // стартовая клетка персонажей, `(0,0)`
 	CreatedAt   time.Time
 }
 
-// LocationTemplate — локация в шаблоне жанра.
+// LocationTemplate — стартовая клетка в шаблоне жанра (единственная локация шаблона с пункта 27).
 type LocationTemplate struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description"`
 	Difficulty  int              `json:"difficulty"`
-	Links       []LocationLink   `json:"links"`
+	Terrain     string           `json:"terrain,omitempty"`
 	Objects     []LocationObject `json:"objects"`
 	Start       bool             `json:"start,omitempty"`
 }
 
-// SnapshotLocation — локация в снимке раунда.
+// SnapshotLocation — клетка в снимке раунда (v4): координаты, стадия, посещение, открывшие фракции, объекты.
 type SnapshotLocation struct {
-	ID          LocationID       `json:"id"`
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Difficulty  int              `json:"difficulty"`
-	Links       []LocationLink   `json:"links"`
-	Objects     []LocationObject `json:"objects"`
+	ID           LocationID       `json:"id"`
+	Name         string           `json:"name"`
+	Description  string           `json:"description"`
+	Difficulty   int              `json:"difficulty"`
+	X            int              `json:"x"`
+	Y            int              `json:"y"`
+	Stage        LocationStage    `json:"stage"`
+	Terrain      string           `json:"terrain,omitempty"`
+	Visited      bool             `json:"visited,omitempty"`
+	Start        bool             `json:"start,omitempty"`
+	DiscoveredBy []FactionID      `json:"discovered_by,omitempty"` // фракции, чьи персонажи уже входили в клетку
+	Objects      []LocationObject `json:"objects"`
+}
+
+// Discovered сообщает, открыла ли фракция клетку.
+func (l SnapshotLocation) Discovered(f FactionID) bool {
+	for _, id := range l.DiscoveredBy {
+		if id == f {
+			return true
+		}
+	}
+	return false
+}
+
+// Exit — выход из клетки по направлению к существующему соседу.
+type Exit struct {
+	Direction Direction
+	To        *SnapshotLocation
+}
+
+// Title — подпись выхода: «на север: Лес».
+func (e Exit) Title() string {
+	return e.Direction.Toward() + ": " + e.To.Name
 }
 
 // Object возвращает объект локации по ключу.

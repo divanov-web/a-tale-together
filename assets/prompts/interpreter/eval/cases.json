@@ -4,13 +4,11 @@
     "skills": [{"key": "thievery", "title": "Воровство", "attribute": "agility"}, {"key": "awareness", "title": "Внимательность", "attribute": "wits"}, {"key": "melee", "title": "Бой", "attribute": "strength"}, {"key": "stealth", "title": "Скрытность", "attribute": "agility"}, {"key": "persuasion", "title": "Убеждение", "attribute": "will"}]
   },
   "snapshot": {
-    "schema_version": 2, "mode": "balanced",
+    "schema_version": 4, "mode": "balanced",
     "locations": [
-      {"id": 1, "name": "Зал башни", "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.", "difficulty": 0,
-       "links": [{"to": "Подвал башни", "title": "вниз в подвал"}, {"to": "Тайный ход", "title": "тайный ход", "hidden": true}],
+      {"id": 1, "name": "Зал башни", "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.", "difficulty": 0, "x": 0, "y": 0, "stage": "detailed", "start": true,
        "objects": [{"key": "statue", "title": "статуя рыцаря", "description": "каменный рыцарь с мечом"}]},
-      {"id": 2, "name": "Подвал башни", "description": "Сырой подвал; тяжёлая дверь с новым замком, следы сапог на пыли.", "difficulty": 1,
-       "links": [{"to": "Зал башни", "title": "наверх в зал"}],
+      {"id": 2, "name": "Подвал башни", "description": "Сырой подвал; тяжёлая дверь с новым замком, следы сапог на пыли.", "difficulty": 1, "x": 0, "y": -1, "stage": "detailed",
        "objects": [
          {"key": "cellar_door", "title": "запертая дверь", "state": "locked", "approaches": [
            {"action": "interact", "title": "выбить", "attribute": "strength", "difficulty": 2, "on_success": {"state": "broken"}, "on_fail": {"condition": "exhausted"}},
@@ -39,9 +37,9 @@
     {"name": "free-check-wall-S12", "submissions": [{"submission_id": 5, "character_id": 12, "text": "простукиваю стену рядом с дверью, ищу пустоту, куда можно ударить молотом"}],
      "expect": [{"submission_id": 5, "action_type": ["explore", "interact"], "has_check": true}]},
     {"name": "move-typed", "submissions": [{"submission_id": 6, "character_id": 13, "text": "иду вниз"}],
-     "expect": [{"submission_id": 6, "action_type": ["move"], "target": "Подвал башни", "ambiguous": false}]},
+     "expect": [{"submission_id": 6, "action_type": ["move"], "target": "south", "ambiguous": false}]},
     {"name": "move-careful", "submissions": [{"submission_id": 7, "character_id": 13, "text": "спускаюсь в подвал, осторожно проверяя каждую ступеньку"}],
-     "expect": [{"submission_id": 7, "action_type": ["move"], "target": "Подвал башни"}]},
+     "expect": [{"submission_id": 7, "action_type": ["move"], "target": "south"}]},
     {"name": "explore-location", "submissions": [{"submission_id": 8, "character_id": 14, "text": "осматриваюсь"}],
      "expect": [{"submission_id": 8, "action_type": ["explore"], "target": "", "ambiguous": false}]},
     {"name": "explore-object", "submissions": [{"submission_id": 9, "character_id": 14, "text": "разглядываю статую, нет ли на ней надписей"}],
@@ -68,7 +66,7 @@
      "expect": [
        {"submission_id": 21, "action_type": ["interact"], "target": "cellar_door", "approach_idx": 1},
        {"submission_id": 22, "action_type": ["explore", "interact"], "has_check": true},
-       {"submission_id": 23, "action_type": ["move"], "target": "Подвал башни"},
+       {"submission_id": 23, "action_type": ["move"], "target": "south"},
        {"submission_id": 24, "action_type": ["explore"], "target": "statue"}]}
   ]
 }

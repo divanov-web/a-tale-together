@@ -3,7 +3,7 @@ package interpreter
 import "encoding/json"
 
 // PromptVersion — версия промпта интерпретатора, пишется в `llm_runs.prompt_version`.
-const PromptVersion = "interpreter/v1"
+const PromptVersion = "interpreter/v2"
 
 // Schema — JSON-схема ответа модели: массив намерений по одному на заявку (docs/llm/interpreter.md).
 // Все поля обязательны, необязательные значения — null: так схему принимают провайдеры со строгим режимом.

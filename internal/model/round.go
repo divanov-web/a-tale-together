@@ -67,12 +67,16 @@ type RoundMetrics struct {
 	Issues              int   `json:"issues"`  // замечаний к ответам рассказчика
 	ChronicleParts      int   `json:"chronicle_parts"`
 	Notices             int   `json:"notices"`
+	LLMReused           int   `json:"llm_reused,omitempty"`      // ответов модели взято из сохранённых по ключу задания (ADR-0019)
+	WorldCells          int   `json:"world_cells,omitempty"`     // клеток и карточек в пакете мира (пункт 27)
+	WorldTemplated      int   `json:"world_templated,omitempty"` // из них закрыто шаблоном
 }
 
 // RoundSnapshot — состояние на дедлайн: персонажи, локации и заявки; воспроизведение движка по снимку и seed.
 // SchemaVersion 2 (пункт 07): характеристики, инвентарь, знания, локации с объектами. SchemaVersion 3 (пункт 19):
 // группы, лимит групп, зарезервированные идентификаторы и имена для новых групп (`party_split` детерминирован и
-// воспроизводим по снимку).
+// воспроизводим по снимку). SchemaVersion 4 (пункт 27): клетки сетки с координатами, стадией и открывшими
+// фракциями; в снимок входят только занятые клетки и их соседи, выходы по направлениям считает код.
 type RoundSnapshot struct {
 	SchemaVersion int                  `json:"schema_version"`
 	Mode          GameMode             `json:"mode,omitempty"`
@@ -87,7 +91,7 @@ type RoundSnapshot struct {
 }
 
 // SnapshotSchemaVersion — текущая версия снимка.
-const SnapshotSchemaVersion = 3
+const SnapshotSchemaVersion = 4
 
 // Party возвращает группу снимка по id.
 func (s *RoundSnapshot) Party(id PartyID) (*SnapshotParty, bool) {
@@ -119,14 +123,47 @@ func (s *RoundSnapshot) Location(id LocationID) (*SnapshotLocation, bool) {
 	return nil, false
 }
 
-// LocationByName возвращает локацию снимка по имени без учёта регистра.
-func (s *RoundSnapshot) LocationByName(name string) (*SnapshotLocation, bool) {
+// LocationAt возвращает клетку снимка по координатам.
+func (s *RoundSnapshot) LocationAt(x, y int) (*SnapshotLocation, bool) {
 	for i := range s.Locations {
-		if strings.EqualFold(s.Locations[i].Name, name) {
+		if s.Locations[i].X == x && s.Locations[i].Y == y {
 			return &s.Locations[i], true
 		}
 	}
 	return nil, false
+}
+
+// Neighbor возвращает соседа клетки по направлению, если он есть в снимке.
+func (s *RoundSnapshot) Neighbor(loc *SnapshotLocation, d Direction) (*SnapshotLocation, bool) {
+	dx, dy := d.Offset()
+	return s.LocationAt(loc.X+dx, loc.Y+dy)
+}
+
+// Exits — выходы клетки по направлениям к существующим соседям в порядке Directions.
+func (s *RoundSnapshot) Exits(loc *SnapshotLocation) []Exit {
+	var out []Exit
+	for _, d := range Directions {
+		if n, ok := s.Neighbor(loc, d); ok {
+			out = append(out, Exit{Direction: d, To: n})
+		}
+	}
+	return out
+}
+
+// ExitTo находит выход клетки по цели заявки: направление словом или имя соседа (без учёта регистра).
+func (s *RoundSnapshot) ExitTo(loc *SnapshotLocation, target string) (Exit, bool) {
+	if d, ok := ParseDirection(target); ok {
+		if n, ok := s.Neighbor(loc, d); ok {
+			return Exit{Direction: d, To: n}, true
+		}
+		return Exit{}, false
+	}
+	for _, e := range s.Exits(loc) {
+		if strings.EqualFold(strings.TrimSpace(target), e.To.Name) {
+			return e, true
+		}
+	}
+	return Exit{}, false
 }
 
 // SnapshotCharacter — персонаж в снимке раунда.

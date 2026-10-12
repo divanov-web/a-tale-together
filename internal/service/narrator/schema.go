@@ -3,10 +3,12 @@ package narrator
 import "encoding/json"
 
 // PromptVersion — версия промпта рассказчика, пишется в `llm_runs.prompt_version` и `rounds.narration`.
-const PromptVersion = "narrator/v3"
+const PromptVersion = "narrator/v4"
 
-// Schema — JSON-схема ответа модели: общий текст раунда и блок на сцену (`scene_id` из входа: группа в локации или
-// персонажи без группы) с упомянутыми событиями (docs/llm/round-calls.md). Локацию и подпись сцены подставляет код.
+// Schema — JSON-схема ответа модели: общий текст раунда, блок на сцену (`scene_id` из входа: группа в локации или
+// персонажи без группы) с упомянутыми событиями (docs/llm/round-calls.md) и пакет мира `world` (пункт 27: клетки
+// для детализации и карточки соседей по заданиям `generate`; без заданий — пустые массивы). Локацию и подпись
+// сцены подставляет код.
 var Schema = json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -23,9 +25,18 @@ var Schema = json.RawMessage(`{
         "required": ["scene_id", "text", "event_seqs"],
         "additionalProperties": false
       }
+    },
+    "world": {
+      "type": "object",
+      "properties": {
+        "cells": {"type": "array", "items": ` + cellSchema + `},
+        "neighbors": {"type": "array", "items": ` + neighborSchema + `}
+      },
+      "required": ["cells", "neighbors"],
+      "additionalProperties": false
     }
   },
-  "required": ["chronicle", "scenes"],
+  "required": ["chronicle", "scenes", "world"],
   "additionalProperties": false
 }`)
 
@@ -33,6 +44,7 @@ var Schema = json.RawMessage(`{
 type response struct {
 	Chronicle string     `json:"chronicle"`
 	Scenes    []rawScene `json:"scenes"`
+	World     rawWorld   `json:"world"`
 }
 
 type rawScene struct {

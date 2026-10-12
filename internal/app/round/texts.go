@@ -236,6 +236,10 @@ func optionsFor(c model.SnapshotCharacter, state *model.RoundSnapshot, opts []na
 		if o.LocationID != *c.LocationID {
 			continue
 		}
+		if o.Move != "" {
+			lines = append(lines, "• "+o.Title)
+			continue
+		}
 		if o.Attribute == "" {
 			lines = append(lines, "• "+o.Title+" (без броска)")
 			continue
