@@ -671,6 +671,7 @@ func TestRound_StatusTransitionsAndWindow(t *testing.T) {
 	// Старт вне окна: первый раунд в начале окна.
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.outboxTexts()[1], "Первый раунд в 13:00")
+	mustContain(t, h.privateOutbox(private(alice), model.OutboxPrivateOpen), "история началась", "Первый раунд откроется в 13:00") // B23
 	mustContain(t, h.send(alice, groupChat, "/status"), "Следующий раунд: в 13:00 (игровое окно 13:00–14:00)")
 	mustContain(t, h.send(alice, private(alice), "/act рано"), "нет открытого раунда")
 	h.clock.advance(30 * time.Minute)
@@ -886,8 +887,10 @@ func TestButtons_CharacterDialog(t *testing.T) {
 	mustContain(t, h.press(alice, private(alice), 14, "@public_bio -"), "Скрытое описание")
 	card := h.press(alice, private(alice), 15, "@secret_bio -")
 	mustContain(t, card, "Персонаж создан", "Элис — Воин\nПол: женский")
-	if h.tg.lastKeyboard(private(alice)) != nil {
-		t.Fatal("final card has keyboard")
+	// B23: игра не начата — только кнопка «Мой персонаж».
+	mustContain(t, card, "Администратор ещё не начал историю")
+	if got := buttonData(h.tg.lastKeyboard(private(alice))); len(got) != 1 || got[0] != "/character" {
+		t.Fatalf("final card keyboard = %v", got)
 	}
 	// Кнопка завершённого диалога не заявка и не ошибка.
 	mustContain(t, h.press(alice, private(alice), 15, "@secret_bio -"), "Этот диалог уже завершён")
@@ -1152,5 +1155,31 @@ func TestKnowledgeMessages(t *testing.T) {
 	parts := knowledgeMessages("Боб", []string{long, long, long}, 40)
 	if len(parts) != 3 || !strings.HasPrefix(parts[0], "Знания Боб (3):\n• ") || parts[1] != "• "+long || parts[2] != "• "+long {
 		t.Fatalf("long = %q", parts)
+	}
+}
+
+// TestCharacter_WelcomeByGameStatus (B23): итог создания персонажа говорит, что делать дальше, по статусу игры:
+// идущий раунд — дедлайн, завязка и варианты хода кнопками; пауза — ждать возобновления.
+func TestCharacter_WelcomeByGameStatus(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+
+	card := h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	mustContain(t, card, "Персонаж создан", "Идёт раунд 1, заявки до", "Завязка:", "Варианты хода (Рыночная площадь):\n• разобрать приписку", "Нажмите вариант или напишите действие своими словами.")
+	got := buttonData(h.tg.lastKeyboard(private(bob)))
+	if len(got) < 2 || !strings.HasPrefix(got[0], "/act #1:") || got[len(got)-1] != "/character" {
+		t.Fatalf("active welcome keyboard = %v", got)
+	}
+
+	mustContain(t, h.send(owner, groupChat, "/pause"), "на паузе")
+	card = h.joinAndCreate(nobody, code, "1", "Ноб", "3", "1", "1", "-", "-")
+	mustContain(t, card, "Персонаж создан", "Игра на паузе")
+	if got := buttonData(h.tg.lastKeyboard(private(nobody))); len(got) != 1 || got[0] != "/character" {
+		t.Fatalf("paused welcome keyboard = %v", got)
 	}
 }

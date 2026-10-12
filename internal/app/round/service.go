@@ -217,6 +217,9 @@ func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID
 			if err := s.enqueue(ctx, g, chat, nil, model.OutboxSystem, firstRoundLaterText(g, *g.NextRoundAt, now)); err != nil {
 				return err
 			}
+			if err := s.notifyStartLater(ctx, g, chars, *g.NextRoundAt); err != nil {
+				return err
+			}
 		}
 		out = g
 		return nil

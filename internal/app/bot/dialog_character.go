@@ -169,7 +169,13 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 		if err != nil {
 			return question{}, false, err
 		}
-		return question{text: "Персонаж создан!\n\n" + strings.TrimRight(card, "\n") + "\n\nЖдите старта игры: хроника появится в групповом чате, личные итоги — здесь."}, true, nil
+		// Что дальше — по статусу игры (B23): ждать старта, пауза или текущий раунд с вариантами хода кнопками.
+		next, kb, err := s.rounds.Welcome(ctx, g, c)
+		if err != nil {
+			return question{}, false, err
+		}
+		kb = append(kb, []model.Button{{Text: "Мой персонаж", Data: model.CallbackCommand("character", "")}})
+		return question{text: "Персонаж создан!\n\n" + strings.TrimRight(card, "\n") + "\n\n" + next, kb: kb}, true, nil
 	default:
 		return question{}, false, fmt.Errorf("bot.characterStep: unknown step %q", d.Step)
 	}
