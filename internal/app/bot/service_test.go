@@ -318,7 +318,7 @@ func TestGame_CreateSetupAndStatus(t *testing.T) {
 	mustContain(t, h.tg.last(private(owner)), "Настройка мира", "Название мира")
 
 	mustContain(t, h.send(owner, private(owner), "Хроники Серой башни"), "Длительность раунда")
-	mustContain(t, h.send(owner, private(owner), "5"), "от 10 до 60", "Повторите ответ")
+	mustContain(t, h.send(owner, private(owner), "4"), "от 5 до 60", "Повторите ответ")
 	mustContain(t, h.send(owner, private(owner), "20"), "Часовой пояс")
 	mustContain(t, h.send(owner, private(owner), "-"), "Игровое окно")
 	mustContain(t, h.send(owner, private(owner), "10:00-22:00"), "Кворум раунда", "Сейчас: 2")

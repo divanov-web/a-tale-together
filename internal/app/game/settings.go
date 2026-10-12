@@ -23,7 +23,7 @@ type Param struct {
 var Params = []Param{
 	{Key: "title", Title: "Название мира", Hint: "текст до 60 символов"},
 	{Key: "genre", Title: "Жанр", Hint: "код жанра из списка"},
-	{Key: "round_minutes", Title: "Длительность раунда", Hint: "минуты от 10 до 60"},
+	{Key: "round_minutes", Title: "Длительность раунда", Hint: "минуты от 5 до 60"},
 	{Key: "timezone", Title: "Часовой пояс", Hint: "например Europe/Moscow"},
 	{Key: "play_window", Title: "Игровое окно", Hint: "HH:MM-HH:MM по часовому поясу игры или «нет»"},
 	{Key: "ends_at", Title: "Дата окончания рассказа", Hint: "ГГГГ-ММ-ДД или «нет»", Advanced: true}, // по умолчанию «нет»
