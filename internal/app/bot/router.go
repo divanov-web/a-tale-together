@@ -75,8 +75,9 @@ func (s *Service) registry() []command {
 		{name: "character", contexts: ctxPrivate, description: "мой персонаж", run: s.character},
 		{name: "party", contexts: ctxPrivate, description: "моя группа и остальные группы", run: s.party},
 		{name: "quests", contexts: ctxPrivate, description: "цель и квесты моей фракции", run: s.quests},
-		{name: "bio", contexts: ctxPrivate, description: "<текст> — открытое описание персонажа до 100 символов", run: s.characterBio},
+		{name: "bio", contexts: ctxPrivate, description: "описания персонажа; с текстом — открытое описание до 100 символов", run: s.characterBio},
 		{name: "secret", contexts: ctxPrivate, description: "<текст> — скрытое описание персонажа до 100 символов", run: s.characterSecret},
+		{name: "knowledge", contexts: ctxPrivate, description: "все знания моего персонажа", run: s.characterKnowledge},
 		{name: "cancel", contexts: ctxPrivate, description: "прервать диалог", run: s.cancel},
 		{name: "llm", contexts: ctxPrivate, description: "профили LLM (владелец бота): use|add|test", run: s.llmCommand, hidden: true},
 	}

@@ -207,7 +207,9 @@ func TestScenario_S12_LockedDoor(t *testing.T) {
 	if pushedSeed < 0 {
 		t.Fatal("no seed with a pushed roll")
 	}
-	res := Resolve(cellar(model.ModeMechanics), []model.Intent{{SubmissionID: 2, CharacterID: 12, ActionType: model.ActionInteract, Target: "дверь", ApproachIdx: ptr(0), Push: true}}, pushedSeed)
+	penalized := cellar(model.ModeMechanics)
+	penalized.Penalties = true
+	res := Resolve(penalized, []model.Intent{{SubmissionID: 2, CharacterID: 12, ActionType: model.ActionInteract, Target: "дверь", ApproachIdx: ptr(0), Push: true}}, pushedSeed)
 	r := res.Results[0]
 	exhausted := false
 	for _, ev := range res.Events {
@@ -220,6 +222,16 @@ func TestScenario_S12_LockedDoor(t *testing.T) {
 	}
 	if r.Outcome == model.OutcomeSuccess {
 		t.Fatalf("pushed success must be costly: %+v", r)
+	}
+	// Штрафы выключены (B27): тот же бросок форсирован, но без состояния «истощён».
+	off := Resolve(cellar(model.ModeMechanics), []model.Intent{{SubmissionID: 2, CharacterID: 12, ActionType: model.ActionInteract, Target: "дверь", ApproachIdx: ptr(0), Push: true}}, pushedSeed)
+	for _, ev := range off.Events {
+		if ev.Type == model.EventConditionAdded {
+			t.Fatalf("push without penalties added a condition: %+v", ev)
+		}
+	}
+	if !off.Results[0].Check.Pushed || off.Results[0].Outcome != r.Outcome {
+		t.Fatalf("push without penalties = %+v", off.Results[0])
 	}
 	// Повествование: провал без deadly становится успехом с ценой, форсирование без состояния.
 	narr := Resolve(cellar(model.ModeNarrative), []model.Intent{{SubmissionID: 2, CharacterID: 12, ActionType: model.ActionInteract, Target: "дверь", ApproachIdx: ptr(0)}}, pushedSeed)
@@ -286,6 +298,7 @@ func TestScenario_S13_FreeCheck(t *testing.T) {
 	var successes, failures int
 	for seed := int64(1); seed <= 60; seed++ {
 		snap := cellar(model.ModeBalanced)
+		snap.Penalties = true
 		res := Resolve(snap, []model.Intent{free}, seed)
 		r := res.Results[0]
 		if r.Status != model.ResultResolved || r.Check == nil || r.Check.Param != 4 || r.Check.Difficulty != 7 || r.Check.ChancePct != 20 || r.Check.Attribute != "agility" {
@@ -314,6 +327,13 @@ func TestScenario_S13_FreeCheck(t *testing.T) {
 			failures++
 			if types[model.EventConditionAdded] != 1 || !c.HasCondition(model.ConditionWounded) || *c.LocationID != 1 || types[model.EventFactLearned] != 0 {
 				t.Fatalf("seed %d: fail branch: %+v / %+v", seed, types, c)
+			}
+			// Штрафы выключены (B27): тот же провал без состояния.
+			snap.Penalties = false
+			for _, ev := range Resolve(snap, []model.Intent{free}, seed).Events {
+				if ev.Type == model.EventConditionAdded {
+					t.Fatalf("seed %d: fail without penalties added a condition: %+v", seed, ev)
+				}
 			}
 		}
 	}

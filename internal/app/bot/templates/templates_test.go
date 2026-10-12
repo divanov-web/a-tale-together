@@ -26,19 +26,19 @@ func TestRender_Status(t *testing.T) {
 	}
 }
 
-// TestRender_Character — эталон карточки персонажа: одно поле на строку, знания списком.
+// TestRender_Character — эталон краткой карточки персонажа: одно поле на строку, описания и знания отдельными командами (B28).
 func TestRender_Character(t *testing.T) {
 	t.Parallel()
 	got, err := Render("character", map[string]any{
 		"Nickname": "Элис", "Gender": "женский", "Archetype": "Воин", "Faction": "Орден", "Status": "active", "Death": "", "Game": "Мир", "Location": "Рыночная площадь",
 		"HP": 9, "Conditions": "", "Attributes": "Сила 5, Ловкость 3, Разум 2, Воля 4", "Skills": "Атлетика 3, Бой 3", "Inventory": "Меч, Щит",
-		"PublicBio": "Высокая и шумная", "SecretBio": "", "Knowledge": []string{"Гонца видели у башни."},
+		"Knowledge": 1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := "Элис — Воин\nПол: женский\nФракция: «Орден»\nСтатус: active\nИгра: «Мир»\nЛокация: Рыночная площадь\nГруппа: нет (/party)\nHP: 9\nСостояния: нет\nХарактеристики: Сила 5, Ловкость 3, Разум 2, Воля 4\nНавыки: Атлетика 3, Бой 3\nИнвентарь: Меч, Щит\n" +
-		"Открытое описание: Высокая и шумная\nСкрытое описание: нет (/secret <текст>)\n\nЗнания:\n• Гонца видели у башни.\n\n"
+		"Описания: /bio\nЗнания: /knowledge (1)\n"
 	if got != want {
 		t.Errorf("character =\n%q\nwant\n%q", got, want)
 	}

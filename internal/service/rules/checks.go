@@ -113,6 +113,10 @@ func DifficultyWords(difficulty int) string {
 	return "героически"
 }
 
+// Penalties — флаг правил: включены ли состояния-штрафы («истощён» за форсирование, состояние из on_fail).
+// Выключен до механики отдыха, которая их снимает (B27, docs/game/open-questions.md); урон и факты провала остаются.
+const Penalties = false
+
 // ModePreset — что из механик включено в режиме игры (docs/game/game-modes.md).
 type ModePreset struct {
 	MaxDifficulty      int  // потолок базовой сложности (без локации); 0 — без потолка

@@ -368,14 +368,16 @@ func TestCharacter_CreateAutoAndManual(t *testing.T) {
 
 	card := h.joinAndCreate(alice, code, "1", "Элис", "2", "воин", "1", "Высокая и шумная", "-")
 	mustContain(t, card, "Персонаж создан", "Элис — Воин\nПол: женский\nФракция: «Орден Рассвета»", "HP: 9", "Сила 5, Ловкость 3, Разум 2, Воля 4",
-		"Атлетика 3, Бой 3", "Меч, Щит", "Открытое описание: Высокая и шумная", "Скрытое описание: нет")
+		"Атлетика 3, Бой 3", "Меч, Щит", "Описания: /bio", "Знания: /knowledge (пока нет)")
 
 	card = h.joinAndCreate(bob, code, "Гильдия теней", "Боб", "1", "2", "2", "2 5 4 3", "воровство 3 скрытность 2 бой 1", "-", "Боится воды")
-	mustContain(t, card, "Боб — Плут\nПол: мужской\nФракция: «Гильдия теней»", "HP: 6", "Бой 1, Воровство 3, Скрытность 2", "Кинжал, Отмычки", "Скрытое описание: Боится воды")
+	mustContain(t, card, "Боб — Плут\nПол: мужской\nФракция: «Гильдия теней»", "HP: 6", "Бой 1, Воровство 3, Скрытность 2", "Кинжал, Отмычки")
+	mustContain(t, h.send(bob, private(bob), "/secret"), "Открытое описание: нет", "Скрытое описание (видит только рассказчик): Боится воды")
 
 	mustContain(t, h.send(alice, private(alice), "/character"), "Элис — Воин")
 	mustContain(t, h.send(alice, private(alice), "/bio Теперь тихая"), "сохранено")
-	mustContain(t, h.send(alice, private(alice), "/character"), "Открытое описание: Теперь тихая")
+	mustContain(t, h.send(alice, private(alice), "/bio"), "Открытое описание: Теперь тихая", "Скрытое описание (видит только рассказчик): нет", "/secret <текст>")
+	mustContain(t, h.send(alice, private(alice), "/knowledge"), "знаний пока нет")
 	mustContain(t, h.send(alice, private(alice), "/create"), "уже есть")
 	mustContain(t, h.send(alice, private(alice), "/start join_"+code), "Вы уже в игре")
 	mustContain(t, h.send(alice, private(alice), "/me"), "@alice", "персонаж Элис", "Личка: открыта")
@@ -744,7 +746,7 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
-	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Рыночная площадь", "Знания: пока нет")
+	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Рыночная площадь", "Знания: /knowledge (пока нет)")
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята: раунд 1")
 	mustContain(t, h.send(bob, private(bob), "/act осмотреть доску"), "Заявка принята: раунд 1")
@@ -771,9 +773,10 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Зал Серой башни")
 	bobCard := h.send(bob, private(bob), "/character")
 	if strings.Contains(privates[private(bob)][0], "— успех") {
-		mustContain(t, bobCard, "Знания:\n• Гонца видели у башни.")
+		mustContain(t, bobCard, "Знания: /knowledge (1)")
+		mustContain(t, h.send(bob, private(bob), "/knowledge"), "Знания Боб (1):\n• Гонца видели у башни.")
 	} else {
-		mustContain(t, bobCard, "Знания: пока нет")
+		mustContain(t, bobCard, "Знания: /knowledge (пока нет)")
 	}
 	mustContain(t, h.send(alice, groupChat, "/status"), "Предыдущий раунд: 1 разрешён, заявок 2")
 	mustContain(t, h.send(owner, groupChat, "/replay 1"), "Раунд 1 воспроизведён", "совпадают")
@@ -1135,5 +1138,19 @@ func TestQuests_Card(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/quests"), "▶ Найти след — Зал Серой башни (0, 1): узнать: Этап «Найти след»: Отыскать место, где гонца видели в последний раз.")
 	if len(h.tg.lastKeyboard(private(alice))) != 0 {
 		t.Fatal("quests card must not have buttons")
+	}
+}
+
+// TestKnowledgeMessages: полный список знаний делится по лимиту длины, заголовок только в первом сообщении (B28).
+func TestKnowledgeMessages(t *testing.T) {
+	t.Parallel()
+	one := knowledgeMessages("Боб", []string{"а", "б"}, 100)
+	if len(one) != 1 || one[0] != "Знания Боб (2):\n• а\n• б" {
+		t.Fatalf("short = %q", one)
+	}
+	long := strings.Repeat("я", 20)
+	parts := knowledgeMessages("Боб", []string{long, long, long}, 40)
+	if len(parts) != 3 || !strings.HasPrefix(parts[0], "Знания Боб (3):\n• ") || parts[1] != "• "+long || parts[2] != "• "+long {
+		t.Fatalf("long = %q", parts)
 	}
 }

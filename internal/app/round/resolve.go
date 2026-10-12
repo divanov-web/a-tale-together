@@ -22,7 +22,7 @@ import (
 // (`relevant`, пункт 27) с координатами, стадией, посещением, открывшими фракциями и объектами, заявки; группы,
 // лимиты и резерв идентификаторов дописывает `snapshotParties` при заморозке.
 func snapshot(g model.Game, chars []model.Character, locations []model.Location, discoveries map[model.LocationID][]model.FactionID, subs []model.Submission, def model.CharacterModelDef) model.RoundSnapshot {
-	snap := model.RoundSnapshot{SchemaVersion: model.SnapshotSchemaVersion, Mode: g.Mode, RulesVersion: g.RulesVersion, Characters: []model.SnapshotCharacter{}, Locations: []model.SnapshotLocation{}, Submissions: []model.SnapshotSubmission{}}
+	snap := model.RoundSnapshot{SchemaVersion: model.SnapshotSchemaVersion, Mode: g.Mode, RulesVersion: g.RulesVersion, Penalties: rules.Penalties, Characters: []model.SnapshotCharacter{}, Locations: []model.SnapshotLocation{}, Submissions: []model.SnapshotSubmission{}}
 	for _, c := range chars {
 		maxHP, err := rules.HP(def, c.Attributes)
 		if err != nil || maxHP <= 0 {

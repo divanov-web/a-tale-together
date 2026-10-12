@@ -278,7 +278,7 @@ func (r *resolver) check(c *model.SnapshotCharacter, loc *model.SnapshotLocation
 		info.Pushed = true
 		info.PushRoll = r.roll()
 		success = rules.Success(info.PushRoll, info.ChancePct)
-		if r.preset.PushCost && !c.HasCondition(model.ConditionExhausted) {
+		if r.preset.PushCost && r.snap.Penalties && !c.HasCondition(model.ConditionExhausted) {
 			c.Conditions = append(c.Conditions, model.ConditionExhausted)
 			r.emit(res, model.EventConditionAdded, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "condition": model.ConditionExhausted})
 		}
@@ -410,7 +410,7 @@ func ApproachDone(loc model.SnapshotLocation, objIdx int, ap model.Approach, cha
 	return true
 }
 
-// applyFail выполняет on_fail: состояние, урон в пределах режима, факт.
+// applyFail выполняет on_fail: состояние (только при включённых штрафах снимка, B27), урон в пределах режима, факт.
 func (r *resolver) applyFail(res *model.ActionResult, c *model.SnapshotCharacter, loc *model.SnapshotLocation, effect json.RawMessage) {
 	var e struct {
 		Condition string `json:"condition"`
@@ -420,7 +420,7 @@ func (r *resolver) applyFail(res *model.ActionResult, c *model.SnapshotCharacter
 	if len(effect) > 0 {
 		_ = json.Unmarshal(effect, &e)
 	}
-	if e.Condition != "" && !c.HasCondition(e.Condition) {
+	if e.Condition != "" && r.snap.Penalties && !c.HasCondition(e.Condition) {
 		c.Conditions = append(c.Conditions, e.Condition)
 		r.emit(res, model.EventConditionAdded, model.VisibilityPrivate, []model.CharacterID{c.ID}, c, map[string]any{"character_id": c.ID, "condition": e.Condition})
 	}

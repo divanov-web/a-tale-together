@@ -10,9 +10,5 @@ HP: {{.HP}}
 Характеристики: {{.Attributes}}
 Навыки: {{.Skills}}
 Инвентарь: {{if .Inventory}}{{.Inventory}}{{else}}пусто{{end}}
-Открытое описание: {{if .PublicBio}}{{.PublicBio}}{{else}}нет (/bio <текст>){{end}}
-Скрытое описание: {{if .SecretBio}}{{.SecretBio}}{{else}}нет (/secret <текст>){{end}}
-
-Знания:{{if not .Knowledge}} пока нет{{end}}
-{{range .Knowledge}}• {{.}}
-{{end}}
+Описания: /bio
+Знания: /knowledge{{if .Knowledge}} ({{.Knowledge}}){{else}} (пока нет){{end}}

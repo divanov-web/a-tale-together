@@ -84,6 +84,7 @@ type RoundSnapshot struct {
 	SchemaVersion int                  `json:"schema_version"`
 	Mode          GameMode             `json:"mode,omitempty"`
 	RulesVersion  int                  `json:"rules_version"`
+	Penalties     bool                 `json:"penalties,omitempty"` // состояния-штрафы: «истощён» за форсирование и состояние из on_fail (B27)
 	Characters    []SnapshotCharacter  `json:"characters"`
 	Locations     []SnapshotLocation   `json:"locations,omitempty"`
 	Parties       []SnapshotParty      `json:"parties,omitempty"`
