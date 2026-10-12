@@ -28,6 +28,6 @@
 
 ## Последствия
 - Документы обновлены этим решением: `docs/game/checks.md`, `character.md`, `models/*`, `glossary.md`, `scenarios.md` (S07, S09, S12, S13, S15), `docs/llm/*`, руководство игрока; спецификация из `docs/concept/starting_balance.md` перенесена и удалена.
-- Код: план [22](../plan/22-direct-chance.md): `rules.Param` вместо `Pool`, `ChancePct(param, difficulty)`, бросок d100 в `engine.check`, миграция модели персонажа и шаблона жанра, тексты уведомлений и «Вариантов», промпт рассказчика (слова о числах), тесты по таблице шансов и S15, пересев S06/S07/S12.
+- Код: план [22](../plan/telegram/22-direct-chance.md): `rules.Param` вместо `Pool`, `ChancePct(param, difficulty)`, бросок d100 в `engine.check`, миграция модели персонажа и шаблона жанра, тексты уведомлений и «Вариантов», промпт рассказчика (слова о числах), тесты по таблице шансов и S15, пересев S06/S07/S12.
 - Правило `.claude/rules/engine.md`: сложность назначает код по таблице 5 / 7 / 9 плюс локация; в событии `param`, `roll`, `difficulty`, `chance_pct`, `pushed`, `outcome`.
 - Уточняет [ADR-0011](0011-narrator-call.md): шанс для подходов следующего раунда код считает по параметру.

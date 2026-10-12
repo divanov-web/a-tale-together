@@ -8,7 +8,7 @@
 |---|---|
 | [Концепт](concept/massive_dnd_concept.md), [риски реализации](concept/massive_dnd_implementation_risks.md) | Не источник правды: исходные документы руководителя, в них смотрят только за нереализованными механиками; реализованное адаптируется под проект, переносится в профильный документ и удаляется из концепта |
 | [Динамический мир](concept/dynamic_world_review_by_chatGPT.md) | Оценка генерации карты и квестов, бюджет токенов и предлагаемые этапы реализации |
-| [План реализации](plan/README.md) | Крупные пункты по порядку (техника, фичи, devops) и файл-скелет на каждый; [доработки вне плана](plan/backlog.md) — очередь замечаний ручного тестирования, [выполненные](plan/backlog-done.md) отдельно; большие стори в подпапках: [художник, изображения](plan/images/README.md), [сайт игры](plan/website/README.md) |
+| [Планы реализации](plan/README.md) | Индекс больших планов: [Telegram-бот](plan/telegram.md) (пункты в `plan/telegram/`), [художник, изображения](plan/images.md), [сайт игры](plan/website.md); [доработки вне плана](plan/backlog.md) — очередь замечаний ручного тестирования, [выполненные](plan/backlog-done.md) отдельно |
 | [Roadmap](roadmap.md) | Этапы концепта и их связь с пунктами плана |
 | [Глоссарий проекта](glossary.md), [глоссарий игры](game/glossary.md) | Единая терминология: технические и игровые термины; неудачные термины заменяются с пометкой «Было» |
 | [Архитектура](architecture/overview.md) | [Компоненты](architecture/overview.md), [слои](architecture/layers.md), [структура репозитория](architecture/project-layout.md), [модель данных](architecture/data-model.md), [конвейер раунда](architecture/round-pipeline.md), [команды Telegram](architecture/telegram-commands.md) |

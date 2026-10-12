@@ -10,7 +10,7 @@
 ## Критерий готовности
 После раунда в песочнице в `logs/chats/<telegram_chat_id>/` лежит журнал, из которого ИИ без БД восстанавливает: каждое входящее сообщение (кто, что, команда), каждое исходящее (текст, `outbox_id`, `part`, `telegram_message_id`), каждый вызов LLM (роль, версия промпта, раунд, вход, выход, ошибка, токены, дозапрос), события раунда (открыт, заморожен, пропущен с причиной, разрешён, опубликован). Записи личек ссылаются на `game_id`, записи игры — на группу; дубли update помечены, а не потеряны. Журнал выключается конфигом; `make test` и `make lint` зелёные.
 
-## Решения ([ADR-0012](../decisions/0012-chat-logs.md))
+## Решения ([ADR-0012](../../decisions/0012-chat-logs.md))
 - Формат: JSONL, файл на день `logs/chats/<telegram_chat_id>/YYYY-MM-DD.jsonl`; одна запись — одна строка с полями `ts`, `kind` (`in | out | llm | round | error`), `update_id`, `game_id`, `round_id`, `round_no`, `user` (Telegram ID и никнейм), `command`, `text`, для `llm` — `role`, `prompt_version`, `attempt`, `request` (системный промпт и вход), `response`, `error`, `tokens_in`, `tokens_out`, `duration_ms`; для `out` — `outbox_id`, `part`, `telegram_message_id`. Многострочный текст в JSON-строках, чтобы `grep` по `round_no` и `update_id` работал построчно.
 - Точки записи: входящее — `app/bot.Handle` после дедупликации (дубль пишется с `duplicate: true`), `my_chat_member`, `rate_limited`; исходящее — ответы `app/bot` и каждая попытка `app/delivery` с `outbox_id`, `part`, `attempt`, `telegram_message_id` или `error` (обёртка над адаптером отвергнута: контекст знает сценарий); LLM — `app/llm.Complete` (вход и выход каждой попытки, в том числе дозапросы); раунд — `app/round` (`opened`, `submission`, `skipped`, `frozen`, `interpreted`, `narrated`, `resolved`, `published`).
 - Адресация: вызовы LLM и события раунда пишутся в папку группы игры (`games.chat_id` → `chats.telegram_chat_id`); личные сообщения — в папку лички с полем `game_id`, если игрок состоит в игре.
@@ -20,12 +20,12 @@
 ## Шаги
 | № | Шаг | Слой / пакеты | Артефакты | Статус |
 |---|---|---|---|---|
-| 1 | ADR: формат записи, точки записи, адресация по чатам, конфиг и приватность | `docs/decisions` | [ADR-0012](../decisions/0012-chat-logs.md) | готово |
+| 1 | ADR: формат записи, точки записи, адресация по чатам, конфиг и приватность | `docs/decisions` | [ADR-0012](../../decisions/0012-chat-logs.md) | готово |
 | 2 | Адаптер `adapter/chatlog`: запись JSONL по чатам и дням, ротация, удаление старых файлов, фейк | `adapter/chatlog`, `config` | `writer_test.go` | готово |
 | 3 | Входящие и исходящие: `app/bot.Handle` (с пометкой дублей, `my_chat_member`, `rate_limited`), ответы `app/bot`, попытки `app/delivery` с полями outbox | `app/bot`, `app/delivery`, `cmd/bot` | `TestHandle_Journal`, `TestDeliver_Journal` | готово (без обёртки адаптера) |
 | 4 | Вызовы LLM: `app/llm.Complete` пишет вход и выход каждой попытки в папку группы игры (роль, версия промпта, раунд, токены, ошибка) | `app/llm` | `TestResolve_GameThenDefaultThenError` | готово |
 | 5 | События раунда: open, freeze, skip, resolve (статусы заявок, `ambiguous`, замечания и дописывания рассказчика), publish | `app/round` | `TestJournal_RoundEvents` | готово |
-| 6 | Инструкция для ИИ по чтению журнала: `docs/dev/chat-logs.md` (структура, примеры `grep`/`jq` по раунду и update, порядок разбора сбоя), ссылки из `/tale-env`, `docs/dev/environment.md` и SKILL.md; повторяемый разбор журнала → скилл `tale-debug` по правилу саморасширения | docs, `.claude` | [chat-logs.md](../dev/chat-logs.md), `/tale-debug` | готово (скилл создан сразу: разбор сбоев — повторяемый процесс) |
+| 6 | Инструкция для ИИ по чтению журнала: `docs/dev/chat-logs.md` (структура, примеры `grep`/`jq` по раунду и update, порядок разбора сбоя), ссылки из `/tale-env`, `docs/dev/environment.md` и SKILL.md; повторяемый разбор журнала → скилл `tale-debug` по правилу саморасширения | docs, `.claude` | [chat-logs.md](../../dev/chat-logs.md), `/tale-debug` | готово (скилл создан сразу: разбор сбоев — повторяемый процесс) |
 | 7 | Прогон раунда в песочнице после `make restart`, чтение журнала ИИ, правки формата по итогам | проверка | запись в этом файле | готово |
 
 ## Проверка
