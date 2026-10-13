@@ -724,10 +724,10 @@ func TestCommands_MenuByContext(t *testing.T) {
 		t.Fatalf("private menu = %s", privateMenu)
 	}
 	// B20: меню группы для всех — только команды игры здесь и сейчас; /help по-прежнему перечисляет всё.
-	if groupMenu != "[help status act scout]" {
+	if groupMenu != "[help status act say scout]" {
 		t.Fatalf("group menu = %s", groupMenu)
 	}
-	if adminMenu := names(h.svc.Menu(ctxGroup, true)); adminMenu != "[help chat mod owner create begin pause finish status act scout next replay round reset]" {
+	if adminMenu := names(h.svc.Menu(ctxGroup, true)); adminMenu != "[help chat mod owner create begin pause finish status act say scout next replay round reset]" {
 		t.Fatalf("admin menu = %s", adminMenu)
 	}
 	mustContain(t, h.send(alice, private(alice), "/help"), "в личке", "/join", "/cancel", "/ping")
@@ -741,7 +741,7 @@ func TestCommands_MenuByContext(t *testing.T) {
 func TestCommands_ManagerMenu(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	admin := "[help chat mod owner create begin pause finish status act scout next replay round reset]"
+	admin := "[help chat mod owner create begin pause finish status act say scout next replay round reset]"
 	h.addBot(owner)
 	if got := fmt.Sprint(h.tg.memberMenu(groupChat, owner.ID)); got != admin {
 		t.Fatalf("owner menu after add = %s", got)
@@ -1094,7 +1094,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/finish yes"), "Игра не запущена")
 	h.begin()
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята: раунд 1")
-	mustContain(t, h.send(owner, groupChat, "/round"), "Раунд 1 — open", "Заявок: 1; итогов: 0; событий: 0", "• Элис (pending): «идти к башне»")
+	mustContain(t, h.send(owner, groupChat, "/round"), "Раунд 1 — open", "Заявок: 1; реплик: 0; итогов: 0; событий: 0", "• Элис (pending): «идти к башне»")
 	mustContain(t, h.send(owner, groupChat, "/round x"), "Формат: /round")
 	mustContain(t, h.send(alice, groupChat, "/finish yes"), "Нет прав")
 	// Завершение с открытым раундом: одна заявка разрешается без кворума, финальная хроника в группе.
@@ -1556,4 +1556,38 @@ func TestAway_Command(t *testing.T) {
 	h.tick()
 	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: active\n")
 	mustContain(t, h.send(bob, private(bob), "/back"), "Персонаж в истории")
+}
+
+// TestSay_Command — S21 (пункт 32, ADR-0027): /say в личке и группе принимается при открытом раунде по правилам
+// заявки, но заявкой не считается: кворума не даёт, /act после неё принимается; реплики переносятся при пропуске и
+// видны в карточке /round.
+func TestSay_Command(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	mustContain(t, h.send(alice, private(alice), "/say привет"), "Игры нет")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
+	mustContain(t, h.send(alice, private(alice), "/say привет"), "Игра не запущена")
+	h.begin()
+	mustContain(t, h.send(alice, private(alice), "/say"), "Формат: /say")
+	mustContain(t, h.send(alice, private(alice), "/say "+strings.Repeat("я", 501)), "до 500 символов")
+	mustContain(t, h.send(alice, private(alice), "/say Я здесь, не стреляйте!"), "Реплика принята: раунд 1, до ")
+	mustContain(t, h.send(alice, private(alice), "/say Повторяю!"), "Реплика на этот раунд уже принята")
+	mustContain(t, h.send(bob, groupChat, "/say Кто идёт?"), "Реплика принята: раунд 1")
+	mustContain(t, h.send(owner, groupChat, "/say что-то"), "Персонажа ещё нет")
+	mustContain(t, h.send(alice, groupChat, "/status"), "заявок 0 из 2")
+	mustContain(t, h.send(owner, groupChat, "/round"), "Заявок: 0; реплик: 2", "• Элис говорит: «Я здесь, не стреляйте!»", "• Боб говорит: «Кто идёт?»")
+	mustContain(t, h.send(alice, private(alice), "/act иду"), "Заявка принята: раунд 1")
+
+	// Дедлайн: заявок 1 из 2 — раунд пропущен, реплики вместе с заявкой переехали в раунд 2.
+	h.clock.advance(15 * time.Minute)
+	h.tick()
+	mustContain(t, h.send(owner, groupChat, "/round"), "Раунд 2 — open", "Заявок: 1; реплик: 2")
+	mustContain(t, h.send(bob, private(bob), "/say Я уже говорил"), "Реплика на этот раунд уже принята")
+	mustContain(t, h.send(bob, private(bob), "/act жду"), "Заявка принята: раунд 2")
+	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
+	mustContain(t, h.send(owner, groupChat, "/round 2"), "Раунд 2 — published", "реплик: 2", "• Боб говорит: «Кто идёт?»")
+	mustContain(t, h.send(owner, groupChat, "/pause"), "на паузе")
+	mustContain(t, h.send(alice, private(alice), "/say тихо"), "Игра на паузе")
 }

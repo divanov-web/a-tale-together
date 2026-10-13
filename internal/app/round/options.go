@@ -96,7 +96,7 @@ func (s *Service) SubmitOption(ctx context.Context, game model.Game, c model.Cha
 	if err != nil {
 		return model.Round{}, model.Submission{}, fmt.Errorf("round.SubmitOption: %w", err)
 	}
-	state := snapshot(game, chars, locations, nil, nil, def)
+	state := snapshot(game, chars, locations, nil, nil, nil, def)
 	for _, o := range narrator.Options(&state, def, game.Mode) {
 		if o.LocationID == ref.LocationID && o.Object == ref.Object && o.Idx == ref.Idx {
 			return s.Submit(ctx, game, c, o.Title)

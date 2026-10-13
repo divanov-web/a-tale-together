@@ -104,6 +104,7 @@ func (s *Store) DeleteGameProgress(ctx context.Context, game model.GameID) error
 	for _, q := range []string{
 		`DELETE FROM messages_outbox WHERE game_id = $1`,
 		`DELETE FROM resolved_actions WHERE game_id = $1`,
+		`DELETE FROM speeches WHERE game_id = $1`,
 		`DELETE FROM world_events WHERE game_id = $1`,
 		`DELETE FROM generation_jobs WHERE game_id = $1`,
 		`DELETE FROM rounds WHERE game_id = $1`,
@@ -189,7 +190,7 @@ func (s *Store) ListSubmissions(ctx context.Context, game model.GameID, round mo
 
 // DeleteSubmission удаляет заявку персонажа на раунд (уход по слову игрока, ADR-0026); отсутствие заявки — не ошибка.
 func (s *Store) DeleteSubmission(ctx context.Context, game model.GameID, round model.RoundID, character model.CharacterID) error {
-	if _, err := s.db(ctx).Exec(ctx, `DELETE FROM submissions WHERE game_id = $1 AND round_id = $2 AND character_id = $3`, game, round, character); err != nil {
+	if _, err := s.db(ctx).Exec(ctx, `DELETE FROM action_submissions WHERE game_id = $1 AND round_id = $2 AND character_id = $3`, game, round, character); err != nil {
 		return fmt.Errorf("postgres.DeleteSubmission: %w", err)
 	}
 	return nil
@@ -207,6 +208,66 @@ func (s *Store) MoveSubmissions(ctx context.Context, game model.GameID, from, to
 func (s *Store) SetSubmissionsStatus(ctx context.Context, game model.GameID, round model.RoundID, status model.SubmissionStatus) error {
 	if _, err := s.db(ctx).Exec(ctx, `UPDATE action_submissions SET status = $3, updated_at = now() WHERE game_id = $1 AND round_id = $2`, game, round, status); err != nil {
 		return fmt.Errorf("postgres.SetSubmissionsStatus: %w", err)
+	}
+	return nil
+}
+
+const speechColumns = `id, game_id, round_id, character_id, text, submitted_at`
+
+func scanSpeech(row pgx.Row) (model.Speech, error) {
+	var sp model.Speech
+	err := row.Scan(&sp.ID, &sp.GameID, &sp.RoundID, &sp.CharacterID, &sp.Text, &sp.SubmittedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Speech{}, model.ErrNotFound
+	}
+	return sp, err
+}
+
+// CreateSpeech записывает реплику персонажа на раунд (ADR-0027); повтор в том же раунде — `model.ErrAlreadyExists`.
+func (s *Store) CreateSpeech(ctx context.Context, sp model.Speech) (model.Speech, error) {
+	const q = `INSERT INTO speeches (game_id, round_id, character_id, text, submitted_at) VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (round_id, character_id) DO NOTHING RETURNING ` + speechColumns
+	out, err := scanSpeech(s.db(ctx).QueryRow(ctx, q, sp.GameID, sp.RoundID, sp.CharacterID, sp.Text, sp.SubmittedAt))
+	if errors.Is(err, model.ErrNotFound) {
+		return model.Speech{}, model.ErrAlreadyExists
+	}
+	if err != nil {
+		return model.Speech{}, fmt.Errorf("postgres.CreateSpeech: %w", err)
+	}
+	return out, nil
+}
+
+// GetSpeech возвращает реплику персонажа на раунд.
+func (s *Store) GetSpeech(ctx context.Context, game model.GameID, round model.RoundID, character model.CharacterID) (model.Speech, error) {
+	sp, err := scanSpeech(s.db(ctx).QueryRow(ctx, `SELECT `+speechColumns+` FROM speeches WHERE game_id = $1 AND round_id = $2 AND character_id = $3`, game, round, character))
+	if err != nil {
+		return model.Speech{}, fmt.Errorf("postgres.GetSpeech: %w", err)
+	}
+	return sp, nil
+}
+
+// ListSpeeches возвращает реплики раунда по порядку подачи.
+func (s *Store) ListSpeeches(ctx context.Context, game model.GameID, round model.RoundID) ([]model.Speech, error) {
+	rows, err := s.db(ctx).Query(ctx, `SELECT `+speechColumns+` FROM speeches WHERE game_id = $1 AND round_id = $2 ORDER BY submitted_at, id`, game, round)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.ListSpeeches: %w", err)
+	}
+	defer rows.Close()
+	var out []model.Speech
+	for rows.Next() {
+		sp, err := scanSpeech(rows)
+		if err != nil {
+			return nil, fmt.Errorf("postgres.ListSpeeches: scan: %w", err)
+		}
+		out = append(out, sp)
+	}
+	return out, rows.Err()
+}
+
+// MoveSpeeches переносит реплики пропущенного или не разрешённого раунда в следующий.
+func (s *Store) MoveSpeeches(ctx context.Context, game model.GameID, from, to model.RoundID) error {
+	if _, err := s.db(ctx).Exec(ctx, `UPDATE speeches SET round_id = $3 WHERE game_id = $1 AND round_id = $2`, game, from, to); err != nil {
+		return fmt.Errorf("postgres.MoveSpeeches: %w", err)
 	}
 	return nil
 }

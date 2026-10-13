@@ -59,8 +59,9 @@ type caseParams struct {
 	Bios     map[model.CharacterID]narrator.Bio `json:"bios"`
 	Previous []model.Narration                  `json:"previous"`
 	State    *model.RoundSnapshot               `json:"state"`
-	Tasks    narrator.Tasks                     `json:"tasks"`  // задания на достройку мира (пункт 27) и квесты (пункт 28)
-	Quests   []narrator.QuestInfo               `json:"quests"` // активные квесты для подсказок (пункт 28)
+	Tasks    narrator.Tasks                     `json:"tasks"`    // задания на достройку мира (пункт 27) и квесты (пункт 28)
+	Quests   []narrator.QuestInfo               `json:"quests"`   // активные квесты для подсказок (пункт 28)
+	Speeches []model.SnapshotSpeech             `json:"speeches"` // реплики персонажей (пункт 32, ADR-0027)
 }
 
 var digits = regexp.MustCompile(`\d`)
@@ -114,7 +115,7 @@ func run() error {
 		}
 		total++
 		p := narrator.Params{Title: set.Title, Tone: set.Tone, Factions: set.Factions, Def: set.CharacterModel,
-			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks, Quests: c.Params.Quests}
+			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks, Quests: c.Params.Quests, Speeches: c.Params.Speeches}
 		started := time.Now()
 		res, err := svc.Narrate(context.Background(), p)
 		elapsed += time.Since(started)

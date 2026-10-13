@@ -33,6 +33,7 @@ type Store struct {
 	chars          map[model.CharacterID]model.Character
 	rounds         map[model.RoundID]model.Round
 	subs           map[model.SubmissionID]model.Submission
+	speeches       map[model.SpeechID]model.Speech
 	outbox         []model.OutboxMessage
 	locations      map[model.LocationID]model.Location
 	discoveries    map[discoveryKey]bool
@@ -69,7 +70,7 @@ func New(now func() time.Time) *Store {
 		mods: map[model.ChatID][]moderator{}, dialogs: map[model.UserID]model.Dialog{}, genres: map[model.GenreID]model.Genre{},
 		cmodels: map[model.CharacterModelID]model.CharacterModel{}, games: map[model.GameID]model.Game{}, seasons: map[model.SeasonID]model.Season{},
 		facts: map[model.FactionID]model.Faction{}, members: map[memberKey]model.GameMember{}, chars: map[model.CharacterID]model.Character{},
-		rounds: map[model.RoundID]model.Round{}, subs: map[model.SubmissionID]model.Submission{},
+		rounds: map[model.RoundID]model.Round{}, subs: map[model.SubmissionID]model.Submission{}, speeches: map[model.SpeechID]model.Speech{},
 		llmProfiles: map[model.LLMProfileID]model.LLMProfile{}, settings: map[string]string{}, locations: map[model.LocationID]model.Location{},
 		parties: map[model.PartyID]model.Party{}, discoveries: map[discoveryKey]bool{}, jobs: map[jobKey]model.GenerationJob{},
 		quests: map[model.QuestID]model.Quest{}, goals: map[model.FactionGoalID]model.FactionGoal{},
@@ -131,6 +132,7 @@ type state struct {
 	chars       map[model.CharacterID]model.Character
 	rounds      map[model.RoundID]model.Round
 	subs        map[model.SubmissionID]model.Submission
+	speeches    map[model.SpeechID]model.Speech
 	outbox      []model.OutboxMessage
 	locations   map[model.LocationID]model.Location
 	discoveries map[discoveryKey]bool
@@ -154,7 +156,7 @@ func (s *Store) snapshot() state {
 	return state{
 		updates: maps.Clone(s.updates), users: maps.Clone(s.users), chats: maps.Clone(s.chats), mods: mods, dialogs: maps.Clone(s.dialogs),
 		games: maps.Clone(s.games), seasons: maps.Clone(s.seasons), facts: maps.Clone(s.facts), members: maps.Clone(s.members),
-		chars: maps.Clone(s.chars), rounds: maps.Clone(s.rounds), subs: maps.Clone(s.subs), outbox: slices.Clone(s.outbox),
+		chars: maps.Clone(s.chars), rounds: maps.Clone(s.rounds), subs: maps.Clone(s.subs), speeches: maps.Clone(s.speeches), outbox: slices.Clone(s.outbox),
 		locations: maps.Clone(s.locations), discoveries: maps.Clone(s.discoveries), parties: maps.Clone(s.parties), events: slices.Clone(s.events), resolved: slices.Clone(s.resolved), resolvedRnd: slices.Clone(s.resolvedRounds),
 		llmProfiles: maps.Clone(s.llmProfiles), llmRuns: slices.Clone(s.llmRuns), settings: maps.Clone(s.settings), nextID: s.nextID,
 		quests: maps.Clone(s.quests), goals: maps.Clone(s.goals),
@@ -165,6 +167,7 @@ func (s *Store) restore(st state) {
 	s.updates, s.users, s.chats, s.mods, s.dialogs = st.updates, st.users, st.chats, st.mods, st.dialogs
 	s.games, s.seasons, s.facts, s.members, s.chars = st.games, st.seasons, st.facts, st.members, st.chars
 	s.rounds, s.subs, s.outbox, s.locations, s.parties = st.rounds, st.subs, st.outbox, st.locations, st.parties
+	s.speeches = st.speeches
 	s.discoveries = st.discoveries
 	s.events, s.resolved, s.resolvedRounds = st.events, st.resolved, st.resolvedRnd
 	s.llmProfiles, s.llmRuns, s.settings, s.nextID = st.llmProfiles, st.llmRuns, st.settings, st.nextID

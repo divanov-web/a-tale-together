@@ -45,6 +45,9 @@ type FactionGoalID int64
 // SubmissionID — идентификатор заявки на раунд.
 type SubmissionID int64
 
+// SpeechID — идентификатор реплики персонажа на раунд (ADR-0027).
+type SpeechID int64
+
 // OutboxID — идентификатор исходящего сообщения в messages_outbox.
 type OutboxID int64
 

@@ -9,6 +9,9 @@ import (
 // ErrNotFound — запись не найдена в хранилище; проверяется через errors.Is.
 var ErrNotFound = errors.New("not found")
 
+// ErrAlreadyExists — запись с таким ключом уже есть (уникальность внешнего события); проверяется через errors.Is.
+var ErrAlreadyExists = errors.New("already exists")
+
 // ErrSendRejected — Telegram отверг сообщение навсегда (чат не найден, бот заблокирован или удалён из группы,
 // некорректный запрос): повтор бесполезен, воркер доставки сразу ставит `failed` (ADR-0013).
 var ErrSendRejected = errors.New("send rejected")

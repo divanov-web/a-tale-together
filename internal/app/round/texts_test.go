@@ -89,7 +89,7 @@ func TestTexts_OptionsFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state := snapshot(w.game, chars, locations, nil, nil, def)
+	state := snapshot(w.game, chars, locations, nil, nil, nil, def)
 	opts := narrator.Options(&state, def, model.ModeBalanced)
 	alice := state.Characters[0]
 	want := "Варианты для вас (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 4, шанс 70%"
@@ -109,7 +109,7 @@ func TestTexts_OptionsFor(t *testing.T) {
 		}
 	}
 	chars[0].LocationID = &cellar
-	state = snapshot(w.game, chars, locations, nil, nil, def)
+	state = snapshot(w.game, chars, locations, nil, nil, nil, def)
 	opts = narrator.Options(&state, def, model.ModeBalanced)
 	if got := optionsFor(state.Characters[0], &state, opts, "Варианты для вас"); got != "Варианты для вас (Подвал башни):\n• выбить (Сила/атлетика): параметр 2, сложность 5, шанс 20%\n• отпереть (Ловкость/воровство): параметр 3, сложность 5, шанс 30%" {
 		t.Errorf("cellar = %q", got)

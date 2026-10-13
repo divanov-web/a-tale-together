@@ -10,7 +10,7 @@
 | `ts`, `kind`, `chat_id` | время, вид (`in`, `out`, `llm`, `round`, `error`), чат; у нажатия кнопки `event: callback`, `text` — данные кнопки |
 | `update_id`, `duplicate`, `user`, `command`, `text` | входящее: update, повтор, автор (`id`, `username`, `name`), команда, текст |
 | `game_id`, `round_id`, `round_no` | игра и раунд; у входящих в личке — текущая игра игрока |
-| `event` | `in`: `my_chat_member`, `rate_limited`; `round`: `opening` (завязка при `/begin`, без раунда), `opened`, `submission`, `skipped`, `frozen`, `interpreted`, `narrated`, `resolved`, `published`, `metrics`, `attempt_failed`, `failed`, `paused`, `resumed`, `finished`, `reset` |
+| `event` | `in`: `my_chat_member`, `rate_limited`; `round`: `opening` (завязка при `/begin`, без раунда), `opened`, `submission`, `speech` (реплика `/say`, ADR-0027), `skipped`, `frozen`, `interpreted`, `narrated`, `resolved`, `published`, `metrics`, `attempt_failed`, `failed`, `paused`, `resumed`, `finished`, `reset` |
 | `attempt` (у `round`) | номер попытки закрытия раунда: записи прерванной попытки остаются в журнале, в БД фиксируется только успешная ([ADR-0013](../decisions/0013-round-resilience.md)) |
 | `outbox_id`, `outbox_kind`, `part`, `attempt`, `telegram_message_id`, `error` | исходящее outbox: попытка отправки; `out` без `outbox_id` — синхронный ответ на команду |
 | `llm` | `role`, `prompt_version`, `profile`, `provider`, `model`, `system`, `input`, `output`, `tokens_in`, `tokens_out`, `duration_ms` |

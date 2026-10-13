@@ -319,6 +319,17 @@ func TestGameFlow(t *testing.T) {
 	if got, err := s.GetSubmission(ctx, game.ID, r1.ID, created.ID); err != nil || got.RawText != "бегу" {
 		t.Fatalf("GetSubmission = %+v, %v", got, err)
 	}
+	// Реплика (ADR-0027): одна на раунд, повтор — ErrAlreadyExists; при пропуске переезжает вместе с заявкой.
+	sp, err := s.CreateSpeech(ctx, model.Speech{GameID: game.ID, RoundID: r1.ID, CharacterID: created.ID, Text: "Тише!", SubmittedAt: now})
+	if err != nil || sp.ID == 0 || sp.Text != "Тише!" || !sp.SubmittedAt.Equal(now) {
+		t.Fatalf("CreateSpeech = %+v, %v", sp, err)
+	}
+	if _, err := s.CreateSpeech(ctx, model.Speech{GameID: game.ID, RoundID: r1.ID, CharacterID: created.ID, Text: "Ещё", SubmittedAt: now}); !errors.Is(err, model.ErrAlreadyExists) {
+		t.Fatalf("second speech = %v; want ErrAlreadyExists", err)
+	}
+	if got, err := s.GetSpeech(ctx, game.ID, r1.ID, created.ID); err != nil || got.ID != sp.ID {
+		t.Fatalf("GetSpeech = %+v, %v", got, err)
+	}
 	// Пропуск: заявка переезжает в раунд 2; снимок и seed замораживают раунд 2.
 	closed := now.Add(15 * time.Minute)
 	r1.Status, r1.SkipReason, r1.ClosedAt = model.RoundSkipped, "заявок 1 из 2", &closed
@@ -335,6 +346,15 @@ func TestGameFlow(t *testing.T) {
 	subs, err := s.ListSubmissions(ctx, game.ID, r2.ID)
 	if err != nil || len(subs) != 1 || subs[0].ID != sub.ID {
 		t.Fatalf("ListSubmissions after move = %+v, %v", subs, err)
+	}
+	if err := s.MoveSpeeches(ctx, game.ID, r1.ID, r2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if speeches, err := s.ListSpeeches(ctx, game.ID, r2.ID); err != nil || len(speeches) != 1 || speeches[0].ID != sp.ID {
+		t.Fatalf("ListSpeeches after move = %+v, %v", speeches, err)
+	}
+	if _, err := s.GetSpeech(ctx, game.ID, r1.ID, created.ID); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("GetSpeech after move = %v; want ErrNotFound", err)
 	}
 	snap := &model.RoundSnapshot{SchemaVersion: 1, Characters: []model.SnapshotCharacter{{ID: created.ID, Nickname: "Элис", Status: model.CharacterActive, HP: 8, FactionID: factions[0].ID, Conditions: []string{}}},
 		Submissions: []model.SnapshotSubmission{{SubmissionID: sub.ID, CharacterID: created.ID, Text: "бегу", SubmittedAt: now}}}

@@ -364,3 +364,32 @@ func TestBuildInput_HiddenExit(t *testing.T) {
 		t.Fatalf("hidden neighbor leaked: %s", enc)
 	}
 }
+
+// TestBuildInput_Speeches — S21 (пункт 32, ADR-0027): реплика попадает только в сцену присутствия персонажа после
+// свёртки; реплики выбывших (`dead`, `inactive`) и пустые отбрасываются; у сцены без реплик пустой список.
+func TestBuildInput_Speeches(t *testing.T) {
+	t.Parallel()
+	p := params(model.ModeBalanced)
+	p.Speeches = []model.SnapshotSpeech{
+		{SpeechID: 1, CharacterID: 11, Text: "Тише, свои! Не стреляйте."},
+		{SpeechID: 2, CharacterID: 15, Text: "Бу!"},
+		{SpeechID: 3, CharacterID: 13, Text: "  "},
+		{SpeechID: 4, CharacterID: 12, Text: "Дверь не поддаётся."},
+	}
+	in := BuildInput(p)
+	hall, cellar := in.Scenes[0], in.Scenes[1]
+	if len(hall.Speeches) != 0 || hall.Speeches == nil {
+		t.Fatalf("hall speeches = %#v; want empty list", hall.Speeches)
+	}
+	if len(cellar.Speeches) != 2 || cellar.Speeches[0].Nickname != "Вор" || cellar.Speeches[0].Text != "Тише, свои! Не стреляйте." || cellar.Speeches[1].Nickname != "Кузнец" {
+		t.Fatalf("cellar speeches = %+v", cellar.Speeches)
+	}
+	enc := in.Encode()
+	if strings.Contains(enc, "Бу!") || strings.Count(enc, "Не стреляйте") != 1 || !strings.Contains(enc, `"speeches":[]`) {
+		t.Errorf("encoded input = %s", enc)
+	}
+	// Без реплик во входе у каждой сцены пустой список, не null.
+	if plain := BuildInput(params(model.ModeBalanced)).Encode(); strings.Contains(plain, `"speeches":null`) {
+		t.Errorf("null speeches: %s", plain)
+	}
+}

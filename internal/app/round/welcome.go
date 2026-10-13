@@ -56,7 +56,7 @@ func (s *Service) Welcome(ctx context.Context, g model.Game, c model.Character) 
 	if err != nil {
 		return "", nil, fmt.Errorf("round.Welcome: %w", err)
 	}
-	state := snapshot(g, chars, locations, nil, nil, def)
+	state := snapshot(g, chars, locations, nil, nil, nil, def)
 	opts := narrator.Options(&state, def, g.Mode)
 	head := fmt.Sprintf("Идёт раунд %d, заявки до %s.", open.RoundNo, FormatTime(g, open.DeadlineAt, now))
 	sc, ok := state.Character(c.ID)

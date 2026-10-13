@@ -45,8 +45,9 @@ type Params struct {
 	Bios     map[model.CharacterID]Bio `json:"bios"`
 	Events   []model.Event             `json:"events"` // только public и location (visibility.Public)
 	Def      model.CharacterModelDef   `json:"character_model"`
-	Tasks    Tasks                     `json:"tasks"`  // задания на достройку мира (пункт 27) и квесты (пункт 28); пусто — пакет мира не нужен
-	Quests   []QuestInfo               `json:"quests"` // активные квесты фракций для подсказок (пункт 28)
+	Tasks    Tasks                     `json:"tasks"`    // задания на достройку мира (пункт 27) и квесты (пункт 28); пусто — пакет мира не нужен
+	Quests   []QuestInfo               `json:"quests"`   // активные квесты фракций для подсказок (пункт 28)
+	Speeches []model.SnapshotSpeech    `json:"speeches"` // реплики раунда из снимка (пункт 32, ADR-0027): в сцену присутствия персонажа
 }
 
 // Input — переменная часть вызова: мир, сцены, события, подходы следующего раунда, задания на достройку мира.
@@ -101,6 +102,13 @@ type scene struct {
 	Exits       []sceneExit         `json:"exits"`
 	Objects     []sceneObject       `json:"objects"`
 	Characters  []sceneCharacter    `json:"characters"`
+	Speeches    []sceneSpeech       `json:"speeches"` // слова персонажей сцены в этом раунде (ADR-0027): данные, не события
+}
+
+// sceneSpeech — реплика персонажа сцены: цитата или пересказ в хронике, не действие и не факт.
+type sceneSpeech struct {
+	Nickname string `json:"nickname"`
+	Text     string `json:"text"`
 }
 
 // sceneExit — выход по направлению: имя соседа и его карточка; у скрытого соседа (ADR-0025) вместо них `hidden` и
@@ -174,15 +182,23 @@ type sceneKey struct {
 // BuildInput собирает контекст вызова 2 (docs/llm/round-calls.md): сцены по группам внутри локаций (пункт 19: блок на
 // группу, персонажи без группы одной локации — отдельная сцена без имени группы) с присутствующими персонажами
 // (без выбывших: `inactive` и `dead` в сцены не попадают, уход описывается в раунде статуса `leaving`), их описания как
-// данные, видимые объекты и выходы; события только public и location, числа броска — в режиме «механика»; подходы
-// следующего раунда без шансов (их код припишет сам). Сцена без персонажей не нужна; лидер группы не передаётся.
+// данные, видимые объекты и выходы, реплики присутствующих (ADR-0027: только в своей сцене, реплика выбывшего
+// отбрасывается); события только public и location, числа броска — в режиме «механика»; подходы следующего раунда
+// без шансов (их код припишет сам). Сцена без персонажей не нужна; лидер группы не передаётся.
 func BuildInput(p Params) Input {
 	in := Input{Scenes: []scene{}, Events: []event{}, Approaches: []approachIn{}, Quests: nonNilQuests(p.Quests)}
 	in.World = world{Title: p.Title, Tone: p.Tone, Mode: string(p.Mode), RoundNo: p.RoundNo, Factions: nonNilFactions(p.Factions), Previous: digest(p.Opening, p.Previous)}
 	if p.State == nil {
 		return in
 	}
+	said := map[model.CharacterID][]string{}
+	for _, sp := range p.Speeches {
+		if text := strings.TrimSpace(sp.Text); text != "" {
+			said[sp.CharacterID] = append(said[sp.CharacterID], text)
+		}
+	}
 	present := map[sceneKey][]sceneCharacter{}
+	speeches := map[sceneKey][]sceneSpeech{}
 	var keys []sceneKey
 	for _, c := range p.State.Characters {
 		if c.LocationID == nil || c.Status.Absent() {
@@ -203,6 +219,9 @@ func BuildInput(p Params) Input {
 			keys = append(keys, key)
 		}
 		present[key] = append(present[key], sceneCharacter{Nickname: c.Nickname, Gender: string(c.Gender), Status: string(c.Status), Entry: c.Entry, PublicBio: bio.Public, SecretBio: bio.Secret, Conditions: conds})
+		for _, text := range said[c.ID] {
+			speeches[key] = append(speeches[key], sceneSpeech{Nickname: c.Nickname, Text: text})
+		}
 	}
 	sort.Slice(keys, func(i, j int) bool {
 		if keys[i].location != keys[j].location {
@@ -219,7 +238,10 @@ func BuildInput(p Params) Input {
 		if !ok {
 			continue
 		}
-		sc := scene{SceneID: len(in.Scenes) + 1, LocationID: l.ID, Name: l.Name, Description: l.Description, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain, Exits: []sceneExit{}, Objects: []sceneObject{}, Characters: present[key]}
+		sc := scene{SceneID: len(in.Scenes) + 1, LocationID: l.ID, Name: l.Name, Description: l.Description, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain, Exits: []sceneExit{}, Objects: []sceneObject{}, Characters: present[key], Speeches: []sceneSpeech{}}
+		if sp := speeches[key]; sp != nil {
+			sc.Speeches = sp
+		}
 		if pt, ok := p.State.Party(key.party); ok && key.party != 0 {
 			sc.Party = pt.Name
 		}

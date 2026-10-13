@@ -75,6 +75,10 @@ type Store interface {
 	DeleteSubmission(ctx context.Context, game model.GameID, round model.RoundID, character model.CharacterID) error
 	MoveSubmissions(ctx context.Context, game model.GameID, from, to model.RoundID) error
 	SetSubmissionsStatus(ctx context.Context, game model.GameID, round model.RoundID, status model.SubmissionStatus) error
+	CreateSpeech(ctx context.Context, sp model.Speech) (model.Speech, error)
+	GetSpeech(ctx context.Context, game model.GameID, round model.RoundID, character model.CharacterID) (model.Speech, error)
+	ListSpeeches(ctx context.Context, game model.GameID, round model.RoundID) ([]model.Speech, error)
+	MoveSpeeches(ctx context.Context, game model.GameID, from, to model.RoundID) error
 	EnqueueOutbox(ctx context.Context, m model.OutboxMessage) error
 	DeleteGameProgress(ctx context.Context, game model.GameID) error
 }
@@ -120,6 +124,8 @@ var (
 	ErrNoRound        = errors.New("раунда с таким номером нет")
 	ErrNotResolved    = errors.New("раунд ещё не разрешён")
 	ErrAlreadyActed   = errors.New("заявка на этот раунд уже принята, изменить её нельзя")
+	ErrAlreadySaid    = errors.New("реплика на этот раунд уже принята, изменить её нельзя")
+	ErrAbsent         = errors.New("персонаж вне истории; вернуть его может заявка /act")
 )
 
 // Service — сценарии раунда.
@@ -413,6 +419,50 @@ func (s *Service) Submit(ctx context.Context, game model.Game, c model.Character
 		}
 	}
 	return r, sub, nil
+}
+
+// Say записывает реплику персонажа на открытый раунд (пункт 32, ADR-0027) по правилам заявки: текст до
+// `SubmissionMaxLen`, игра `active`, персонаж не выбыл, одна реплика на раунд. Реплика не заявка: кворум, пропуски и
+// пометку `away` не затрагивает; выведенному (`inactive`) — `ErrAbsent`, вернуть его может только заявка.
+func (s *Service) Say(ctx context.Context, game model.Game, c model.Character, text string) (model.Round, model.Speech, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return model.Round{}, model.Speech{}, ErrEmpty
+	}
+	if len([]rune(text)) > model.SubmissionMaxLen {
+		return model.Round{}, model.Speech{}, ErrTooLong
+	}
+	if game.Status != model.GameActive {
+		return model.Round{}, model.Speech{}, statusError(game.Status)
+	}
+	switch c.Status {
+	case model.CharacterDead:
+		return model.Round{}, model.Speech{}, fmt.Errorf("%w (ещё %d раундов)", ErrDead, c.DeathRoundsLeft)
+	case model.CharacterInactive:
+		return model.Round{}, model.Speech{}, ErrAbsent
+	}
+	now := s.clock.Now()
+	r, err := s.store.OpenRound(ctx, game.ID)
+	if errors.Is(err, model.ErrNotFound) || (err == nil && !r.DeadlineAt.After(now)) {
+		return model.Round{}, model.Speech{}, ErrNoOpenRound
+	}
+	if err != nil {
+		return model.Round{}, model.Speech{}, fmt.Errorf("round.Say: %w", err)
+	}
+	sp, err := s.store.CreateSpeech(ctx, model.Speech{GameID: game.ID, RoundID: r.ID, CharacterID: c.ID, Text: text, SubmittedAt: now})
+	if errors.Is(err, model.ErrAlreadyExists) {
+		return model.Round{}, model.Speech{}, ErrAlreadySaid
+	}
+	if err != nil {
+		return model.Round{}, model.Speech{}, fmt.Errorf("round.Say: %w", err)
+	}
+	s.logger.Info("speech saved", slog.Int64("game_id", int64(game.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int64("character_id", int64(c.ID)))
+	if s.Journal != nil {
+		if chat, err := s.store.GetChat(ctx, game.ChatID); err == nil {
+			s.journal(ctx, game, chat.TelegramChatID, r, "speech", map[string]any{"character_id": c.ID, "character": c.Nickname, "text": text})
+		}
+	}
+	return r, sp, nil
 }
 
 // BackSubmission — текст заявки возвращения по `/back`: ожидание; возврат объясняет рассказчик по `entry = returned`.
@@ -821,7 +871,11 @@ func (s *Service) freeze(ctx context.Context, g model.Game, chat model.Chat, r m
 	if err != nil {
 		return err
 	}
-	snap := snapshot(g, chars, locations, discoveries, subs, cm.Definition)
+	speeches, err := s.store.ListSpeeches(ctx, g.ID, r.ID)
+	if err != nil {
+		return err
+	}
+	snap := snapshot(g, chars, locations, discoveries, subs, speeches, cm.Definition)
 	for i := range snap.Characters {
 		snap.Characters[i].Entry = entries[snap.Characters[i].ID]
 	}
@@ -838,7 +892,7 @@ func (s *Service) freeze(ctx context.Context, g model.Game, chat model.Chat, r m
 		return err
 	}
 	s.logger.Info("round frozen", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("submissions", len(subs)))
-	s.journal(ctx, g, chat.TelegramChatID, r, "frozen", frozenData(r, snap.Characters, subs))
+	s.journal(ctx, g, chat.TelegramChatID, r, "frozen", frozenData(r, snap.Characters, subs, speeches))
 	m := &model.RoundMetrics{Attempt: r.Attempts + 1, Submissions: len(subs), FreezeMS: s.clock.Now().Sub(started).Milliseconds()}
 	if err := s.resolve(ctx, g, chat, r, genre, cm.Definition, chars, now, m); err != nil {
 		return err
@@ -872,8 +926,9 @@ func (s *Service) seenCharacters(ctx context.Context, game model.GameID, roundNo
 	return seen, nil
 }
 
-// frozenData — содержимое записи журнала о заморозке: seed, заявки с никнеймами, статусы и отметки входа персонажей.
-func frozenData(r model.Round, chars []model.SnapshotCharacter, subs []model.Submission) map[string]any {
+// frozenData — содержимое записи журнала о заморозке: seed, заявки и реплики с никнеймами, статусы и отметки входа
+// персонажей.
+func frozenData(r model.Round, chars []model.SnapshotCharacter, subs []model.Submission, speeches []model.Speech) map[string]any {
 	names := map[model.CharacterID]string{}
 	statuses := make([]map[string]any, 0, len(chars))
 	for _, c := range chars {
@@ -884,7 +939,11 @@ func frozenData(r model.Round, chars []model.SnapshotCharacter, subs []model.Sub
 	for _, sub := range subs {
 		list = append(list, map[string]any{"submission_id": sub.ID, "character_id": sub.CharacterID, "character": names[sub.CharacterID], "text": sub.RawText})
 	}
-	return map[string]any{"seed": r.Seed, "submissions": list, "characters": statuses}
+	said := make([]map[string]any, 0, len(speeches))
+	for _, sp := range speeches {
+		said = append(said, map[string]any{"speech_id": sp.ID, "character_id": sp.CharacterID, "character": names[sp.CharacterID], "text": sp.Text})
+	}
+	return map[string]any{"seed": r.Seed, "submissions": list, "speeches": said, "characters": statuses}
 }
 
 // activity — статус персонажа после раунда: заявка возвращает в `active`, пропуски ведут в `waiting`, на пороге
@@ -959,6 +1018,9 @@ func (s *Service) openNext(ctx context.Context, g *model.Game, chat model.Chat, 
 		if err := s.store.MoveSubmissions(ctx, g.ID, last.ID, r.ID); err != nil {
 			return false, err
 		}
+		if err := s.store.MoveSpeeches(ctx, g.ID, last.ID, r.ID); err != nil {
+			return false, err
+		}
 	}
 	g.NextRoundAt = &r.DeadlineAt
 	if err := s.store.UpdateGame(ctx, *g); err != nil {
@@ -1002,7 +1064,7 @@ func (s *Service) notifyOpen(ctx context.Context, g model.Game, last, r model.Ro
 	if err != nil {
 		return err
 	}
-	state := snapshot(g, chars, locations, nil, nil, def)
+	state := snapshot(g, chars, locations, nil, nil, nil, def)
 	opts := narrator.Options(&state, def, g.Mode)
 	for _, c := range state.Characters {
 		if notified[c.ID] || c.Status.Absent() || c.Away {
@@ -1070,7 +1132,7 @@ func statusError(st model.GameStatus) error {
 
 // wrap добавляет префикс только к неожиданным ошибкам; ошибки сценария возвращаются как есть.
 func wrap(op string, err error) error {
-	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrStarting, ErrFinishing, ErrSetup, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound, ErrAlreadyActed, ErrNoRound, ErrNotResolved} {
+	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrStarting, ErrFinishing, ErrSetup, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound, ErrAlreadyActed, ErrAlreadySaid, ErrAbsent, ErrNoRound, ErrNotResolved} {
 		if errors.Is(err, ue) {
 			return err
 		}

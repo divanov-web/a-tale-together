@@ -223,10 +223,11 @@ func (s *Service) Reset(ctx context.Context, game model.Game, actor model.UserID
 	return out, nil
 }
 
-// Detail — карточка раунда для dev-команды `/round`: раунд, заявки, итоги, число событий, имена персонажей.
+// Detail — карточка раунда для dev-команды `/round`: раунд, заявки, реплики, итоги, число событий, имена персонажей.
 type Detail struct {
 	Round       model.Round
 	Submissions []model.Submission
+	Speeches    []model.Speech
 	Results     []model.ActionResult
 	Events      int
 	Names       map[model.CharacterID]string
@@ -249,6 +250,9 @@ func (s *Service) Detail(ctx context.Context, game model.Game, no int) (Detail, 
 	}
 	d := Detail{Round: r, Names: map[model.CharacterID]string{}}
 	if d.Submissions, err = s.store.ListSubmissions(ctx, game.ID, r.ID); err != nil {
+		return Detail{}, fmt.Errorf("round.Detail: %w", err)
+	}
+	if d.Speeches, err = s.store.ListSpeeches(ctx, game.ID, r.ID); err != nil {
 		return Detail{}, fmt.Errorf("round.Detail: %w", err)
 	}
 	if d.Results, err = s.store.ListResolvedActions(ctx, game.ID, r.ID); err != nil {

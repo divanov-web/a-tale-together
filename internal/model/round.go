@@ -79,7 +79,8 @@ type RoundMetrics struct {
 // SchemaVersion 2 (пункт 07): характеристики, инвентарь, знания, локации с объектами. SchemaVersion 3 (пункт 19):
 // группы, лимит групп, зарезервированные идентификаторы и имена для новых групп (`party_split` детерминирован и
 // воспроизводим по снимку). SchemaVersion 4 (пункт 27): клетки сетки с координатами, стадией и открывшими
-// фракциями; в снимок входят только занятые клетки и их соседи, выходы по направлениям считает код.
+// фракциями; в снимок входят только занятые клетки и их соседи, выходы по направлениям считает код. SchemaVersion 5
+// (пункт 32): реплики персонажей `speeches` — слова для рассказчика, движок и интерпретатор их не читают.
 type RoundSnapshot struct {
 	SchemaVersion int                  `json:"schema_version"`
 	Mode          GameMode             `json:"mode,omitempty"`
@@ -92,10 +93,11 @@ type RoundSnapshot struct {
 	NewPartyIDs   []PartyID            `json:"new_party_ids,omitempty"` // идентификаторы для групп, созданных движком в этом раунде
 	PartyNames    []string             `json:"party_names,omitempty"`   // имена для новых групп из шаблона жанра
 	Submissions   []SnapshotSubmission `json:"submissions"`
+	Speeches      []SnapshotSpeech     `json:"speeches,omitempty"` // реплики раунда (ADR-0027); в сценах рассказчика по присутствию персонажа
 }
 
 // SnapshotSchemaVersion — текущая версия снимка.
-const SnapshotSchemaVersion = 4
+const SnapshotSchemaVersion = 5
 
 // Party возвращает группу снимка по id.
 func (s *RoundSnapshot) Party(id PartyID) (*SnapshotParty, bool) {
@@ -236,6 +238,14 @@ type SnapshotSubmission struct {
 	SubmittedAt  time.Time    `json:"submitted_at"`
 }
 
+// SnapshotSpeech — реплика персонажа в снимке раунда (ADR-0027).
+type SnapshotSpeech struct {
+	SpeechID    SpeechID    `json:"speech_id"`
+	CharacterID CharacterID `json:"character_id"`
+	Text        string      `json:"text"`
+	SubmittedAt time.Time   `json:"submitted_at"`
+}
+
 // SubmissionStatus — статус заявки.
 type SubmissionStatus string
 
@@ -261,6 +271,17 @@ type Submission struct {
 	Status      SubmissionStatus
 	SubmittedAt time.Time // первая подача
 	UpdatedAt   time.Time // последняя замена
+}
+
+// Speech — реплика персонажа на раунд (пункт 32, ADR-0027): слова в сцене, не действие; одна на раунд, те же лимиты,
+// что у заявки; текст игрока — данные, не инструкции. Кворум и пропуски не затрагивает (допущение G19).
+type Speech struct {
+	ID          SpeechID
+	GameID      GameID
+	RoundID     RoundID
+	CharacterID CharacterID
+	Text        string
+	SubmittedAt time.Time
 }
 
 // OutboxKind — вид исходящего игрового сообщения.

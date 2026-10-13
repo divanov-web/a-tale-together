@@ -98,7 +98,7 @@ func (s *Service) gameReset(ctx context.Context, req *request) error {
 	return s.reply(ctx, req.in, fmt.Sprintf("Игра «%s» сброшена в черновик: раунды, события и сообщения удалены, персонажи на стартовой локации. Запуск: /begin.", g.Title))
 }
 
-// roundDetail — /round [номер] в группе (только dev): карточка раунда для разбора: статус, попытки, заявки с итогами, метрики.
+// roundDetail — /round [номер] в группе (только dev): карточка раунда для разбора: статус, попытки, заявки с итогами, реплики, метрики.
 func (s *Service) roundDetail(ctx context.Context, req *request) error {
 	arg, _ := splitArgs(req.in.Args)
 	no := 0
@@ -135,7 +135,7 @@ func roundCard(g model.Game, d round.Detail, now time.Time) string {
 	if r.SkipReason != "" {
 		b.WriteString("\nПричина: " + r.SkipReason)
 	}
-	fmt.Fprintf(&b, "\nЗаявок: %d; итогов: %d; событий: %d", len(d.Submissions), len(d.Results), d.Events)
+	fmt.Fprintf(&b, "\nЗаявок: %d; реплик: %d; итогов: %d; событий: %d", len(d.Submissions), len(d.Speeches), len(d.Results), d.Events)
 	if m := r.Metrics; m != nil {
 		fmt.Fprintf(&b, "\nМетрики (попытка %d): всего %d мс — заморозка %d, интерпретатор %d, движок %d, рассказчик %d, публикация %d", m.Attempt, m.TotalMS, m.FreezeMS, m.InterpretMS, m.EngineMS, m.NarrateMS, m.PublishMS)
 		fmt.Fprintf(&b, "\nLLM: вызовов %d, токены %d/%d; запасной разбор: %s; шаблонная хроника: %s; безопасных толкований %d, дописано событий %d, замечаний %d",
@@ -156,6 +156,9 @@ func roundCard(g model.Game, d round.Detail, now time.Time) string {
 				b.WriteString(": " + res.Reason)
 			}
 		}
+	}
+	for _, sp := range d.Speeches {
+		fmt.Fprintf(&b, "\n• %s говорит: «%s»", d.Names[sp.CharacterID], truncate(sp.Text, 60))
 	}
 	return b.String()
 }
@@ -242,6 +245,25 @@ func (s *Service) act(ctx context.Context, req *request) error {
 		return s.reply(ctx, req.in, fmt.Sprintf("Заявка принята: «%s», раунд %d, до %s.", sub.RawText, r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
 	}
 	return s.reply(ctx, req.in, fmt.Sprintf("Заявка принята: раунд %d, до %s.", r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
+}
+
+// say — /say <текст>: реплика персонажа на открытый раунд (пункт 32, ADR-0027) по тем же правилам, что заявка, но
+// отдельно от неё: место заявки не занимает, кворума не даёт, попадает в снимок и в сцену рассказчика. В группе текст
+// виден всем, как у открытой заявки.
+func (s *Service) say(ctx context.Context, req *request) error {
+	text := strings.TrimSpace(req.in.Args)
+	if text == "" {
+		return s.reply(ctx, req.in, fmt.Sprintf("Формат: /say <что говорит персонаж> (до %d символов). Реплика одна на раунд, заявку /act не заменяет.", model.SubmissionMaxLen))
+	}
+	g, c, err := s.actor(ctx, req)
+	if err != nil {
+		return err
+	}
+	r, _, err := s.rounds.Say(ctx, g, c, text)
+	if err != nil {
+		return err
+	}
+	return s.reply(ctx, req.in, fmt.Sprintf("Реплика принята: раунд %d, до %s. Рассказчик может процитировать или пересказать её; действие — /act.", r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
 }
 
 // actor — игра и персонаж отправителя по контексту сообщения: игра чата в группе, текущая игра пользователя в личке.

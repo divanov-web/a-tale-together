@@ -19,9 +19,9 @@ import (
 )
 
 // snapshot собирает снимок: персонажи с характеристиками и группой, клетки — только занятые и их соседи
-// (`relevant`, пункт 27) с координатами, стадией, посещением, открывшими фракциями и объектами, заявки; группы,
-// лимиты и резерв идентификаторов дописывает `snapshotParties` при заморозке.
-func snapshot(g model.Game, chars []model.Character, locations []model.Location, discoveries map[model.LocationID][]model.FactionID, subs []model.Submission, def model.CharacterModelDef) model.RoundSnapshot {
+// (`relevant`, пункт 27) с координатами, стадией, посещением, открывшими фракциями и объектами, заявки и реплики
+// (ADR-0027); группы, лимиты и резерв идентификаторов дописывает `snapshotParties` при заморозке.
+func snapshot(g model.Game, chars []model.Character, locations []model.Location, discoveries map[model.LocationID][]model.FactionID, subs []model.Submission, speeches []model.Speech, def model.CharacterModelDef) model.RoundSnapshot {
 	snap := model.RoundSnapshot{SchemaVersion: model.SnapshotSchemaVersion, Mode: g.Mode, RulesVersion: g.RulesVersion, Penalties: rules.Penalties, Characters: []model.SnapshotCharacter{}, Locations: []model.SnapshotLocation{}, Submissions: []model.SnapshotSubmission{}}
 	for _, c := range chars {
 		maxHP, err := rules.HP(def, c.Attributes)
@@ -51,6 +51,9 @@ func snapshot(g model.Game, chars []model.Character, locations []model.Location,
 	}
 	for _, sub := range subs {
 		snap.Submissions = append(snap.Submissions, model.SnapshotSubmission{SubmissionID: sub.ID, CharacterID: sub.CharacterID, Text: sub.RawText, SubmittedAt: sub.SubmittedAt})
+	}
+	for _, sp := range speeches {
+		snap.Speeches = append(snap.Speeches, model.SnapshotSpeech{SpeechID: sp.ID, CharacterID: sp.CharacterID, Text: sp.Text, SubmittedAt: sp.SubmittedAt})
 	}
 	return snap
 }
@@ -222,6 +225,9 @@ func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r 
 		return nil, narrator.TemplateWorld(tasks)
 	}
 	p := narrator.Params{Title: g.Title, Tone: genre.Template.Tone, Mode: g.Mode, RoundNo: r.RoundNo, Opening: g.OpeningScene, State: state, Bios: map[model.CharacterID]narrator.Bio{}, Events: visibility.Public(events), Def: def, Tasks: tasks, Quests: quests}
+	if r.Snapshot != nil {
+		p.Speeches = r.Snapshot.Speeches
+	}
 	for _, c := range chars {
 		p.Bios[c.ID] = narrator.Bio{Public: c.PublicBio, Secret: c.SecretBio}
 	}

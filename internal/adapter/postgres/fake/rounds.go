@@ -78,6 +78,11 @@ func (s *Store) DeleteGameProgress(_ context.Context, game model.GameID) error {
 			delete(s.subs, id)
 		}
 	}
+	for id, sp := range s.speeches {
+		if sp.GameID == game {
+			delete(s.speeches, id)
+		}
+	}
 	s.outbox = slices.DeleteFunc(s.outbox, func(m model.OutboxMessage) bool { return m.GameID == game })
 	s.events = slices.DeleteFunc(s.events, func(ev model.Event) bool { return ev.GameID == game })
 	for k := range s.jobs {
@@ -248,6 +253,62 @@ func (s *Store) SetSubmissionsStatus(_ context.Context, game model.GameID, round
 		if sub.GameID == game && sub.RoundID == round {
 			sub.Status = status
 			s.subs[id] = sub
+		}
+	}
+	return nil
+}
+
+// CreateSpeech — см. postgres.Store.
+func (s *Store) CreateSpeech(_ context.Context, sp model.Speech) (model.Speech, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ex := range s.speeches {
+		if ex.RoundID == sp.RoundID && ex.CharacterID == sp.CharacterID {
+			return model.Speech{}, model.ErrAlreadyExists
+		}
+	}
+	sp.ID = model.SpeechID(s.id())
+	s.speeches[sp.ID] = sp
+	return sp, nil
+}
+
+// GetSpeech — см. postgres.Store.
+func (s *Store) GetSpeech(_ context.Context, game model.GameID, round model.RoundID, character model.CharacterID) (model.Speech, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sp := range s.speeches {
+		if sp.GameID == game && sp.RoundID == round && sp.CharacterID == character {
+			return sp, nil
+		}
+	}
+	return model.Speech{}, model.ErrNotFound
+}
+
+// ListSpeeches — см. postgres.Store.
+func (s *Store) ListSpeeches(_ context.Context, game model.GameID, round model.RoundID) ([]model.Speech, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []model.Speech
+	for _, sp := range s.speeches {
+		if sp.GameID == game && sp.RoundID == round {
+			out = append(out, sp)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		return a.SubmittedAt.Before(b.SubmittedAt) || (a.SubmittedAt.Equal(b.SubmittedAt) && a.ID < b.ID)
+	})
+	return out, nil
+}
+
+// MoveSpeeches — см. postgres.Store.
+func (s *Store) MoveSpeeches(_ context.Context, game model.GameID, from, to model.RoundID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, sp := range s.speeches {
+		if sp.GameID == game && sp.RoundID == from {
+			sp.RoundID = to
+			s.speeches[id] = sp
 		}
 	}
 	return nil
