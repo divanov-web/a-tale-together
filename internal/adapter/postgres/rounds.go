@@ -187,6 +187,14 @@ func (s *Store) ListSubmissions(ctx context.Context, game model.GameID, round mo
 	return out, rows.Err()
 }
 
+// DeleteSubmission удаляет заявку персонажа на раунд (уход по слову игрока, ADR-0026); отсутствие заявки — не ошибка.
+func (s *Store) DeleteSubmission(ctx context.Context, game model.GameID, round model.RoundID, character model.CharacterID) error {
+	if _, err := s.db(ctx).Exec(ctx, `DELETE FROM submissions WHERE game_id = $1 AND round_id = $2 AND character_id = $3`, game, round, character); err != nil {
+		return fmt.Errorf("postgres.DeleteSubmission: %w", err)
+	}
+	return nil
+}
+
 // MoveSubmissions переносит ожидающие заявки пропущенного раунда в следующий.
 func (s *Store) MoveSubmissions(ctx context.Context, game model.GameID, from, to model.RoundID) error {
 	if _, err := s.db(ctx).Exec(ctx, `UPDATE action_submissions SET round_id = $3 WHERE game_id = $1 AND round_id = $2 AND status = 'pending'`, game, from, to); err != nil {
@@ -199,6 +207,14 @@ func (s *Store) MoveSubmissions(ctx context.Context, game model.GameID, from, to
 func (s *Store) SetSubmissionsStatus(ctx context.Context, game model.GameID, round model.RoundID, status model.SubmissionStatus) error {
 	if _, err := s.db(ctx).Exec(ctx, `UPDATE action_submissions SET status = $3, updated_at = now() WHERE game_id = $1 AND round_id = $2`, game, round, status); err != nil {
 		return fmt.Errorf("postgres.SetSubmissionsStatus: %w", err)
+	}
+	return nil
+}
+
+// SetCharacterAway ставит или снимает пометку ухода персонажа по слову игрока (ADR-0026).
+func (s *Store) SetCharacterAway(ctx context.Context, game model.GameID, id model.CharacterID, away bool) error {
+	if _, err := s.db(ctx).Exec(ctx, `UPDATE characters SET away = $3, updated_at = now() WHERE game_id = $1 AND id = $2`, game, id, away); err != nil {
+		return fmt.Errorf("postgres.SetCharacterAway: %w", err)
 	}
 	return nil
 }

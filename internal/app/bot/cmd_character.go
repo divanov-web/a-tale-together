@@ -72,6 +72,8 @@ func (s *Service) renderCharacter(ctx context.Context, g model.Game, c model.Cha
 	death := ""
 	if c.Status == model.CharacterDead {
 		death = fmt.Sprintf("выбыл, до возвращения раундов: %d", c.DeathRoundsLeft)
+	} else if c.Away {
+		death = "уходит из истории; вернуться — /back"
 	}
 	// Группа — спутники по составу, без названия (решение руководителя 2026-10-13).
 	party := ""

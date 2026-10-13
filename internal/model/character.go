@@ -147,7 +147,8 @@ type Character struct {
 	SecretBio       string
 	Status          CharacterStatus
 	MissedRounds    int
-	DeathRoundsLeft int // раундов до возврата после ненастоящей смерти
+	Away            bool // уходит по слову игрока (/away): заморозка переводит в `leaving`, затем `inactive`; заявка снимает (ADR-0026)
+	DeathRoundsLeft int  // раундов до возврата после ненастоящей смерти
 	DiedAt          *time.Time
 	FactionID       FactionID
 	PartyID         *PartyID

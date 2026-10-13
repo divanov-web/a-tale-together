@@ -834,4 +834,124 @@ func TestActivity(t *testing.T) {
 	if got, n := activity(model.Character{Status: model.CharacterActive}, false, 1); got != model.CharacterLeaving || n != 1 {
 		t.Errorf("threshold 1: %s/%d", got, n)
 	}
+	// Уход по слову игрока (ADR-0026): без ожидания порога leaving, затем inactive; пропуски считаются; заявка возвращает.
+	away := []struct {
+		status model.CharacterStatus
+		missed int
+		acted  bool
+		want   model.CharacterStatus
+		wantN  int
+	}{
+		{model.CharacterActive, 0, false, model.CharacterLeaving, 1},
+		{model.CharacterWaiting, 1, false, model.CharacterLeaving, 2},
+		{model.CharacterLeaving, 1, false, model.CharacterInactive, 2},
+		{model.CharacterInactive, 2, false, model.CharacterInactive, 3},
+		{model.CharacterLeaving, 1, true, model.CharacterActive, 0},
+	}
+	for _, c := range away {
+		got, n := activity(model.Character{Status: c.status, MissedRounds: c.missed, Away: true}, c.acted, 3)
+		if got != c.want || n != c.wantN {
+			t.Errorf("activity(away %s/%d, acted=%v) = %s/%d; want %s/%d", c.status, c.missed, c.acted, got, n, c.want, c.wantN)
+		}
+	}
+}
+
+// TestAway_LeaveAndBack — S20 (пункт 20, ADR-0026): /away снимает заявку и с ближайшей заморозки ведёт в leaving, затем
+// inactive; /back при открытом раунде — заявка «жду», возврат в active с отметкой returned; до заморозки — только отмена.
+func TestAway_LeaveAndBack(t *testing.T) {
+	t.Parallel()
+	s := model.DefaultGameSettings()
+	s.MinRoundAnswers = 1
+	w := newWorld(t, s)
+	ctx := context.Background()
+	w.begin(t)
+	w.reload(t)
+	alice, bob := w.chars[0], w.chars[1]
+	r1, _, err := w.svc.Submit(ctx, w.game, bob, "осматриваюсь")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.svc.Back(ctx, w.game, bob); !errors.Is(err, ErrNotAway) {
+		t.Fatalf("Back in story: %v", err)
+	}
+	cancelled, err := w.svc.Away(ctx, w.game, bob)
+	if err != nil || !cancelled {
+		t.Fatalf("Away = %v, %v", cancelled, err)
+	}
+	if _, err := w.store.GetSubmission(ctx, w.game.ID, r1.ID, bob.ID); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("submission after Away: %v", err)
+	}
+	bob, _ = w.store.GetCharacter(ctx, w.game.ID, bob.SeasonID, bob.UserID)
+	if !bob.Away {
+		t.Fatal("away flag not set")
+	}
+	if _, err := w.svc.Away(ctx, w.game, bob); !errors.Is(err, ErrAlreadyAway) {
+		t.Fatalf("second Away: %v", err)
+	}
+	// До заморозки /back только отменяет уход: заявки нет.
+	if r, err := w.svc.Back(ctx, w.game, bob); err != nil || r != nil {
+		t.Fatalf("Back before freeze = %v, %v", r, err)
+	}
+	bob, _ = w.store.GetCharacter(ctx, w.game.ID, bob.SeasonID, bob.UserID)
+	if bob.Away || bob.Status != model.CharacterActive {
+		t.Fatalf("after cancel: away=%v status=%s", bob.Away, bob.Status)
+	}
+	if _, err := w.store.GetSubmission(ctx, w.game.ID, r1.ID, bob.ID); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("submission after cancel: %v", err)
+	}
+	if _, err := w.svc.Away(ctx, w.game, bob); err != nil {
+		t.Fatal(err)
+	}
+	// Заморозка 1: Боб leaving с одним пропуском; заморозка 2: inactive.
+	for i, want := range []model.CharacterStatus{model.CharacterLeaving, model.CharacterInactive} {
+		if _, _, err := w.svc.Submit(ctx, w.game, alice, "осматриваюсь"); err != nil {
+			t.Fatal(err)
+		}
+		w.tick(t, 10*time.Minute)
+		bob, _ = w.store.GetCharacter(ctx, w.game.ID, bob.SeasonID, bob.UserID)
+		if bob.Status != want || bob.MissedRounds != i+1 || !bob.Away {
+			t.Fatalf("round %d: status=%s missed=%d away=%v", i+1, bob.Status, bob.MissedRounds, bob.Away)
+		}
+		r, _ := w.store.RoundByNo(ctx, w.game.ID, i+1)
+		for _, c := range r.Snapshot.Characters {
+			if c.ID == bob.ID && (c.Status != want || !c.Away) {
+				t.Fatalf("snapshot %d: %+v", i+1, c)
+			}
+		}
+	}
+	// /back при открытом раунде 3: заявка «жду», после заморозки active с отметкой returned, пропуски обнулены.
+	r3, err := w.svc.Back(ctx, w.game, bob)
+	if err != nil || r3 == nil || r3.RoundNo != 3 {
+		t.Fatalf("Back = %v, %v", r3, err)
+	}
+	if sub, err := w.store.GetSubmission(ctx, w.game.ID, r3.ID, bob.ID); err != nil || sub.RawText != BackSubmission {
+		t.Fatalf("back submission = %+v, %v", sub, err)
+	}
+	w.tick(t, 10*time.Minute)
+	bob, _ = w.store.GetCharacter(ctx, w.game.ID, bob.SeasonID, bob.UserID)
+	if bob.Status != model.CharacterActive || bob.MissedRounds != 0 || bob.Away {
+		t.Fatalf("after back: status=%s missed=%d away=%v", bob.Status, bob.MissedRounds, bob.Away)
+	}
+	r, _ := w.store.RoundByNo(ctx, w.game.ID, 3)
+	for _, c := range r.Snapshot.Characters {
+		if c.ID == bob.ID && c.Entry != model.EntryReturned {
+			t.Fatalf("entry after back = %q", c.Entry)
+		}
+	}
+	// Любая заявка снимает пометку; /away выбывшему по смерти — отказ.
+	if _, err := w.svc.Away(ctx, w.game, bob); err != nil {
+		t.Fatal(err)
+	}
+	bob, _ = w.store.GetCharacter(ctx, w.game.ID, bob.SeasonID, bob.UserID)
+	if _, _, err := w.svc.Submit(ctx, w.game, bob, "иду на север"); err != nil {
+		t.Fatal(err)
+	}
+	if bob, _ = w.store.GetCharacter(ctx, w.game.ID, bob.SeasonID, bob.UserID); bob.Away {
+		t.Fatal("submission did not clear away")
+	}
+	dead := bob
+	dead.Status, dead.DeathRoundsLeft = model.CharacterDead, 2
+	if _, err := w.svc.Away(ctx, w.game, dead); !errors.Is(err, ErrDead) {
+		t.Fatalf("Away dead: %v", err)
+	}
 }

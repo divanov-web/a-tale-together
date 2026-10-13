@@ -215,6 +215,18 @@ func (s *Store) ListSubmissions(_ context.Context, game model.GameID, round mode
 	return out, nil
 }
 
+// DeleteSubmission — см. postgres.Store.
+func (s *Store) DeleteSubmission(_ context.Context, game model.GameID, round model.RoundID, character model.CharacterID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, sub := range s.subs {
+		if sub.GameID == game && sub.RoundID == round && sub.CharacterID == character {
+			delete(s.subs, id)
+		}
+	}
+	return nil
+}
+
 // MoveSubmissions — см. postgres.Store.
 func (s *Store) MoveSubmissions(_ context.Context, game model.GameID, from, to model.RoundID) error {
 	s.mu.Lock()
@@ -264,6 +276,19 @@ func (s *Store) SaveCharacterKnowledge(_ context.Context, game model.GameID, id 
 	}
 	ex.Knowledge = append([]string{}, knowledge...)
 	s.chars[id] = ex
+	return nil
+}
+
+// SetCharacterAway — см. postgres.Store.
+func (s *Store) SetCharacterAway(_ context.Context, game model.GameID, id model.CharacterID, away bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.chars[id]
+	if !ok || c.GameID != game {
+		return model.ErrNotFound
+	}
+	c.Away = away
+	s.chars[id] = c
 	return nil
 }
 

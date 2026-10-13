@@ -186,6 +186,7 @@ type SnapshotCharacter struct {
 	Gender          Gender          `json:"gender,omitempty"` // пол персонажа (B18); пусто — не указан
 	Status          CharacterStatus `json:"status"`
 	Entry           string          `json:"entry,omitempty"` // вход в историю в этом раунде: EntryNew, EntryReturned или пусто
+	Away            bool            `json:"away,omitempty"`  // уходит по слову игрока (/away, ADR-0026); для журнала и уведомлений, рассказчику не передаётся
 	MissedRounds    int             `json:"missed_rounds"`
 	DeathRoundsLeft int             `json:"death_rounds_left,omitempty"`
 	HP              int             `json:"hp"`

@@ -36,7 +36,7 @@ func snapshot(g model.Game, chars []model.Character, locations []model.Location,
 			knowledge = []string{}
 		}
 		snap.Characters = append(snap.Characters, model.SnapshotCharacter{
-			ID: c.ID, UserID: c.UserID, Nickname: c.Nickname, Gender: c.Gender, Status: c.Status, MissedRounds: c.MissedRounds, DeathRoundsLeft: c.DeathRoundsLeft,
+			ID: c.ID, UserID: c.UserID, Nickname: c.Nickname, Gender: c.Gender, Status: c.Status, MissedRounds: c.MissedRounds, Away: c.Away, DeathRoundsLeft: c.DeathRoundsLeft,
 			HP: c.HP, MaxHP: maxHP, FactionID: c.FactionID, PartyID: c.PartyID, LocationID: c.LocationID, Conditions: conditions,
 			Attributes: c.Attributes, Skills: c.Skills, Inventory: c.Inventory, Knowledge: knowledge,
 		})

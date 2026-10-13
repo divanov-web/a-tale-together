@@ -70,6 +70,8 @@ func (s *Service) registry() []command {
 		{name: "status", contexts: ctxAny, description: "состояние игры, раунд и причина простоя", run: s.gameStatus, needsChat: true},
 		{name: "act", contexts: ctxAny, description: "<текст> — заявка на текущий раунд", groupDesc: "<текст> — открытая заявка на текущий раунд", run: s.act, needsChat: true},
 		{name: "scout", contexts: ctxAny, description: "разведка: что в соседних клетках", run: s.scout, needsChat: true},
+		{name: "away", contexts: ctxPrivate, description: "вывести персонажа из истории; вернуться — /back", run: s.away},
+		{name: "back", contexts: ctxPrivate, description: "вернуть персонажа в историю", run: s.back},
 		{name: "set", contexts: ctxPrivate, description: "<параметр> <значение> — настройка игры", run: s.gameSet},
 		{name: "join", contexts: ctxPrivate, description: "<код> — войти в игру", run: s.join},
 		{name: "games", contexts: ctxPrivate, description: "[номер] — мои игры и выбор текущей", run: s.gamesList},

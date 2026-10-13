@@ -1503,3 +1503,57 @@ func TestScout_Card(t *testing.T) {
 	}
 	mustContain(t, h.send(owner, groupChat, "/scout"), "Персонажа ещё нет")
 }
+
+// TestAway_Command — S20 (пункт 20, ADR-0026): /away с подтверждением кнопкой снимает заявку и помечает уход, личное
+// «раунд открыт» помеченному не приходит (Элис после заявки его и так не получает, B15), заморозка ведёт в leaving;
+// /back возвращает заявкой «жду».
+func TestAway_Command(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	mustContain(t, h.send(alice, private(alice), "/away"), "Игры нет")
+	h.send(owner, private(owner), "/cancel")
+	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
+	mustContain(t, h.send(bob, private(bob), "/back"), "Персонаж в истории")
+	mustContain(t, h.send(bob, groupChat, "/away"), "в личке")
+	h.clock.advance(time.Minute) // лимит частоты сообщений игрока
+	h.begin()
+	mustContain(t, h.send(bob, private(bob), "/act иду"), "Заявка принята: раунд 1")
+
+	ask := h.send(bob, private(bob), "/away")
+	mustContain(t, ask, "Вывести Боб из истории?", "/away yes")
+	if got := buttonData(h.tg.lastKeyboard(private(bob))); fmt.Sprint(got) != "[/away yes /away no]" {
+		t.Fatalf("confirm buttons = %v", got)
+	}
+	mustContain(t, h.press(bob, private(bob), 1, "/away no"), "Уход отменён")
+	h.send(bob, private(bob), "/away")
+	gone := h.press(bob, private(bob), 2, "/away yes")
+	mustContain(t, gone, "Заявка на текущий раунд снята", "Боб уходит из истории", "/back")
+	if got := buttonData(h.tg.lastKeyboard(private(bob))); fmt.Sprint(got) != "[/back]" {
+		t.Fatalf("back button = %v", got)
+	}
+	mustContain(t, h.send(bob, private(bob), "/away"), "Персонаж уже уходит")
+	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: active (уходит из истории; вернуться — /back)")
+	mustContain(t, h.send(owner, groupChat, "/round"), "Заявок: 0")
+
+	// Заморозка 1 только с заявкой Элис: Боб leaving; личное «раунд 2 открыт» ему не приходит, Элис — приходит.
+	mustContain(t, h.send(alice, private(alice), "/act иду"), "Заявка принята: раунд 1")
+	h.clock.advance(15 * time.Minute)
+	h.tick()
+	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: leaving (уходит из истории")
+	got := h.privateOutbox(private(bob), model.OutboxPrivateOpen)
+	mustContain(t, got, "раунд 1 открыт")
+	if strings.Contains(got, "раунд 2 открыт") {
+		t.Fatalf("away player notified: %q", got)
+	}
+
+	// /back при открытом раунде 2: заявка «жду», после заморозки Боб active.
+	mustContain(t, h.send(bob, private(bob), "/back"), "Боб возвращается: заявка «жду» принята на раунд 2")
+	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: leaving\n") // пометка снята, статус сменит заморозка
+	h.clock.advance(15 * time.Minute)
+	h.tick()
+	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: active\n")
+	mustContain(t, h.send(bob, private(bob), "/back"), "Персонаж в истории")
+}

@@ -62,6 +62,7 @@ type Store interface {
 	SetCharacterParty(ctx context.Context, game model.GameID, id model.CharacterID, party *model.PartyID) error
 	ReservePartyIDs(ctx context.Context, n int) ([]model.PartyID, error)
 	UpdateCharacterActivity(ctx context.Context, game model.GameID, id model.CharacterID, status model.CharacterStatus, missed int) error
+	SetCharacterAway(ctx context.Context, game model.GameID, id model.CharacterID, away bool) error
 	CreateRound(ctx context.Context, r model.Round) (model.Round, error)
 	UpdateRound(ctx context.Context, r model.Round) error
 	OpenRound(ctx context.Context, game model.GameID) (model.Round, error)
@@ -71,6 +72,7 @@ type Store interface {
 	UpsertSubmission(ctx context.Context, s model.Submission) (model.Submission, error)
 	GetSubmission(ctx context.Context, game model.GameID, round model.RoundID, character model.CharacterID) (model.Submission, error)
 	ListSubmissions(ctx context.Context, game model.GameID, round model.RoundID) ([]model.Submission, error)
+	DeleteSubmission(ctx context.Context, game model.GameID, round model.RoundID, character model.CharacterID) error
 	MoveSubmissions(ctx context.Context, game model.GameID, from, to model.RoundID) error
 	SetSubmissionsStatus(ctx context.Context, game model.GameID, round model.RoundID, status model.SubmissionStatus) error
 	EnqueueOutbox(ctx context.Context, m model.OutboxMessage) error
@@ -113,6 +115,8 @@ var (
 	ErrTooLong        = fmt.Errorf("заявка до %d символов", model.SubmissionMaxLen)
 	ErrTooFrequent    = errors.New("заменить заявку можно не чаще раза в минуту")
 	ErrDead           = errors.New("персонаж выбыл из игры до возвращения; заявки не принимаются")
+	ErrAlreadyAway    = errors.New("персонаж уже уходит из истории; вернуться — /back")
+	ErrNotAway        = errors.New("персонаж в истории; действие в раунде — /act")
 	ErrNoRound        = errors.New("раунда с таким номером нет")
 	ErrNotResolved    = errors.New("раунд ещё не разрешён")
 	ErrAlreadyActed   = errors.New("заявка на этот раунд уже принята, изменить её нельзя")
@@ -396,6 +400,12 @@ func (s *Service) Submit(ctx context.Context, game model.Game, c model.Character
 	if err != nil {
 		return model.Round{}, model.Submission{}, fmt.Errorf("round.Submit: %w", err)
 	}
+	if c.Away {
+		// Любая заявка возвращает ушедшего по своему слову (ADR-0026).
+		if err := s.store.SetCharacterAway(ctx, game.ID, c.ID, false); err != nil {
+			return model.Round{}, model.Submission{}, fmt.Errorf("round.Submit: %w", err)
+		}
+	}
 	s.logger.Info("submission saved", slog.Int64("game_id", int64(game.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int64("character_id", int64(c.ID)))
 	if s.Journal != nil {
 		if chat, err := s.store.GetChat(ctx, game.ChatID); err == nil {
@@ -403,6 +413,73 @@ func (s *Service) Submit(ctx context.Context, game model.Game, c model.Character
 		}
 	}
 	return r, sub, nil
+}
+
+// BackSubmission — текст заявки возвращения по `/back`: ожидание; возврат объясняет рассказчик по `entry = returned`.
+const BackSubmission = "жду"
+
+// Away — уход персонажа по слову игрока (пункт 20, ADR-0026): пометка `away`, заявка открытого раунда удаляется
+// (возвращает true, если была). Статус сменит заморозка: `leaving` на один раунд, затем `inactive`. Выбывший по смерти
+// не уходит (`ErrDead`), повторный уход — `ErrAlreadyAway`; статус игры не проверяется — пометка ждёт заморозки.
+func (s *Service) Away(ctx context.Context, game model.Game, c model.Character) (bool, error) {
+	if c.Status == model.CharacterDead {
+		return false, fmt.Errorf("%w (ещё %d раундов)", ErrDead, c.DeathRoundsLeft)
+	}
+	if c.Away {
+		return false, ErrAlreadyAway
+	}
+	if err := s.store.SetCharacterAway(ctx, game.ID, c.ID, true); err != nil {
+		return false, fmt.Errorf("round.Away: %w", err)
+	}
+	cancelled := false
+	r, err := s.store.OpenRound(ctx, game.ID)
+	if err == nil {
+		if _, err := s.store.GetSubmission(ctx, game.ID, r.ID, c.ID); err == nil {
+			if err := s.store.DeleteSubmission(ctx, game.ID, r.ID, c.ID); err != nil {
+				return false, fmt.Errorf("round.Away: %w", err)
+			}
+			cancelled = true
+		} else if !errors.Is(err, model.ErrNotFound) {
+			return false, fmt.Errorf("round.Away: %w", err)
+		}
+	} else if !errors.Is(err, model.ErrNotFound) {
+		return false, fmt.Errorf("round.Away: %w", err)
+	}
+	s.logger.Info("character away", slog.Int64("game_id", int64(game.ID)), slog.Int64("character_id", int64(c.ID)), slog.Bool("cancelled", cancelled))
+	if s.Journal != nil {
+		if chat, err := s.store.GetChat(ctx, game.ChatID); err == nil {
+			s.journal(ctx, game, chat.TelegramChatID, r, "away", map[string]any{"character_id": c.ID, "character": c.Nickname, "cancelled": cancelled})
+		}
+	}
+	return cancelled, nil
+}
+
+// Back — возвращение по `/back` (ADR-0026): пометка снимается; если персонаж уже выведен (`leaving` / `inactive`) и
+// раунд открыт — заявка `BackSubmission`, возврат в `active` с `entry = returned` при заморозке. Без открытого раунда
+// возвращает `ErrNoOpenRound` после снятия пометки (вернёт первая заявка); до заморозки — только отмена ухода
+// (nil раунд). Персонаж в истории без пометки — `ErrNotAway`.
+func (s *Service) Back(ctx context.Context, game model.Game, c model.Character) (*model.Round, error) {
+	if c.Status == model.CharacterDead {
+		return nil, fmt.Errorf("%w (ещё %d раундов)", ErrDead, c.DeathRoundsLeft)
+	}
+	gone := c.Status == model.CharacterLeaving || c.Status == model.CharacterInactive
+	if !c.Away && !gone {
+		return nil, ErrNotAway
+	}
+	if c.Away {
+		if err := s.store.SetCharacterAway(ctx, game.ID, c.ID, false); err != nil {
+			return nil, fmt.Errorf("round.Back: %w", err)
+		}
+		c.Away = false
+	}
+	if !gone {
+		return nil, nil
+	}
+	r, _, err := s.Submit(ctx, game, c, BackSubmission)
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 // Info — раунды для /status.
@@ -801,7 +878,7 @@ func frozenData(r model.Round, chars []model.SnapshotCharacter, subs []model.Sub
 	statuses := make([]map[string]any, 0, len(chars))
 	for _, c := range chars {
 		names[c.ID] = c.Nickname
-		statuses = append(statuses, map[string]any{"character_id": c.ID, "character": c.Nickname, "status": c.Status, "entry": c.Entry, "missed": c.MissedRounds, "location_id": c.LocationID, "party_id": c.PartyID})
+		statuses = append(statuses, map[string]any{"character_id": c.ID, "character": c.Nickname, "status": c.Status, "entry": c.Entry, "missed": c.MissedRounds, "away": c.Away, "location_id": c.LocationID, "party_id": c.PartyID})
 	}
 	list := make([]map[string]any, 0, len(subs))
 	for _, sub := range subs {
@@ -812,12 +889,20 @@ func frozenData(r model.Round, chars []model.SnapshotCharacter, subs []model.Sub
 
 // activity — статус персонажа после раунда: заявка возвращает в `active`, пропуски ведут в `waiting`, на пороге
 // `inactive_after_rounds` — один раунд `leaving` (рассказчик выводит персонажа из сюжета), дальше `inactive`
-// (docs/game/character.md, «Статус»; B13). Пропущенный без кворума раунд сюда не доходит, статусы не меняет.
+// (docs/game/character.md, «Статус»; B13). Уход по слову игрока (`away`, ADR-0026) ведёт туда же без ожидания порога:
+// `leaving` сразу, затем `inactive`; пропуски считаются как обычно. Пропущенный без кворума раунд сюда не доходит,
+// статусы не меняет.
 func activity(c model.Character, acted bool, inactiveAfter int) (model.CharacterStatus, int) {
 	if acted {
 		return model.CharacterActive, 0
 	}
 	missed := c.MissedRounds + 1
+	if c.Away {
+		if c.Status == model.CharacterLeaving || c.Status == model.CharacterInactive {
+			return model.CharacterInactive, missed
+		}
+		return model.CharacterLeaving, missed
+	}
 	switch {
 	case missed > inactiveAfter:
 		return model.CharacterInactive, missed
@@ -893,7 +978,7 @@ func (s *Service) openNext(ctx context.Context, g *model.Game, chat model.Chat, 
 
 // notifyOpen — личное «раунд N открыт» с вариантами по локации (B15) персонажам, которые не получили уведомление
 // о заявке только что опубликованного раунда: без заявки в нём, после пропуска, на старте игры или после паузы.
-// Выбывшие (`inactive`, `dead`) и игроки без открытой лички пропускаются.
+// Выбывшие (`inactive`, `dead`), уходящие по своему слову (`away`, ADR-0026) и игроки без открытой лички пропускаются.
 func (s *Service) notifyOpen(ctx context.Context, g model.Game, last, r model.Round, now time.Time) error {
 	notified := map[model.CharacterID]bool{}
 	if last.ID != 0 && last.Status == model.RoundPublished {
@@ -920,7 +1005,7 @@ func (s *Service) notifyOpen(ctx context.Context, g model.Game, last, r model.Ro
 	state := snapshot(g, chars, locations, nil, nil, def)
 	opts := narrator.Options(&state, def, g.Mode)
 	for _, c := range state.Characters {
-		if notified[c.ID] || c.Status.Absent() {
+		if notified[c.ID] || c.Status.Absent() || c.Away {
 			continue
 		}
 		user, err := s.store.GetUser(ctx, c.UserID)

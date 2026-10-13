@@ -10,12 +10,12 @@ import (
 	"taletogether/internal/model"
 )
 
-const characterColumns = `id, game_id, season_id, user_id, model_id, nickname, gender, archetype, public_bio, secret_bio, status, missed_rounds, death_rounds_left, died_at, faction_id, party_id, hp, conditions, inventory, location_id, knowledge, xp, created_at`
+const characterColumns = `id, game_id, season_id, user_id, model_id, nickname, gender, archetype, public_bio, secret_bio, status, missed_rounds, away, death_rounds_left, died_at, faction_id, party_id, hp, conditions, inventory, location_id, knowledge, xp, created_at`
 
 func scanCharacter(row pgx.Row) (model.Character, error) {
 	var c model.Character
 	err := row.Scan(&c.ID, &c.GameID, &c.SeasonID, &c.UserID, &c.ModelID, &c.Nickname, &c.Gender, &c.Archetype, &c.PublicBio, &c.SecretBio,
-		&c.Status, &c.MissedRounds, &c.DeathRoundsLeft, &c.DiedAt, &c.FactionID, &c.PartyID, &c.HP, &c.Conditions, &c.Inventory, &c.LocationID, &c.Knowledge, &c.XP, &c.CreatedAt)
+		&c.Status, &c.MissedRounds, &c.Away, &c.DeathRoundsLeft, &c.DiedAt, &c.FactionID, &c.PartyID, &c.HP, &c.Conditions, &c.Inventory, &c.LocationID, &c.Knowledge, &c.XP, &c.CreatedAt)
 	if c.Knowledge == nil {
 		c.Knowledge = []string{}
 	}
