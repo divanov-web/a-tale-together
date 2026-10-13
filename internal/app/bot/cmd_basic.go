@@ -131,9 +131,11 @@ func (s *Service) me(ctx context.Context, req *request) error {
 	return s.reply(ctx, req.in, text)
 }
 
-// cancel прерывает текущий диалог.
+// cancel прерывает текущий диалог. Настройку мира он только откладывает (ADR-0023): удаляется курсор диалога, игра
+// остаётся в `setup`, продолжить — /set.
 func (s *Service) cancel(ctx context.Context, req *request) error {
-	if _, err := s.dialogs.GetDialog(ctx, req.user.ID); errors.Is(err, model.ErrNotFound) {
+	d, err := s.dialogs.GetDialog(ctx, req.user.ID)
+	if errors.Is(err, model.ErrNotFound) {
 		return s.reply(ctx, req.in, "Активного диалога нет.")
 	} else if err != nil {
 		return err
@@ -141,12 +143,17 @@ func (s *Service) cancel(ctx context.Context, req *request) error {
 	if err := s.dialogs.DeleteDialog(ctx, req.user.ID); err != nil {
 		return err
 	}
+	if d.Kind == model.DialogGameSetup {
+		return s.reply(ctx, req.in, setupPostponedText)
+	}
 	return s.reply(ctx, req.in, "Диалог прерван.")
 }
 
 // statusTitle — статус игры по-русски.
 func statusTitle(st model.GameStatus) string {
 	switch st {
+	case model.GameSetup:
+		return "настройка"
 	case model.GameDraft:
 		return "черновик"
 	case model.GameActive:

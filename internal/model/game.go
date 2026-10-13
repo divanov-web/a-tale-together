@@ -25,8 +25,9 @@ const (
 // GameStatus — статус игры.
 type GameStatus string
 
-// Статусы игры.
+// Статусы игры: `setup` — администратор настраивает мир, персонажи не создаются (ADR-0023); `draft` — готова к набору.
 const (
+	GameSetup    GameStatus = "setup"
 	GameDraft    GameStatus = "draft"
 	GameActive   GameStatus = "active"
 	GamePaused   GameStatus = "paused"

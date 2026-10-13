@@ -239,8 +239,51 @@ func (h *harness) clearedLast(messageID int64) bool {
 // private — чат пользователя с ботом.
 func private(u model.TelegramUser) model.TelegramChatID { return model.TelegramChatID(u.ID) }
 
-// createGame — владелец добавляет бота и создаёт мир; возвращает код приглашения.
+// createGame — владелец добавляет бота, создаёт мир и завершает настройку ответами «оставить как есть»: игра в
+// `draft`, готова к набору (ADR-0023); возвращает код приглашения.
 func (h *harness) createGame() string {
+	h.t.Helper()
+	code := h.createGameInSetup()
+	for i := 0; i < len(game.Params); i++ {
+		if strings.Contains(h.send(owner, private(owner), setupSkip), "Настройка завершена") {
+			return code
+		}
+	}
+	h.t.Fatalf("setup not finished: %q", h.tg.last(private(owner)))
+	return code
+}
+
+// createSecondGame — владелец добавляет бота во вторую группу «Вторая» и создаёт там мир, завершая настройку
+// ответами «оставить как есть»; возвращает код приглашения.
+func (h *harness) createSecondGame() string {
+	h.t.Helper()
+	const chat2 model.TelegramChatID = -100600
+	h.nextID++
+	err := h.svc.HandleChatMember(context.Background(), model.ChatMemberChange{
+		UpdateID: h.nextID, ChatID: chat2, ChatType: model.ChatSupergroup, ChatTitle: "Вторая", From: owner, NewStatus: model.BotMember,
+	})
+	if err != nil {
+		h.t.Fatalf("HandleChatMember: %v", err)
+	}
+	mustContain(h.t, h.send(owner, chat2, "/create"), "создан")
+	for i := 0; i < len(game.Params); i++ {
+		if strings.Contains(h.send(owner, private(owner), setupSkip), "Настройка завершена") {
+			break
+		}
+	}
+	c, err := h.store.GetChatByTelegramID(context.Background(), chat2)
+	if err != nil {
+		h.t.Fatalf("chat not stored: %v", err)
+	}
+	g, err := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
+	if err != nil {
+		h.t.Fatalf("game not stored: %v", err)
+	}
+	return g.JoinCode
+}
+
+// createGameInSetup — владелец добавляет бота и создаёт мир; игра в `setup`, диалог настройки на первом вопросе.
+func (h *harness) createGameInSetup() string {
 	h.t.Helper()
 	h.addBot(owner)
 	h.send(owner, private(owner), "/start")
@@ -339,12 +382,25 @@ func TestChat_RegisteredByAdminCommand(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/chat"), "Владелец: @owner")
 }
 
+// TestGame_CreateSetupAndStatus: мир создаётся в `setup` (ADR-0023): игроки входят, но персонажа не создают, `/begin`
+// отказывает; завершение диалога настройки переводит в `draft`, вошедшие получают личное «можно создать персонажа».
 func TestGame_CreateSetupAndStatus(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	code := h.createGame()
-	mustContain(t, h.tg.last(groupChat), "Ссылка для игроков: https://t.me/tale_bot?start=join_"+code, "отправлены администратору в личку")
+	code := h.createGameInSetup()
+	mustContain(t, h.tg.last(groupChat), "создан (настройка)", "Ссылка для игроков: https://t.me/tale_bot?start=join_"+code, "отправлены администратору в личку", "когда настройка завершится")
 	mustContain(t, h.tg.last(private(owner)), "Настройка мира", "Название мира")
+	if strings.Contains(h.tg.last(private(owner)), "/cancel") {
+		t.Fatalf("cancel hint in setup start: %q", h.tg.last(private(owner)))
+	}
+	mustContain(t, h.send(alice, groupChat, "/status"), "Мир «Песочница» — настройка", "Следующий раунд: мир настраивается администратором")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "Мир ещё не настроен")
+	mustContain(t, h.send(alice, private(alice), "/start join_"+code), "Вы вошли в игру «Песочница»", "ещё настраивает мир")
+	mustContain(t, h.send(alice, private(alice), "/create"), "ещё настраивает мир")
+	mustContain(t, h.send(alice, private(alice), "/status"), "— настройка")
+	if h.tg.lastKeyboard(private(alice)) != nil {
+		t.Fatal("setup button shown to a player")
+	}
 
 	mustContain(t, h.send(owner, private(owner), "Хроники Серой башни"), "Длительность раунда")
 	mustContain(t, h.send(owner, private(owner), "4"), "от 5 до 60", "Повторите ответ")
@@ -355,7 +411,16 @@ func TestGame_CreateSetupAndStatus(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "Орден"), "Фракция зла")
 	final := h.send(owner, private(owner), "-")
 	mustContain(t, final, "Настройка завершена", "Мир «Хроники Серой башни» — черновик", "Раунд: 20 мин", "окно: 10:00–22:00",
-		"Границы: до /finish", "Кворум: 3", "Игроки: 1\n", "Орден (good)", "Гильдия теней (evil)")
+		"Границы: до /finish", "Кворум: 3", "Игроки: 2\n", "Орден (good)", "Гильдия теней (evil)")
+	// Вошедшая без персонажа получает через outbox личное приглашение создать персонажа; администратор — нет.
+	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
+	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
+	msgs, _ := h.store.ListOutbox(context.Background(), g.ID)
+	if len(msgs) != 1 || msgs[0].TelegramChatID != private(alice) || msgs[0].Text != "Мир «Хроники Серой башни» настроен\n\nТеперь можно создать персонажа: /create" {
+		t.Fatalf("outbox after setup = %+v", msgs)
+	}
+	mustContain(t, h.send(alice, private(alice), "/create"), "Выберите фракцию")
+	mustContain(t, h.send(owner, private(owner), "/set"), "Формат: /set")
 
 	mustContain(t, h.send(alice, groupChat, "/status"), "Мир «Хроники Серой башни»")
 	mustContain(t, h.send(owner, private(owner), "/set ends_at 2026-12-31"), "Сохранено")
@@ -377,6 +442,51 @@ func TestGame_SetupViaDeepLink_WhenPrivateNotOpened(t *testing.T) {
 	code := reply[strings.Index(reply, "setup_")+len("setup_") : strings.Index(reply, "setup_")+len("setup_")+8]
 	mustContain(t, h.send(owner, private(owner), "/start setup_"+code), "Настройка мира")
 	mustContain(t, h.send(alice, private(alice), "/start setup_"+code), "Нет прав")
+}
+
+// TestGame_SetupPostponeAndResume (ADR-0023): /cancel откладывает настройку, игра остаётся в `setup`; /set без
+// аргументов и кнопка «Продолжить настройку» в /status начинают заново без диалога или возвращают к текущему шагу
+// с ним; ссылка setup_<код> тоже возвращает к шагу; создание персонажа в другой игре откладывает настройку с подсказкой.
+func TestGame_SetupPostponeAndResume(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGameInSetup()
+
+	mustContain(t, h.send(owner, private(owner), "/cancel"), "Настройка отложена", "Продолжить: /set")
+	mustContain(t, h.send(owner, private(owner), "Привет"), "Я понимаю только команды") // текст не стал названием мира
+	status := h.send(owner, private(owner), "/status")
+	mustContain(t, status, "Мир «Песочница» — настройка")
+	kb := h.tg.lastKeyboard(private(owner))
+	if got := buttonData(kb); len(got) != 1 || got[0] != "/set" || kb[0][0].Text != "Продолжить настройку" {
+		t.Fatalf("status keyboard = %+v", kb)
+	}
+	mustContain(t, h.press(owner, private(owner), 60, "/set"), "Настройка мира «Песочница»", "Название мира")
+	mustContain(t, h.send(owner, private(owner), "Хроники"), "Длительность раунда")
+	mustContain(t, h.send(owner, private(owner), "/set"), "Продолжаем настройку мира «Хроники»", "Длительность раунда")
+	mustContain(t, h.send(owner, private(owner), "/start setup_"+code), "Продолжаем настройку", "Длительность раунда")
+	mustContain(t, h.send(owner, private(owner), "/set round_minutes 20"), "Сохранено")
+	mustContain(t, h.send(owner, private(owner), "/set"), "Длительность раунда", "Сейчас: 20")
+	mustContain(t, h.send(owner, private(owner), "/create"), "ещё настраивает мир")
+
+	// Вторая игра у того же владельца (её настройка перекрывает диалог первой и завершается): создание персонажа
+	// во второй при возобновлённой настройке первой откладывает настройку с подсказкой.
+	h.clock.advance(time.Minute) // лимит частоты команд владельца
+	second := h.createSecondGame()
+	mustContain(t, h.send(owner, private(owner), "/games 1"), "Текущая игра: «Хроники»")
+	mustContain(t, h.send(owner, private(owner), "/set"), "Настройка мира «Хроники»", "Название мира")
+	mustContain(t, h.send(owner, private(owner), "/join "+second), "Создание персонажа в игре «Вторая»")
+	sent := h.tg.sent[private(owner)]
+	mustContain(t, sent[len(sent)-2], "Настройка отложена")
+	mustContain(t, h.send(owner, private(owner), "/cancel"), "Диалог прерван")
+	mustContain(t, h.send(owner, private(owner), "/games 1"), "Текущая игра: «Хроники»")
+	mustContain(t, h.send(owner, private(owner), "/set"), "Настройка мира «Хроники»", "Название мира")
+	h.clock.advance(time.Minute)
+	for i := 0; i < len(game.Params); i++ {
+		if strings.Contains(h.send(owner, private(owner), setupSkip), "Настройка завершена") {
+			break
+		}
+	}
+	mustContain(t, h.tg.last(private(owner)), "Мир «Хроники» — черновик", "Раунд: 20 мин")
 }
 
 // joinAndCreate проводит пользователя через вход и создание персонажа; answers — ответы по шагам.
@@ -861,7 +971,7 @@ func TestLLM_OwnerCommands(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	h.createGame()
-	h.send(owner, private(owner), "/cancel")
+	h.clock.advance(time.Minute) // лимит частоты команд владельца
 	mustContain(t, h.send(alice, private(alice), "/llm"), "только владельцу бота")
 	mustContain(t, h.send(owner, private(owner), "/llm"), "Профили LLM:", "нет; добавить", "Провайдеры: claude-cli, fake")
 	mustContain(t, h.send(owner, private(owner), "/llm test"), "не настроен")
@@ -1060,7 +1170,7 @@ func TestButtons_CharacterDialog(t *testing.T) {
 func TestButtons_SetupDialog(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	h.createGame()
+	h.createGameInSetup()
 	kb := h.tg.lastKeyboard(private(owner))
 	if got := buttonData(kb); len(got) != 1 || got[0] != "@title -" || kb[0][0].Text != "Оставить как есть" {
 		t.Fatalf("title keyboard = %+v", kb)

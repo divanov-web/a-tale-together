@@ -133,6 +133,26 @@ func TestBegin_RequiresCharacters(t *testing.T) {
 	}
 }
 
+// TestBegin_SetupNotReady (ADR-0023): в `setup` кампания не запускается, пауза и завершение тоже отвечают «не настроен».
+func TestBegin_SetupNotReady(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t, model.DefaultGameSettings())
+	ctx := context.Background()
+	w.game.Status = model.GameSetup
+	if err := w.store.UpdateGame(ctx, w.game); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.svc.Begin(ctx, w.game, 1); !errors.Is(err, ErrSetup) {
+		t.Fatalf("begin in setup: %v", err)
+	}
+	if _, _, err := w.svc.Pause(ctx, w.game, 1); !errors.Is(err, ErrSetup) {
+		t.Fatalf("pause in setup: %v", err)
+	}
+	if _, err := w.svc.Finish(ctx, w.game, 1); !errors.Is(err, ErrSetup) {
+		t.Fatalf("finish in setup: %v", err)
+	}
+}
+
 func TestTick_SkipWithoutQuorumAndCarrySubmissions(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t, model.DefaultGameSettings()) // кворум 2

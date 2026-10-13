@@ -73,6 +73,7 @@ var (
 	ErrNicknameTaken = errors.New("никнейм уже занят в этой игре")
 	ErrChooseGame    = errors.New("вы участвуете в нескольких играх: выберите игру командой /games")
 	ErrBadValue      = errors.New("недопустимое значение")
+	ErrGameSetup     = errors.New("администратор ещё настраивает мир; бот напишет, когда можно будет создать персонажа")
 )
 
 // Service — сценарии игры.
@@ -96,8 +97,8 @@ func New(store Store, rights Rights, clock Clock, logger *slog.Logger) *Service 
 // DefaultGenre — код жанра для новой игры, пока жанр не выбран в настройках.
 const DefaultGenre = "fantasy"
 
-// Create создаёт мир в чате: игра `draft` с настройками по умолчанию, сезон 1, фракции из шаблона жанра,
-// автор — администратор игры; все записи в одной транзакции.
+// Create создаёт мир в чате: игра `setup` (ADR-0023: до завершения настройки персонажи не создаются) с настройками
+// по умолчанию, сезон 1, фракции из шаблона жанра, автор — администратор игры; все записи в одной транзакции.
 func (s *Service) Create(ctx context.Context, chat model.Chat, actor model.User) (model.Game, error) {
 	ok, err := s.rights.CanManage(ctx, chat, actor.ID)
 	if err != nil {
@@ -124,7 +125,7 @@ func (s *Service) Create(ctx context.Context, chat model.Chat, actor model.User)
 		var err error
 		game, err = s.store.CreateGame(ctx, model.Game{
 			ChatID: chat.ID, GenreID: genre.ID, Format: model.FormatNovel, Mode: model.ModeBalanced, Title: title,
-			Status: model.GameDraft, Timezone: "Europe/Moscow", RoundMinutes: 15, Settings: s.Defaults,
+			Status: model.GameSetup, Timezone: "Europe/Moscow", RoundMinutes: 15, Settings: s.Defaults,
 			JoinCode: s.newCode(), CreatedByUserID: actor.ID,
 		})
 		if err != nil {
@@ -187,6 +188,61 @@ func (s *Service) createLocations(ctx context.Context, game model.GameID, t mode
 		return err
 	}
 	return nil
+}
+
+// FinishSetup завершает настройку мира (ADR-0023): `setup` → `draft` и в той же транзакции личное «можно создать
+// персонажа» в outbox участникам без персонажа с открытой личкой, кроме самого администратора. В другом статусе
+// ничего не меняет: диалог настройки можно пройти повторно.
+func (s *Service) FinishSetup(ctx context.Context, game model.Game, actor model.UserID) (model.Game, error) {
+	ok, err := s.CanAdmin(ctx, game, actor)
+	if err != nil {
+		return model.Game{}, fmt.Errorf("game.FinishSetup: %w", err)
+	}
+	if !ok {
+		return model.Game{}, ErrForbidden
+	}
+	if game.Status != model.GameSetup {
+		return game, nil
+	}
+	season, err := s.store.ActiveSeason(ctx, game.ID)
+	if err != nil {
+		return model.Game{}, fmt.Errorf("game.FinishSetup: season: %w", err)
+	}
+	members, err := s.store.ListMembers(ctx, game.ID)
+	if err != nil {
+		return model.Game{}, fmt.Errorf("game.FinishSetup: %w", err)
+	}
+	game.Status = model.GameDraft
+	err = s.store.InTx(ctx, func(ctx context.Context) error {
+		if err := s.store.UpdateGame(ctx, game); err != nil {
+			return err
+		}
+		for _, m := range members {
+			if m.User.ID == actor || m.User.StartedAt == nil {
+				continue
+			}
+			if _, err := s.store.GetCharacter(ctx, game.ID, season.ID, m.User.ID); err == nil {
+				continue
+			} else if !errors.Is(err, model.ErrNotFound) {
+				return err
+			}
+			if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: game.ID, TelegramChatID: m.User.PrivateChat(), Kind: model.OutboxSystem,
+				Part: 1, Text: SetupDoneNotice(game), SendAfter: s.clock.Now()}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return model.Game{}, fmt.Errorf("game.FinishSetup: %w", err)
+	}
+	s.logger.Info("game setup finished", slog.Int64("game_id", int64(game.ID)))
+	return game, nil
+}
+
+// SetupDoneNotice — личное сообщение участнику без персонажа после настройки мира (B32).
+func SetupDoneNotice(g model.Game) string {
+	return "Мир «" + g.Title + "» настроен\n\nТеперь можно создать персонажа: /create"
 }
 
 // Locations возвращает локации игры.

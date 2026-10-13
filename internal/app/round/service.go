@@ -101,6 +101,7 @@ type Journal interface {
 var (
 	ErrForbidden      = errors.New("нет прав: действие доступно администратору игры, владельцу или модератору чата")
 	ErrAlreadyStarted = errors.New("игра уже запущена")
+	ErrSetup          = errors.New("мир ещё не настроен: администратор завершает настройку в личке (/set)")
 	ErrNotActive      = errors.New("игра не запущена")
 	ErrPaused         = errors.New("игра на паузе")
 	ErrFinished       = errors.New("игра завершена")
@@ -154,12 +155,8 @@ func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID
 	if err := s.canAdmin(ctx, game, actor); err != nil {
 		return model.Game{}, err
 	}
-	switch game.Status {
-	case model.GameDraft:
-	case model.GameFinished:
-		return model.Game{}, ErrFinished
-	default:
-		return model.Game{}, ErrAlreadyStarted
+	if err := beginable(game.Status); err != nil {
+		return model.Game{}, err
 	}
 	now := s.clock.Now()
 	var out model.Game
@@ -168,8 +165,8 @@ func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID
 		if err != nil {
 			return err
 		}
-		if g.Status != model.GameDraft {
-			return ErrAlreadyStarted
+		if err := beginable(g.Status); err != nil {
+			return err
 		}
 		season, err := s.store.ActiveSeason(ctx, g.ID)
 		if err != nil {
@@ -290,10 +287,8 @@ func (s *Service) Pause(ctx context.Context, game model.Game, actor model.UserID
 			default:
 				return err
 			}
-		case model.GameFinished:
-			return ErrFinished
 		default:
-			return ErrNotActive
+			return statusError(g.Status)
 		}
 		out = g
 		return nil
@@ -924,8 +919,23 @@ func (s *Service) canAdmin(ctx context.Context, game model.Game, actor model.Use
 	return nil
 }
 
+// beginable — можно ли запустить кампанию из статуса: только `draft`; `setup` — мир ещё не настроен (ADR-0023).
+func beginable(st model.GameStatus) error {
+	switch st {
+	case model.GameDraft:
+		return nil
+	case model.GameSetup:
+		return ErrSetup
+	case model.GameFinished:
+		return ErrFinished
+	}
+	return ErrAlreadyStarted
+}
+
 func statusError(st model.GameStatus) error {
 	switch st {
+	case model.GameSetup:
+		return ErrSetup
 	case model.GamePaused:
 		return ErrPaused
 	case model.GameFinished:
@@ -936,7 +946,7 @@ func statusError(st model.GameStatus) error {
 
 // wrap добавляет префикс только к неожиданным ошибкам; ошибки сценария возвращаются как есть.
 func wrap(op string, err error) error {
-	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound, ErrAlreadyActed, ErrNoRound, ErrNotResolved} {
+	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrSetup, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound, ErrAlreadyActed, ErrNoRound, ErrNotResolved} {
 		if errors.Is(err, ue) {
 			return err
 		}

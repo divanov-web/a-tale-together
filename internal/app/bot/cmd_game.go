@@ -44,7 +44,8 @@ func (s *Service) gameCreate(ctx context.Context, req *request) error {
 	return s.reply(ctx, req.in, text)
 }
 
-// gameStatus — /status: в группе игра чата, в личке текущая игра пользователя.
+// gameStatus — /status: в группе игра чата, в личке текущая игра пользователя; администратору игры в `setup` в личке
+// под сводкой кнопка «Продолжить настройку» (`/set`, ADR-0023).
 func (s *Service) gameStatus(ctx context.Context, req *request) error {
 	var g model.Game
 	var err error
@@ -59,6 +60,13 @@ func (s *Service) gameStatus(ctx context.Context, req *request) error {
 	text, err := s.renderStatus(ctx, g)
 	if err != nil {
 		return err
+	}
+	if req.in.IsPrivate() && g.Status == model.GameSetup {
+		if ok, err := s.games.CanAdmin(ctx, g, req.user.ID); err != nil {
+			return err
+		} else if ok {
+			return s.replyKeyboard(ctx, req.in, text, model.Keyboard{{{Text: "Продолжить настройку", Data: model.CallbackCommand("set", "")}}})
+		}
 	}
 	return s.reply(ctx, req.in, text)
 }
@@ -110,8 +118,11 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 	if err != nil {
 		return "", err
 	}
-	if g.Status == model.GameDraft {
-		next = "игра не запущена: настройка и набор игроков; старт — /begin в группе"
+	switch g.Status {
+	case model.GameSetup:
+		next = "мир настраивается администратором; создание персонажей откроется после настройки"
+	case model.GameDraft:
+		next = "игра не запущена: набор игроков; старт — /begin в группе"
 	}
 	type partyRow struct {
 		Name, Location, Members string
@@ -148,13 +159,21 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 	})
 }
 
-// gameSet — /set <параметр> <значение> для текущей игры.
+// gameSet — /set <параметр> <значение> для текущей игры; без аргументов у администратора игры в `setup` возвращает
+// к диалогу настройки (ADR-0023), иначе список параметров.
 func (s *Service) gameSet(ctx context.Context, req *request) error {
 	key, value := splitArgs(req.in.Args)
+	g, err := s.games.Current(ctx, req.user)
 	if key == "" {
+		if err == nil && g.Status == model.GameSetup {
+			if ok, err := s.games.CanAdmin(ctx, g, req.user.ID); err != nil {
+				return err
+			} else if ok {
+				return s.startGameSetup(ctx, req.user, g)
+			}
+		}
 		return s.reply(ctx, req.in, "Формат: /set <параметр> <значение>\nПараметры:\n"+paramsHelp())
 	}
-	g, err := s.games.Current(ctx, req.user)
 	if err != nil {
 		return err
 	}
@@ -186,7 +205,8 @@ func (s *Service) join(ctx context.Context, req *request) error {
 	return s.joinGame(ctx, req, code)
 }
 
-// joinGame добавляет пользователя в игру и запускает создание персонажа, если его ещё нет.
+// joinGame добавляет пользователя в игру и запускает создание персонажа, если его ещё нет. Пока мир в `setup`
+// (ADR-0023), вход записывается, а персонаж не создаётся: бот напишет участнику после настройки.
 func (s *Service) joinGame(ctx context.Context, req *request, code string) error {
 	g, err := s.games.Join(ctx, req.user, code)
 	if err != nil {
@@ -196,6 +216,9 @@ func (s *Service) joinGame(ctx context.Context, req *request, code string) error
 		return s.reply(ctx, req.in, fmt.Sprintf("Вы уже в игре «%s». Персонаж: /character", g.Title))
 	} else if !errors.Is(err, game.ErrNoCharacter) {
 		return err
+	}
+	if g.Status == model.GameSetup {
+		return s.reply(ctx, req.in, fmt.Sprintf("Вы вошли в игру «%s». Администратор ещё настраивает мир: бот напишет сюда, когда можно будет создать персонажа.", g.Title))
 	}
 	if err := s.reply(ctx, req.in, fmt.Sprintf("Вы вошли в игру «%s». Создадим персонажа.", g.Title)); err != nil {
 		return err

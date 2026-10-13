@@ -292,7 +292,7 @@ func (s *Service) implicitAct(ctx context.Context, req *request) error {
 func (s *Service) roundLines(ctx context.Context, g model.Game) (current, last, next string, err error) {
 	now := s.clock.Now()
 	switch g.Status {
-	case model.GameDraft:
+	case model.GameSetup, model.GameDraft:
 		return "", "", "", nil
 	case model.GamePaused:
 		next = "игра на паузе; возобновить: /pause в группе"

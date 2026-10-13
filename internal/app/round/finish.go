@@ -27,10 +27,8 @@ func (s *Service) Finish(ctx context.Context, game model.Game, actor model.UserI
 		}
 		switch g.Status {
 		case model.GameActive, model.GamePaused:
-		case model.GameFinished:
-			return ErrFinished
 		default:
-			return ErrNotActive
+			return statusError(g.Status)
 		}
 		chat, err := s.store.GetChat(ctx, g.ChatID)
 		if err != nil {

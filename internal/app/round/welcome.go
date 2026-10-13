@@ -19,7 +19,7 @@ const welcomeSummaryRunes = 500
 // последняя хроника, варианты хода по локации персонажа кнопками (`/act #…`, только при открытом раунде).
 func (s *Service) Welcome(ctx context.Context, g model.Game, c model.Character) (string, model.Keyboard, error) {
 	switch g.Status {
-	case model.GameDraft:
+	case model.GameSetup, model.GameDraft:
 		return "Администратор ещё не начал историю. Бот напишет сюда, когда она начнётся.", nil, nil
 	case model.GamePaused:
 		return "Игра на паузе. Бот напишет сюда, когда администратор её возобновит.", nil, nil

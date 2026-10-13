@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -37,8 +38,19 @@ type characterData struct {
 	SecretBio  string            `json:"secret_bio"`
 }
 
-// startCharacterCreate начинает диалог создания персонажа в личке.
+// startCharacterCreate начинает диалог создания персонажа в личке. В `setup` персонажи не создаются (ADR-0023);
+// незавершённая настройка мира у того же пользователя откладывается с подсказкой, как продолжить.
 func (s *Service) startCharacterCreate(ctx context.Context, user model.User, g model.Game) error {
+	if g.Status == model.GameSetup {
+		return game.ErrGameSetup
+	}
+	if prev, err := s.dialogs.GetDialog(ctx, user.ID); err == nil && prev.Kind == model.DialogGameSetup {
+		if err := s.replyPrivate(ctx, user, setupPostponedText); err != nil {
+			return err
+		}
+	} else if err != nil && !errors.Is(err, model.ErrNotFound) {
+		return err
+	}
 	d := model.Dialog{UserID: user.ID, Kind: model.DialogCharacterCreate, Step: stepFaction, GameID: &g.ID}
 	data := characterData{}
 	if s.settings.AutoFaction != "" {

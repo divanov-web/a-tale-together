@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,20 +13,35 @@ import (
 // setupSkip — ответ «оставить как есть» в диалоге настройки.
 const setupSkip = "-"
 
-// startGameSetup начинает диалог настройки игры в личке администратора.
+// setupPostponedText — ответ на /cancel в настройке мира (ADR-0023): игра остаётся в `setup`.
+const setupPostponedText = "Настройка отложена: мир остаётся в настройке, игроки пока не могут создать персонажей. Продолжить: /set"
+
+// startGameSetup начинает диалог настройки игры в личке администратора или возвращает к текущему шагу, если
+// диалог настройки этой игры уже идёт (ADR-0023: `/start setup_<код>`, `/set` без аргументов, кнопка в `/status`).
 func (s *Service) startGameSetup(ctx context.Context, user model.User, g model.Game) error {
-	d := model.Dialog{UserID: user.ID, Kind: model.DialogGameSetup, Step: game.Params[0].Key, GameID: &g.ID}
-	if err := s.dialogs.SaveDialog(ctx, d); err != nil {
+	d, err := s.dialogs.GetDialog(ctx, user.ID)
+	resume := err == nil && d.Kind == model.DialogGameSetup && d.GameID != nil && *d.GameID == g.ID
+	if err != nil && !errors.Is(err, model.ErrNotFound) {
 		return err
+	}
+	if !resume {
+		d = model.Dialog{UserID: user.ID, Kind: model.DialogGameSetup, Step: game.Params[0].Key, GameID: &g.ID}
+		if err := s.dialogs.SaveDialog(ctx, d); err != nil {
+			return err
+		}
 	}
 	q, err := s.setupQuestion(ctx, g, d.Step)
 	if err != nil {
 		return err
 	}
+	if resume {
+		return s.replyPrivateKeyboard(ctx, user, fmt.Sprintf("Продолжаем настройку мира «%s».\n\n%s", g.Title, q.text), q.kb)
+	}
 	return s.replyPrivateKeyboard(ctx, user, fmt.Sprintf("Настройка мира «%s». На каждый вопрос ответьте значением, кнопкой или «%s», чтобы оставить как есть.\n\n%s", g.Title, setupSkip, q.text), q.kb)
 }
 
-// setupStep применяет ответ к параметру и задаёт следующий вопрос.
+// setupStep применяет ответ к параметру и задаёт следующий вопрос; после последнего мир переходит из `setup`
+// в `draft` (`game.FinishSetup`, ADR-0023), итог — сводка игры.
 func (s *Service) setupStep(ctx context.Context, req *request, d *model.Dialog, answer string) (question, bool, error) {
 	g, err := s.dialogGame(ctx, d)
 	if err != nil {
@@ -39,11 +55,14 @@ func (s *Service) setupStep(ctx context.Context, req *request, d *model.Dialog, 
 	}
 	next := s.nextParam(ctx, d.Step)
 	if next == "" {
+		if g, err = s.games.FinishSetup(ctx, g, req.user.ID); err != nil {
+			return question{}, false, err
+		}
 		status, err := s.renderStatus(ctx, g)
 		if err != nil {
 			return question{}, false, err
 		}
-		return question{text: "Настройка завершена.\n\n" + status}, true, nil
+		return question{text: "Настройка завершена. Игроки могут создавать персонажей.\n\n" + status}, true, nil
 	}
 	d.Step = next
 	q, err := s.setupQuestion(ctx, g, next)

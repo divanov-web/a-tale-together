@@ -81,8 +81,11 @@ func ValidateBio(text string) error {
 // CreateCharacter создаёт персонажа активного участника по черновику: валидация по модели,
 // HP по формуле, стартовый инвентарь архетипа из каталога жанра; персонаж и характеристики в одной транзакции.
 func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user model.User, d model.CharacterDraft) (model.Character, error) {
-	if game.Status == model.GameFinished {
+	switch game.Status {
+	case model.GameFinished:
 		return model.Character{}, ErrGameFinished
+	case model.GameSetup:
+		return model.Character{}, ErrGameSetup // мир ещё настраивается (ADR-0023)
 	}
 	m, err := s.store.GetMember(ctx, game.ID, user.ID)
 	if errors.Is(err, model.ErrNotFound) || (err == nil && m.Status != model.MemberActive) {
