@@ -55,7 +55,7 @@ func (s *Service) startCharacterCreate(ctx context.Context, user model.User, g m
 	if err != nil {
 		return err
 	}
-	return s.replyPrivateKeyboard(ctx, user, "Создание персонажа в игре «"+g.Title+"». Прервать: /cancel\n\n"+q.text, q.kb)
+	return s.replyPrivateKeyboard(ctx, user, "Создание персонажа в игре «"+g.Title+"».\n\n"+q.text, q.kb)
 }
 
 // characterStep применяет ответ к шагу и возвращает следующий вопрос или карточку созданного персонажа.
@@ -214,7 +214,7 @@ func (s *Service) gameChatLink(ctx context.Context, g model.Game) string {
 }
 
 // characterQuestion — вопрос шага с подсказкой по модели персонажа и кнопками ответов (ADR-0015): фракция, пол,
-// архетип, распределение и пропуск описаний; никнейм, характеристики и навыки вводятся текстом.
+// архетип, распределение и пропуск описаний; никнейм, характеристики и навыки вводятся текстом, кнопок у них нет (B33).
 func (s *Service) characterQuestion(ctx context.Context, g model.Game, step string) (question, error) {
 	cm, err := s.games.CharacterModel(ctx, g)
 	if err != nil {
@@ -236,7 +236,7 @@ func (s *Service) characterQuestion(ctx context.Context, g model.Game, step stri
 		}
 		return question{text: b.String(), kb: answerButtons(step, 1, answers...)}, nil
 	case stepNickname:
-		return question{text: fmt.Sprintf("Никнейм персонажа (от %d до %d символов, уникален в игре):", game.NicknameMin, game.NicknameMax), kb: model.Keyboard{cancelRow()}}, nil
+		return question{text: fmt.Sprintf("Никнейм персонажа (от %d до %d символов, уникален в игре):", game.NicknameMin, game.NicknameMax)}, nil
 	case stepGender:
 		return question{text: "Пол персонажа: 1 — мужской, 2 — женский, 3 — не указывать.",
 			kb: answerButtons(step, 3, [2]string{"Мужской", "1"}, [2]string{"Женский", "2"}, [2]string{"Не указывать", "3"})}, nil
@@ -254,13 +254,13 @@ func (s *Service) characterQuestion(ctx context.Context, g model.Game, step stri
 		for _, a := range def.Attributes {
 			names = append(names, fmt.Sprintf("%s (%d–%d)", a.Title, a.Min, a.Max))
 		}
-		return question{text: fmt.Sprintf("Характеристики, сумма %d. Введите числа по порядку: %s.\nНапример: %s", def.AttributePoints, strings.Join(names, ", "), exampleAttributes(def)), kb: model.Keyboard{cancelRow()}}, nil
+		return question{text: fmt.Sprintf("Характеристики, сумма %d. Введите числа по порядку: %s.\nНапример: %s", def.AttributePoints, strings.Join(names, ", "), exampleAttributes(def))}, nil
 	case stepSkills:
 		var names []string
 		for _, sk := range def.Skills {
 			names = append(names, sk.Title)
 		}
-		return question{text: fmt.Sprintf("Навыки: %d очков, не более %d в один. Доступны: %s.\nВведите пары «навык значение», например: %s", def.SkillPoints, def.SkillMax, strings.Join(names, ", "), exampleSkills(def)), kb: model.Keyboard{cancelRow()}}, nil
+		return question{text: fmt.Sprintf("Навыки: %d очков, не более %d в один. Доступны: %s.\nВведите пары «навык значение», например: %s", def.SkillPoints, def.SkillMax, strings.Join(names, ", "), exampleSkills(def))}, nil
 	case stepPublicBio:
 		return question{text: fmt.Sprintf("Открытое описание персонажа (до %d символов, видно всем) или «%s»:", game.BioMax, setupSkip),
 			kb: answerButtons(step, 1, [2]string{"Пропустить", setupSkip})}, nil

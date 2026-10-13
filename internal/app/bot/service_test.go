@@ -993,39 +993,43 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 }
 
 // TestButtons_CharacterDialog (ADR-0015): вопросы диалога создания персонажа несут кнопки с ответами шага; нажатие
-// отвечает на вопрос, устаревшая кнопка не применяется, кнопка «Прервать» = /cancel, кнопка завершённого диалога не
-// становится заявкой.
+// отвечает на вопрос, устаревшая кнопка не применяется, кнопки «Прервать» нет (B33), на шагах с вводом текстом кнопок
+// нет, кнопка завершённого диалога не становится заявкой.
 func TestButtons_CharacterDialog(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	code := h.createGame()
 
-	mustContain(t, h.send(alice, private(alice), "/start join_"+code), "Выберите фракцию (кнопкой, номером или названием)")
+	first := h.send(alice, private(alice), "/start join_"+code)
+	mustContain(t, first, "Выберите фракцию (кнопкой, номером или названием)")
+	if strings.Contains(first, "/cancel") {
+		t.Fatalf("cancel hint in dialog start: %q", first)
+	}
 	kb := h.tg.lastKeyboard(private(alice))
-	if got := buttonData(kb); len(got) != 3 || got[0] != "@faction 1" || got[1] != "@faction 2" || got[2] != "/cancel" || kb[0][0].Text != "Орден Рассвета" {
+	if got := buttonData(kb); len(got) != 2 || got[0] != "@faction 1" || got[1] != "@faction 2" || kb[0][0].Text != "Орден Рассвета" {
 		t.Fatalf("faction keyboard = %+v", kb)
 	}
 	mustContain(t, h.press(alice, private(alice), 10, "@faction 1"), "Никнейм персонажа")
 	if !h.clearedLast(10) {
 		t.Fatal("faction keyboard not cleared after press")
 	}
-	if got := buttonData(h.tg.lastKeyboard(private(alice))); len(got) != 1 || got[0] != "/cancel" {
-		t.Fatalf("nickname keyboard = %v; want only cancel", got)
+	if got := h.tg.lastKeyboard(private(alice)); got != nil {
+		t.Fatalf("nickname keyboard = %v; want none", got)
 	}
 	// Повторное нажатие устаревшей кнопки: ответ не применяется, бот повторяет текущий вопрос с его кнопками.
 	mustContain(t, h.press(alice, private(alice), 10, "@faction 2"), "Кнопка устарела", "Никнейм персонажа")
 	mustContain(t, h.send(alice, private(alice), "Элис"), "Пол персонажа")
-	if got := buttonData(h.tg.lastKeyboard(private(alice))); len(got) != 4 || got[1] != "@gender 2" {
+	if got := buttonData(h.tg.lastKeyboard(private(alice))); len(got) != 3 || got[1] != "@gender 2" {
 		t.Fatalf("gender keyboard = %v", got)
 	}
 	mustContain(t, h.press(alice, private(alice), 11, "@gender 2"), "Архетип (кнопкой, номером или названием)")
 	kb = h.tg.lastKeyboard(private(alice))
-	if got := buttonData(kb); len(got) != 6 || got[0] != "@archetype 1" || got[4] != "@archetype 5" || kb[0][0].Text != "Воин" || len(kb[0]) != 3 {
+	if got := buttonData(kb); len(got) != 5 || got[0] != "@archetype 1" || got[4] != "@archetype 5" || kb[0][0].Text != "Воин" || len(kb[0]) != 3 {
 		t.Fatalf("archetype keyboard = %+v", kb)
 	}
 	mustContain(t, h.press(alice, private(alice), 12, "@archetype 1"), "Распределение очков")
 	mustContain(t, h.press(alice, private(alice), 13, "@distribution 1"), "Открытое описание")
-	if got := buttonData(h.tg.lastKeyboard(private(alice))); len(got) != 2 || got[0] != "@public_bio -" {
+	if got := buttonData(h.tg.lastKeyboard(private(alice))); len(got) != 1 || got[0] != "@public_bio -" {
 		t.Fatalf("bio keyboard = %v", got)
 	}
 	mustContain(t, h.press(alice, private(alice), 14, "@public_bio -"), "Скрытое описание")
@@ -1039,9 +1043,11 @@ func TestButtons_CharacterDialog(t *testing.T) {
 	// Кнопка завершённого диалога не заявка и не ошибка.
 	mustContain(t, h.press(alice, private(alice), 15, "@secret_bio -"), "Этот диалог уже завершён")
 
-	// «Прервать» кнопкой.
+	// Начать заново — повторный /create: диалог перезапускается с первого шага; /cancel остаётся запасным путём.
 	mustContain(t, h.send(bob, private(bob), "/start join_"+code), "Выберите фракцию")
-	mustContain(t, h.press(bob, private(bob), 20, "/cancel"), "Диалог прерван")
+	mustContain(t, h.send(bob, private(bob), "1"), "Никнейм персонажа")
+	mustContain(t, h.send(bob, private(bob), "/create"), "Выберите фракцию")
+	mustContain(t, h.send(bob, private(bob), "/cancel"), "Диалог прерван")
 	mustContain(t, h.send(bob, private(bob), "/character"), "ещё нет")
 }
 
@@ -1052,19 +1058,19 @@ func TestButtons_SetupDialog(t *testing.T) {
 	h := newHarness(t)
 	h.createGame()
 	kb := h.tg.lastKeyboard(private(owner))
-	if got := buttonData(kb); len(got) != 2 || got[0] != "@title -" || got[1] != "/cancel" || kb[0][0].Text != "Оставить как есть" {
+	if got := buttonData(kb); len(got) != 1 || got[0] != "@title -" || kb[0][0].Text != "Оставить как есть" {
 		t.Fatalf("title keyboard = %+v", kb)
 	}
 	mustContain(t, h.press(owner, private(owner), 30, "@title -"), "Длительность раунда")
-	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 6 || got[0] != "@round_minutes 10" || got[3] != "@round_minutes 60" || got[4] != "@round_minutes -" {
+	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 5 || got[0] != "@round_minutes 10" || got[3] != "@round_minutes 60" || got[4] != "@round_minutes -" {
 		t.Fatalf("round_minutes keyboard = %v", got)
 	}
 	mustContain(t, h.press(owner, private(owner), 31, "@round_minutes 20"), "Часовой пояс")
-	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 8 || got[1] != "@timezone Europe/Moscow" {
+	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 7 || got[1] != "@timezone Europe/Moscow" {
 		t.Fatalf("timezone keyboard = %v", got)
 	}
 	mustContain(t, h.press(owner, private(owner), 32, "@timezone Asia/Yekaterinburg"), "Игровое окно")
-	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 3 || got[0] != "@play_window нет" {
+	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 2 || got[0] != "@play_window нет" {
 		t.Fatalf("play_window keyboard = %v", got)
 	}
 	mustContain(t, h.press(owner, private(owner), 33, "@play_window нет"), "Кворум раунда")

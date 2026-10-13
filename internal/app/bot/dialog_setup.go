@@ -22,7 +22,7 @@ func (s *Service) startGameSetup(ctx context.Context, user model.User, g model.G
 	if err != nil {
 		return err
 	}
-	return s.replyPrivateKeyboard(ctx, user, fmt.Sprintf("Настройка мира «%s». На каждый вопрос ответьте значением, кнопкой или «%s», чтобы оставить как есть. Прервать: /cancel\n\n%s", g.Title, setupSkip, q.text), q.kb)
+	return s.replyPrivateKeyboard(ctx, user, fmt.Sprintf("Настройка мира «%s». На каждый вопрос ответьте значением, кнопкой или «%s», чтобы оставить как есть.\n\n%s", g.Title, setupSkip, q.text), q.kb)
 }
 
 // setupStep применяет ответ к параметру и задаёт следующий вопрос.

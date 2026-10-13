@@ -65,7 +65,8 @@ func (s *Service) handleDialogAnswer(ctx context.Context, req *request) error {
 	return s.replyKeyboard(ctx, req.in, reply.text, reply.kb)
 }
 
-// question — вопрос диалога: текст и кнопки с ответами шага (ADR-0015); свободные поля без кнопок, кроме «Прервать».
+// question — вопрос диалога: текст и кнопки с ответами шага (ADR-0015); свободные поля без кнопок. Кнопки «Прервать»
+// нет (B33): диалог можно начать заново командой, другие команды его не сбрасывают, `/cancel` — запасной путь.
 // before — сообщение перед итогом, без inline-кнопок: оно ставит reply-клавиатуру лички (ADR-0021), а итог
 // с кнопками остаётся последним.
 type question struct {
@@ -89,8 +90,7 @@ func (s *Service) dialogQuestion(ctx context.Context, d *model.Dialog) (question
 	return question{}, fmt.Errorf("bot.dialogQuestion: unknown dialog kind %q", d.Kind)
 }
 
-// answerButtons — ряды кнопок с ответами на шаг: подпись → данные `@шаг ответ`, по perRow кнопок в ряду;
-// последним рядом «Прервать» (/cancel).
+// answerButtons — ряды кнопок с ответами на шаг: подпись → данные `@шаг ответ`, по perRow кнопок в ряду.
 func answerButtons(step string, perRow int, answers ...[2]string) model.Keyboard {
 	var kb model.Keyboard
 	var row []model.Button
@@ -104,12 +104,7 @@ func answerButtons(step string, perRow int, answers ...[2]string) model.Keyboard
 	if len(row) > 0 {
 		kb = append(kb, row)
 	}
-	return append(kb, cancelRow())
-}
-
-// cancelRow — кнопка «Прервать» диалога.
-func cancelRow() []model.Button {
-	return []model.Button{{Text: "Прервать", Data: model.CallbackCommand("cancel", "")}}
+	return kb
 }
 
 // saveData сериализует данные диалога.
