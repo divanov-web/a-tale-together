@@ -39,13 +39,18 @@ type characterData struct {
 // startCharacterCreate начинает диалог создания персонажа в личке.
 func (s *Service) startCharacterCreate(ctx context.Context, user model.User, g model.Game) error {
 	d := model.Dialog{UserID: user.ID, Kind: model.DialogCharacterCreate, Step: stepFaction, GameID: &g.ID}
-	if err := saveData(&d, characterData{}); err != nil {
+	data := characterData{}
+	if s.settings.AutoFaction != "" {
+		// Фракция назначается без вопроса (на время тестовых прогонов), шаг выбора пропускается.
+		data.Faction, d.Step = s.settings.AutoFaction, stepNickname
+	}
+	if err := saveData(&d, data); err != nil {
 		return err
 	}
 	if err := s.dialogs.SaveDialog(ctx, d); err != nil {
 		return err
 	}
-	q, err := s.characterQuestion(ctx, g, stepFaction)
+	q, err := s.characterQuestion(ctx, g, d.Step)
 	if err != nil {
 		return err
 	}

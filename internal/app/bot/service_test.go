@@ -384,6 +384,24 @@ func TestCharacter_CreateAutoAndManual(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/status"), "Игроки: 3\n", "Персонажей: 2", "Орден Рассвета (good): 1", "Элис — warrior, женский, Орден Рассвета", "Боб — rogue, мужской")
 }
 
+// TestCharacter_AutoFaction: с настройкой AutoFaction шаг выбора фракции пропускается, персонаж во фракции добрых.
+func TestCharacter_AutoFaction(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.svc.settings.AutoFaction = model.FactionGood
+	code := h.createGame()
+
+	reply := h.send(bob, private(bob), "/start join_"+code)
+	mustContain(t, reply, "Никнейм персонажа")
+	if strings.Contains(reply, "Выберите фракцию") {
+		t.Fatalf("faction question shown: %q", reply)
+	}
+	for _, a := range []string{"Боб", "1", "плут", "1", "-"} {
+		reply = h.send(bob, private(bob), a)
+	}
+	mustContain(t, h.send(bob, private(bob), "-"), "Персонаж создан", "Фракция: «Орден Рассвета»")
+}
+
 func TestCharacter_ValidationInDialog(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)

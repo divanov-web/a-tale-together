@@ -103,7 +103,8 @@ func run() error {
 	}
 	llm := applm.New(store, providers, clock, logger)
 	rounds.LLM = llm // интерпретатор и рассказчик: два вызова на раунд (пункты 08, 09)
-	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username(), OwnerID: model.TelegramUserID(cfg.BotOwnerID), GuideURL: cfg.GuideURL},
+	commands := bot.New(bot.Settings{Version: version, Env: cfg.AppEnv, BotUsername: tg.Username(), OwnerID: model.TelegramUserID(cfg.BotOwnerID), GuideURL: cfg.GuideURL,
+		AutoFaction: model.FactionGood}, // TODO: на время тестовых прогонов все персонажи во фракции добрых; убрать, чтобы вернуть выбор
 		store, store, tg, chats, games, rounds, llm, clock, logger)
 	outbox := delivery.New(store, tg, clock, delivery.Settings{Interval: cfg.OutboxTick}, logger)
 	if journal != nil {
