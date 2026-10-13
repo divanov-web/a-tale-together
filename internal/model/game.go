@@ -25,13 +25,16 @@ const (
 // GameStatus — статус игры.
 type GameStatus string
 
-// Статусы игры: `setup` — администратор настраивает мир, персонажи не создаются (ADR-0023); `draft` — готова к набору.
+// Статусы игры: `setup` — администратор настраивает мир, персонажи не создаются (ADR-0023); `draft` — готова к набору;
+// `starting` и `finishing` — команда принята, стартовую сцену или финальную хронику делает тик планировщика (ADR-0024).
 const (
-	GameSetup    GameStatus = "setup"
-	GameDraft    GameStatus = "draft"
-	GameActive   GameStatus = "active"
-	GamePaused   GameStatus = "paused"
-	GameFinished GameStatus = "finished"
+	GameSetup     GameStatus = "setup"
+	GameDraft     GameStatus = "draft"
+	GameStarting  GameStatus = "starting"
+	GameActive    GameStatus = "active"
+	GamePaused    GameStatus = "paused"
+	GameFinishing GameStatus = "finishing"
+	GameFinished  GameStatus = "finished"
 )
 
 // GameSettings — необязательные настройки мира в `games.settings` (jsonb).

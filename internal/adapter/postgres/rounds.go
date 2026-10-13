@@ -117,9 +117,10 @@ func (s *Store) DeleteGameProgress(ctx context.Context, game model.GameID) error
 	return nil
 }
 
-// DueGameIDs возвращает активные игры, у которых наступило время планировщика.
+// DueGameIDs возвращает игры, у которых наступило время планировщика: `active` (раунды), `starting` и `finishing`
+// (старт и завершение кампании, ADR-0024).
 func (s *Store) DueGameIDs(ctx context.Context, now time.Time) ([]model.GameID, error) {
-	rows, err := s.db(ctx).Query(ctx, `SELECT id FROM games WHERE status = 'active' AND next_round_at IS NOT NULL AND next_round_at <= $1 ORDER BY next_round_at`, now)
+	rows, err := s.db(ctx).Query(ctx, `SELECT id FROM games WHERE status IN ('active', 'starting', 'finishing') AND next_round_at IS NOT NULL AND next_round_at <= $1 ORDER BY next_round_at`, now)
 	if err != nil {
 		return nil, fmt.Errorf("postgres.DueGameIDs: %w", err)
 	}

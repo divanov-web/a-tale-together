@@ -101,6 +101,8 @@ type Journal interface {
 var (
 	ErrForbidden      = errors.New("нет прав: действие доступно администратору игры, владельцу или модератору чата")
 	ErrAlreadyStarted = errors.New("игра уже запущена")
+	ErrStarting       = errors.New("кампания уже запускается: стартовая сцена скоро придёт в группу")
+	ErrFinishing      = errors.New("игра завершается: последний раунд и финальная хроника скоро придут в группу")
 	ErrSetup          = errors.New("мир ещё не настроен: администратор завершает настройку в личке (/set)")
 	ErrNotActive      = errors.New("игра не запущена")
 	ErrPaused         = errors.New("игра на паузе")
@@ -147,10 +149,10 @@ func New(store Store, rights Rights, clock Clock, logger *slog.Logger) *Service 
 	return &Service{store: store, rights: rights, clock: clock, logger: logger, seed: rand.Int64, MaxAttempts: model.MaxRoundAttempts}
 }
 
-// Begin запускает кампанию: статус `active`, завязка истории и стартовый пакет мира от рассказчика (`opening.go`,
-// ADR-0018, ADR-0019; при сбое — стартовая сцена шаблона жанра и соседи «неизведанные земли») в outbox и у игры,
-// первый раунд (сразу внутри игрового окна, иначе в его начале).
-// Нужен хотя бы один персонаж. Вызов модели идёт внутри транзакции под блокировкой игры, как и в раунде.
+// Begin принимает запуск кампании (ADR-0024): короткая транзакция под блокировкой игры — проверка статуса и наличия
+// персонажей, статус `starting`, `next_round_at = now`. Сам старт (`start`: завязка и стартовый пакет мира от
+// рассказчика, сцена в outbox, первый раунд) делает ближайший тик планировщика, поэтому ответ на команду не ждёт модели,
+// а перезапуск бота старт не теряет.
 func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID) (model.Game, error) {
 	if err := s.canAdmin(ctx, game, actor); err != nil {
 		return model.Game{}, err
@@ -179,44 +181,10 @@ func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID
 		if len(chars) == 0 {
 			return ErrNoCharacters
 		}
-		genre, err := s.store.GetGenre(ctx, g.GenreID)
-		if err != nil {
+		g.Status = model.GameStarting
+		g.NextRoundAt = &now
+		if err := s.store.UpdateGame(ctx, g); err != nil {
 			return err
-		}
-		factions, err := s.store.ListFactions(ctx, g.ID)
-		if err != nil {
-			return err
-		}
-		chat, err := s.store.GetChat(ctx, g.ChatID)
-		if err != nil {
-			return err
-		}
-		if err := s.ensureDefaultParty(ctx, g, season.ID, chars, genre); err != nil {
-			return err
-		}
-		locs, err := s.store.ListLocations(ctx, g.ID)
-		if err != nil {
-			return err
-		}
-		if g.OpeningScene, err = s.opening(ctx, g, chat, genre, factions, chars, locs); err != nil {
-			return err
-		}
-		g.Status = model.GameActive
-		g.SkippedStreak = 0
-		if err := s.enqueue(ctx, g, chat, nil, model.OutboxScene, openingScene(g, g.OpeningScene)); err != nil {
-			return err
-		}
-		opened, err := s.openNext(ctx, &g, chat, now, false)
-		if err != nil {
-			return err
-		}
-		if !opened && g.NextRoundAt != nil {
-			if err := s.enqueue(ctx, g, chat, nil, model.OutboxSystem, firstRoundLaterText(g, *g.NextRoundAt, now)); err != nil {
-				return err
-			}
-			if err := s.notifyStartLater(ctx, g, chars, *g.NextRoundAt); err != nil {
-				return err
-			}
 		}
 		out = g
 		return nil
@@ -224,8 +192,64 @@ func (s *Service) Begin(ctx context.Context, game model.Game, actor model.UserID
 	if err != nil {
 		return model.Game{}, wrap("round.Begin", err)
 	}
-	s.logger.Info("game started", slog.Int64("game_id", int64(out.ID)))
+	s.logger.Info("game starting", slog.Int64("game_id", int64(out.ID)))
 	return out, nil
+}
+
+// start запускает кампанию из `starting` в транзакции тика (ADR-0024): группа по умолчанию, завязка истории и
+// стартовый пакет мира от рассказчика (`opening.go`, ADR-0018, ADR-0019; при сбое — стартовая сцена шаблона жанра и
+// соседи «неизведанные земли») в outbox и у игры, статус `active`, первый раунд (сразу внутри игрового окна, иначе в
+// его начале). Откат повторяется следующим тиком; ответ модели сохранён по ключу задания, второй сцены не будет.
+func (s *Service) start(ctx context.Context, g *model.Game, now time.Time) error {
+	season, err := s.store.ActiveSeason(ctx, g.ID)
+	if err != nil {
+		return err
+	}
+	chars, err := s.store.ListCharacters(ctx, g.ID, season.ID)
+	if err != nil {
+		return err
+	}
+	genre, err := s.store.GetGenre(ctx, g.GenreID)
+	if err != nil {
+		return err
+	}
+	factions, err := s.store.ListFactions(ctx, g.ID)
+	if err != nil {
+		return err
+	}
+	chat, err := s.store.GetChat(ctx, g.ChatID)
+	if err != nil {
+		return err
+	}
+	if err := s.ensureDefaultParty(ctx, *g, season.ID, chars, genre); err != nil {
+		return err
+	}
+	locs, err := s.store.ListLocations(ctx, g.ID)
+	if err != nil {
+		return err
+	}
+	if g.OpeningScene, err = s.opening(ctx, *g, chat, genre, factions, chars, locs); err != nil {
+		return err
+	}
+	g.Status = model.GameActive
+	g.SkippedStreak = 0
+	if err := s.enqueue(ctx, *g, chat, nil, model.OutboxScene, openingScene(*g, g.OpeningScene)); err != nil {
+		return err
+	}
+	opened, err := s.openNext(ctx, g, chat, now, false)
+	if err != nil {
+		return err
+	}
+	if !opened && g.NextRoundAt != nil {
+		if err := s.enqueue(ctx, *g, chat, nil, model.OutboxSystem, firstRoundLaterText(*g, *g.NextRoundAt, now)); err != nil {
+			return err
+		}
+		if err := s.notifyStartLater(ctx, *g, chars, *g.NextRoundAt); err != nil {
+			return err
+		}
+	}
+	s.logger.Info("game started", slog.Int64("game_id", int64(g.ID)))
+	return nil
 }
 
 // Pause переключает паузу: `active` → `paused` (раунды не открываются, открытый раунд ждёт),
@@ -422,7 +446,8 @@ func (s *Service) Info(ctx context.Context, game model.Game) (Info, error) {
 	return info, nil
 }
 
-// Tick — шаг планировщика: закрыть раунды с истёкшим дедлайном и открыть следующие у игр, чьё `next_round_at` наступило.
+// Tick — шаг планировщика: закрыть раунды с истёкшим дедлайном и открыть следующие у игр, чьё `next_round_at` наступило;
+// запустить игры `starting` и завершить `finishing` (ADR-0024).
 // Каждая игра в своей транзакции под блокировкой строки; ошибка или паника одной игры не останавливает остальные.
 // Откат транзакции закрытия считается неудачной попыткой раунда (ADR-0013): после MaxAttempts раунд получает `failed`,
 // заявки переносятся в следующий.
@@ -459,10 +484,18 @@ func (s *Service) tickGame(ctx context.Context, id model.GameID, now time.Time) 
 		if err != nil {
 			return err
 		}
-		if g.Status != model.GameActive || g.NextRoundAt == nil || g.NextRoundAt.After(now) {
+		if g.NextRoundAt == nil || g.NextRoundAt.After(now) {
 			return nil
 		}
-		return s.advance(ctx, &g, now, false)
+		switch g.Status {
+		case model.GameStarting:
+			return s.start(ctx, &g, now)
+		case model.GameFinishing:
+			return s.finishNow(ctx, &g, now)
+		case model.GameActive:
+			return s.advance(ctx, &g, now, false)
+		}
+		return nil
 	})
 }
 
@@ -508,6 +541,10 @@ func (s *Service) noteFailure(ctx context.Context, id model.GameID, now time.Tim
 			return err
 		}
 		g.SkippedStreak = 0
+		if g.Status == model.GameFinishing {
+			// Завершение игры (ADR-0024): после неудачных попыток последний раунд остаётся `failed`, новый не открывается.
+			return s.finish(ctx, &g, chat, now, open.RoundNo, "игру завершил администратор")
+		}
 		return s.afterClose(ctx, &g, chat, open.RoundNo, false)
 	})
 }
@@ -924,10 +961,8 @@ func beginable(st model.GameStatus) error {
 	switch st {
 	case model.GameDraft:
 		return nil
-	case model.GameSetup:
-		return ErrSetup
-	case model.GameFinished:
-		return ErrFinished
+	case model.GameSetup, model.GameStarting, model.GameFinishing, model.GameFinished:
+		return statusError(st)
 	}
 	return ErrAlreadyStarted
 }
@@ -936,8 +971,12 @@ func statusError(st model.GameStatus) error {
 	switch st {
 	case model.GameSetup:
 		return ErrSetup
+	case model.GameStarting:
+		return ErrStarting
 	case model.GamePaused:
 		return ErrPaused
+	case model.GameFinishing:
+		return ErrFinishing
 	case model.GameFinished:
 		return ErrFinished
 	}
@@ -946,7 +985,7 @@ func statusError(st model.GameStatus) error {
 
 // wrap добавляет префикс только к неожиданным ошибкам; ошибки сценария возвращаются как есть.
 func wrap(op string, err error) error {
-	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrSetup, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound, ErrAlreadyActed, ErrNoRound, ErrNotResolved} {
+	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrStarting, ErrFinishing, ErrSetup, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound, ErrAlreadyActed, ErrNoRound, ErrNotResolved} {
 		if errors.Is(err, ue) {
 			return err
 		}

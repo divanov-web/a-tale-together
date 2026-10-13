@@ -25,10 +25,7 @@ func TestBegin_Opening(t *testing.T) {
 	text := "Над Миром висит туман. Элис, Боб и Кэт стоят на Рыночной площади, и толпа у башни растёт с каждой минутой: кто-то видел свет в её окнах."
 	llm := &fakeLLM{opening: fmt.Sprintf(`{"text":%q}`, text)}
 	w.svc.LLM = llm
-	g, err := w.svc.Begin(ctx, w.game, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	g := w.begin(t)
 	calls := llm.byRole(model.RoleOpening)
 	if len(calls) != 1 || calls[0].Round != nil || calls[0].Game == nil || calls[0].PromptVersion != narrator.OpeningPromptVersion {
 		t.Fatalf("opening calls = %+v", calls)
@@ -65,13 +62,9 @@ func TestBegin_Opening(t *testing.T) {
 func TestBegin_OpeningFallback(t *testing.T) {
 	t.Parallel()
 	w := towerWorld(t)
-	ctx := context.Background()
 	llm := &fakeLLM{}
 	w.svc.LLM = llm
-	g, err := w.svc.Begin(ctx, w.game, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	g := w.begin(t)
 	if len(llm.byRole(model.RoleOpening)) != 1 || g.OpeningScene != "В Мир наступает осень." {
 		t.Fatalf("fallback opening = %q, calls %+v", g.OpeningScene, llm.calls)
 	}

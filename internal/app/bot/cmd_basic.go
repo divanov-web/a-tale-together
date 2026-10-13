@@ -156,10 +156,14 @@ func statusTitle(st model.GameStatus) string {
 		return "настройка"
 	case model.GameDraft:
 		return "черновик"
+	case model.GameStarting:
+		return "запускается"
 	case model.GameActive:
 		return "идёт"
 	case model.GamePaused:
 		return "пауза"
+	case model.GameFinishing:
+		return "завершается"
 	case model.GameFinished:
 		return "завершена"
 	}

@@ -11,9 +11,9 @@ import (
 	"taletogether/internal/service/rules"
 )
 
-// Finish завершает игру по команде администратора (`/finish`): открытый раунд закрывается сейчас и разрешается,
-// если есть хотя бы одна заявка (кворум не применяется: последний шанс), затем финальная хроника и статус `finished`.
-// Планировщик завершённую игру не берёт. Границы рассказа (`max_rounds`, `ends_at`) ведут сюда же из планировщика.
+// Finish принимает завершение игры по команде администратора (`/finish`, ADR-0024): короткая транзакция — статус
+// `finishing`, `next_round_at = now`; открытый раунд получает дедлайн «сейчас». Само завершение (`finishNow`:
+// разрешение последнего раунда, финальная хроника, статус `finished`) делает ближайший тик планировщика.
 func (s *Service) Finish(ctx context.Context, game model.Game, actor model.UserID) (model.Game, error) {
 	if err := s.canAdmin(ctx, game, actor); err != nil {
 		return model.Game{}, err
@@ -30,32 +30,18 @@ func (s *Service) Finish(ctx context.Context, game model.Game, actor model.UserI
 		default:
 			return statusError(g.Status)
 		}
-		chat, err := s.store.GetChat(ctx, g.ChatID)
-		if err != nil {
-			return err
-		}
-		closed := 0
 		open, err := s.store.OpenRound(ctx, g.ID)
-		switch {
-		case err == nil:
+		if err == nil {
 			open.DeadlineAt = now
 			if err := s.store.UpdateRound(ctx, open); err != nil {
 				return err
 			}
-			if _, err := s.close(ctx, g, chat, open, now, 1); err != nil {
-				return err
-			}
-			closed = open.RoundNo
-		case errors.Is(err, model.ErrNotFound):
-			last, err := s.store.LastRound(ctx, g.ID)
-			if err != nil && !errors.Is(err, model.ErrNotFound) {
-				return err
-			}
-			closed = last.RoundNo
-		default:
+		} else if !errors.Is(err, model.ErrNotFound) {
 			return err
 		}
-		if err := s.finish(ctx, &g, chat, s.clock.Now(), closed, "игру завершил администратор"); err != nil {
+		g.Status = model.GameFinishing
+		g.NextRoundAt = &now
+		if err := s.store.UpdateGame(ctx, g); err != nil {
 			return err
 		}
 		out = g
@@ -64,7 +50,42 @@ func (s *Service) Finish(ctx context.Context, game model.Game, actor model.UserI
 	if err != nil {
 		return model.Game{}, wrap("round.Finish", err)
 	}
+	s.logger.Info("game finishing", slog.Int64("game_id", int64(out.ID)))
 	return out, nil
+}
+
+// finishNow завершает игру из `finishing` в транзакции тика (ADR-0024): открытый раунд закрывается и разрешается, если
+// есть хотя бы одна заявка (кворум не применяется: последний шанс), затем финальная хроника и статус `finished`.
+// Планировщик завершённую игру не берёт. Границы рассказа (`max_rounds`, `ends_at`) ведут в `finish` из `afterClose`.
+func (s *Service) finishNow(ctx context.Context, g *model.Game, now time.Time) error {
+	chat, err := s.store.GetChat(ctx, g.ChatID)
+	if err != nil {
+		return err
+	}
+	closed := 0
+	open, err := s.store.OpenRound(ctx, g.ID)
+	switch {
+	case err == nil:
+		if open.DeadlineAt.After(now) {
+			open.DeadlineAt = now
+			if err := s.store.UpdateRound(ctx, open); err != nil {
+				return err
+			}
+		}
+		if _, err := s.close(ctx, *g, chat, open, now, 1); err != nil {
+			return err
+		}
+		closed = open.RoundNo
+	case errors.Is(err, model.ErrNotFound):
+		last, err := s.store.LastRound(ctx, g.ID)
+		if err != nil && !errors.Is(err, model.ErrNotFound) {
+			return err
+		}
+		closed = last.RoundNo
+	default:
+		return err
+	}
+	return s.finish(ctx, g, chat, s.clock.Now(), closed, "игру завершил администратор")
 }
 
 // finish переводит игру в `finished`, снимает таймер планировщика и ставит в outbox финальную хронику:

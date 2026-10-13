@@ -21,9 +21,11 @@ func (s *Service) Welcome(ctx context.Context, g model.Game, c model.Character) 
 	switch g.Status {
 	case model.GameSetup, model.GameDraft:
 		return "Администратор ещё не начал историю. Бот напишет сюда, когда она начнётся.", nil, nil
+	case model.GameStarting:
+		return "История вот-вот начнётся: стартовая сцена придёт в группу, а сюда — варианты первого раунда.", nil, nil
 	case model.GamePaused:
 		return "Игра на паузе. Бот напишет сюда, когда администратор её возобновит.", nil, nil
-	case model.GameFinished:
+	case model.GameFinishing, model.GameFinished:
 		return "Игра завершена.", nil, nil
 	}
 	now := s.clock.Now()

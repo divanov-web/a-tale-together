@@ -19,9 +19,7 @@ func TestTick_PauseAfterSkippedRounds(t *testing.T) {
 	ctx := context.Background()
 	j := &fakeJournal{}
 	w.svc.Journal = j
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	w.tick(t, 10*time.Minute) // раунд 1 пропущен, раунд 2 открыт
 	w.tick(t, 10*time.Minute) // раунд 2 пропущен, раунд 3 открыт

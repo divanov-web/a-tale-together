@@ -357,7 +357,7 @@ var userErrors = []error{
 	chat.ErrForbidden, chat.ErrUnknown,
 	game.ErrForbidden, game.ErrGameExists, game.ErrNoGame, game.ErrGameFinished, game.ErrNotMember,
 	game.ErrHasCharacter, game.ErrNoCharacter, game.ErrNicknameTaken, game.ErrChooseGame, game.ErrBadValue, game.ErrGameSetup,
-	round.ErrForbidden, round.ErrAlreadyStarted, round.ErrSetup, round.ErrNotActive, round.ErrPaused, round.ErrFinished, round.ErrNoCharacters,
+	round.ErrForbidden, round.ErrAlreadyStarted, round.ErrStarting, round.ErrFinishing, round.ErrSetup, round.ErrNotActive, round.ErrPaused, round.ErrFinished, round.ErrNoCharacters,
 	round.ErrNoOpenRound, round.ErrEmpty, round.ErrTooLong, round.ErrTooFrequent, round.ErrAlreadyActed, round.ErrDead, round.ErrNoRound, round.ErrNotResolved,
 	round.ErrRoundClosed, round.ErrOptionGone,
 	applm.ErrNoProfile, applm.ErrUnknownProfile, applm.ErrUnknownProvider, applm.ErrProfileExists, applm.ErrBadValue, applm.ErrNoGame, errNotOwner,

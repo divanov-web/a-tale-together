@@ -36,9 +36,7 @@ func TestBegin_QuestStart(t *testing.T) {
 	ctx := context.Background()
 	start := w.locations(t)[0]
 	w.svc.LLM = &worldLLM{opening: fmt.Sprintf(startPackageJSON, start.ID)}
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	factions := w.factions(t)
 	goals, _ := w.store.ListFactionGoals(ctx, w.game.ID)
 	if len(goals) != 2 || goals[0].FactionID != factions[0].ID || goals[0].Version != 1 || goals[0].Text != "Узнать, откуда дым, и защитить город." || goals[0].Stage != "тревога" || goals[1].Text != "Обернуть тревогу города себе на пользу." {
@@ -63,9 +61,7 @@ func TestBegin_QuestStart(t *testing.T) {
 
 	down := startWorld(t)
 	down.svc.LLM = &worldLLM{}
-	if _, err := down.svc.Begin(ctx, down.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	down.begin(t)
 	goals, _ = down.store.ListFactionGoals(ctx, down.game.ID)
 	quests = down.quests(t)
 	if len(goals) != 2 || goals[0].Text != "Найти пропавшего гонца и вернуть печать Ордена." || len(quests) != 2 || quests[0].Title != "След гонца" || len(quests[0].Stages) != 3 || quests[1].FactionID != goals[1].FactionID {
@@ -87,9 +83,7 @@ func TestScenario_S17_Lifecycle(t *testing.T) {
 	for _, c := range w.chars {
 		_ = w.store.MarkStarted(ctx, c.UserID) // личные уведомления приходят только открывшим бота
 	}
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	order := w.factions(t)[0]
 	alice := w.chars[0]
 	act := func(text string) {

@@ -123,6 +123,10 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 		next = "мир настраивается администратором; создание персонажей откроется после настройки"
 	case model.GameDraft:
 		next = "игра не запущена: набор игроков; старт — /begin в группе"
+	case model.GameStarting:
+		next = "кампания запускается: стартовая сцена и первый раунд скоро в группе"
+	case model.GameFinishing:
+		next = "игра завершается: последний раунд и финальная хроника скоро в группе"
 	}
 	type partyRow struct {
 		Name, Location, Members string

@@ -47,9 +47,13 @@ func (s *Service) Parties(ctx context.Context, game model.Game) ([]PartyInfo, er
 // assignParty определяет группу нового персонажа в идущей игре (ADR-0017: группа обязательна, команд игрока нет):
 // группа его стартовой локации, иначе новая группа в пределах `max_parties` с ним как лидером, иначе ближайшая по
 // выходам группа — персонаж входит в историю в её локации. Группы без присутствующих распускаются, освобождая место.
-// В черновике группы собираются при `/begin`.
+// До старта (`setup`, `draft`, `starting`) группы собираются при запуске кампании.
 func (s *Service) assignParty(ctx context.Context, game model.Game, genre model.Genre, c *model.Character) error {
-	if game.Status == model.GameDraft || c.LocationID == nil {
+	switch game.Status {
+	case model.GameSetup, model.GameDraft, model.GameStarting:
+		return nil
+	}
+	if c.LocationID == nil {
 		return nil
 	}
 	parties, err := s.store.ListParties(ctx, game.ID, c.SeasonID)

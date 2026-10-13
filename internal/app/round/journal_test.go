@@ -31,9 +31,7 @@ func TestJournal_RoundEvents(t *testing.T) {
 	w.svc.LLM = llm
 	j := &fakeJournal{}
 	w.svc.Journal = j
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	_, sub, err := w.svc.Submit(ctx, w.game, w.chars[0], "иду к башне")
 	if err != nil {

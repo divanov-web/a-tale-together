@@ -373,7 +373,7 @@ func (s *Service) Join(ctx context.Context, user model.User, code string) (model
 	if err != nil {
 		return model.Game{}, err
 	}
-	if game.Status == model.GameFinished {
+	if game.Status == model.GameFinished || game.Status == model.GameFinishing {
 		return model.Game{}, ErrGameFinished
 	}
 	if _, err := s.store.GetMember(ctx, game.ID, user.ID); err == nil {

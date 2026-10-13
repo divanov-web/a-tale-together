@@ -35,9 +35,7 @@ func TestNotifyOpen_PersonalOptions(t *testing.T) {
 		u, _ := w.store.GetUser(ctx, c.UserID)
 		return u.PrivateChat()
 	}
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	r1, _ := w.store.OpenRound(ctx, w.game.ID)
 	opens := byKind(model.OutboxPrivateOpen, r1.ID)

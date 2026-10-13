@@ -82,7 +82,7 @@ func ValidateBio(text string) error {
 // HP по формуле, стартовый инвентарь архетипа из каталога жанра; персонаж и характеристики в одной транзакции.
 func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user model.User, d model.CharacterDraft) (model.Character, error) {
 	switch game.Status {
-	case model.GameFinished:
+	case model.GameFinished, model.GameFinishing:
 		return model.Character{}, ErrGameFinished
 	case model.GameSetup:
 		return model.Character{}, ErrGameSetup // мир ещё настраивается (ADR-0023)

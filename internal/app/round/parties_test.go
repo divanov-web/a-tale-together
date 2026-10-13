@@ -38,9 +38,7 @@ func TestBegin_DefaultParty(t *testing.T) {
 	t.Parallel()
 	w := towerWorld(t)
 	ctx := context.Background()
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	parties, chars := partiesOf(t, w)
 	if len(parties) != 1 || parties[0].Name != "Ночной дозор" || parties[0].LeaderCharacterID == nil || *parties[0].LeaderCharacterID != w.chars[0].ID || parties[0].LocationID == nil {
 		t.Fatalf("default party = %+v", parties)
@@ -58,9 +56,7 @@ func TestBegin_DefaultParty(t *testing.T) {
 		t.Fatalf("after reset: parties %+v, alice %+v", parties, chars["Элис"])
 	}
 	w.reload(t)
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	if parties, _ := partiesOf(t, w); len(parties) != 1 {
 		t.Fatalf("after second begin: %+v", parties)
 	}
@@ -73,9 +69,7 @@ func TestRound_PartySplitAndLeader(t *testing.T) {
 	t.Parallel()
 	w := towerWorld(t)
 	ctx := context.Background()
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "идти к башне"); err != nil {
 		t.Fatal(err)
@@ -125,9 +119,7 @@ func TestRound_PartyHeld(t *testing.T) {
 	if err := w.store.MarkStarted(ctx, w.chars[1].UserID); err != nil { // личка Боба открыта: уведомление о заявке придёт
 		t.Fatal(err)
 	}
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "идти к башне"); err != nil {
 		t.Fatal(err)

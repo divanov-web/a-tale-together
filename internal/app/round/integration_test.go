@@ -104,6 +104,18 @@ func newPGWorld(t *testing.T) *pgWorld {
 	return w
 }
 
+// begin — запуск кампании на Postgres (ADR-0024): Begin и тик планировщика на том же времени.
+func (w *pgWorld) begin(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.svc.Tick(ctx, w.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (w *pgWorld) chronicles(t *testing.T) int {
 	t.Helper()
 	msgs, err := w.store.ListOutbox(context.Background(), w.game.ID)
@@ -143,9 +155,7 @@ func (s *shutdownLLM) Complete(ctx context.Context, call applm.Call, req model.L
 func TestIntegration_RestartMidRound(t *testing.T) {
 	w := newPGWorld(t)
 	ctx := context.Background()
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	g, _ := w.store.GetGame(ctx, w.game.ID)
 	r1, _, err := w.svc.Submit(ctx, g, w.char, "идти к башне")
 	if err != nil {
@@ -222,9 +232,7 @@ func (b *blockingLLM) Complete(ctx context.Context, call applm.Call, req model.L
 func TestIntegration_NoOverlap(t *testing.T) {
 	w := newPGWorld(t)
 	ctx := context.Background()
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	g, _ := w.store.GetGame(ctx, w.game.ID)
 	if _, _, err := w.svc.Submit(ctx, g, w.char, "ждать"); err != nil {
 		t.Fatal(err)

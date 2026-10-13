@@ -27,8 +27,9 @@ func confirmKeyboard(command, action string) model.Keyboard {
 	}}
 }
 
-// gameBegin — /begin в группе: без аргумента спрашивает подтверждение кнопками, `/begin yes` запускает кампанию
-// (стартовая сцена и первый раунд через outbox); права проверяет сценарий при выполнении, то есть у нажавшего.
+// gameBegin — /begin в группе: без аргумента спрашивает подтверждение кнопками, `/begin yes` принимает запуск
+// кампании: статус `starting`, стартовую сцену и первый раунд делает тик планировщика через outbox (ADR-0024), ответ
+// не ждёт модели; права проверяет сценарий при выполнении, то есть у нажавшего.
 func (s *Service) gameBegin(ctx context.Context, req *request) error {
 	g, err := s.games.OfChat(ctx, req.chat.ID)
 	if err != nil {
@@ -45,7 +46,7 @@ func (s *Service) gameBegin(ctx context.Context, req *request) error {
 	if err != nil {
 		return err
 	}
-	return s.reply(ctx, req.in, fmt.Sprintf("Игра «%s» запущена.", g.Title))
+	return s.reply(ctx, req.in, fmt.Sprintf("Запускаю кампанию «%s»: стартовая сцена придёт в группу через минуту-две, затем откроется первый раунд.", g.Title))
 }
 
 // gamePause — /pause в группе: пауза или возобновление; ответ о паузе несёт кнопку «Возобновить» (ADR-0015).
@@ -65,8 +66,8 @@ func (s *Service) gamePause(ctx context.Context, req *request) error {
 	return s.reply(ctx, req.in, fmt.Sprintf("Игра «%s» возобновлена.", g.Title))
 }
 
-// gameFinish — /finish в группе: без аргумента спрашивает подтверждение кнопками, `/finish yes` завершает игру:
-// открытый раунд закрывается и разрешается при наличии заявок, затем финальная хроника.
+// gameFinish — /finish в группе: без аргумента спрашивает подтверждение кнопками, `/finish yes` принимает завершение:
+// статус `finishing`, открытый раунд разрешает и финальную хронику ставит тик планировщика (ADR-0024).
 func (s *Service) gameFinish(ctx context.Context, req *request) error {
 	g, err := s.games.OfChat(ctx, req.chat.ID)
 	if err != nil {
@@ -82,7 +83,7 @@ func (s *Service) gameFinish(ctx context.Context, req *request) error {
 	if g, err = s.rounds.Finish(ctx, g, req.user.ID); err != nil {
 		return err
 	}
-	return s.reply(ctx, req.in, fmt.Sprintf("Игра «%s» завершена. Финальная хроника отправлена в группу.", g.Title))
+	return s.reply(ctx, req.in, fmt.Sprintf("Завершаю игру «%s»: открытый раунд разыгрывается, финальная хроника придёт в группу через минуту-две.", g.Title))
 }
 
 // gameReset — /reset в группе (только dev): игра в черновик, ход игры удалён, персонажи на старте.
@@ -292,7 +293,7 @@ func (s *Service) implicitAct(ctx context.Context, req *request) error {
 func (s *Service) roundLines(ctx context.Context, g model.Game) (current, last, next string, err error) {
 	now := s.clock.Now()
 	switch g.Status {
-	case model.GameSetup, model.GameDraft:
+	case model.GameSetup, model.GameDraft, model.GameStarting:
 		return "", "", "", nil
 	case model.GamePaused:
 		next = "игра на паузе; возобновить: /pause в группе"

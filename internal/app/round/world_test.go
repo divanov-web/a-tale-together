@@ -210,10 +210,7 @@ func TestBegin_StartPackage(t *testing.T) {
 	for _, c := range w.chars {
 		_ = w.store.MarkStarted(ctx, c.UserID)
 	}
-	g, err := w.svc.Begin(ctx, w.game, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	g := w.begin(t)
 	if !strings.HasPrefix(g.OpeningScene, "Над площадью туман") {
 		t.Fatalf("opening = %q", g.OpeningScene)
 	}
@@ -240,9 +237,7 @@ func TestBegin_StartPackage(t *testing.T) {
 
 	down := startWorld(t)
 	down.svc.LLM = &worldLLM{}
-	if _, err := down.svc.Begin(ctx, down.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	down.begin(t)
 	locs = down.locations(t)
 	if len(locs) != 5 || locs[0].Name != "Рыночная площадь" || len(locs[0].Objects) != 1 || locs[0].Objects[0].Key != "notice_board" {
 		t.Fatalf("start after fallback = %+v", locs[0])
@@ -263,9 +258,7 @@ func TestSixSteps_North(t *testing.T) {
 	start := w.locations(t)[0]
 	llm := &worldLLM{opening: fmt.Sprintf(startPackageJSON, start.ID)}
 	w.svc.LLM = llm
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	for step := 1; step <= 6; step++ {
 		w.reload(t)
 		for _, c := range w.chars {
@@ -369,9 +362,7 @@ func TestRound_RetryReusesGeneration(t *testing.T) {
 	w.svc.LLM = llm
 	j := &crashJournal{crashes: 1}
 	w.svc.Journal = j
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "идти north"); err != nil {
 		t.Fatal(err)
@@ -433,9 +424,7 @@ func TestSaveState_ByID(t *testing.T) {
 		}
 	}
 	w.svc.LLM = &worldLLM{}
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "дёрнуть рычаг"); err != nil {
 		t.Fatal(err)

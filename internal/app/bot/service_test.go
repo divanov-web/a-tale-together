@@ -236,6 +236,28 @@ func (h *harness) clearedLast(messageID int64) bool {
 	return n > 0 && h.tg.cleared[n-1] == messageID
 }
 
+// tick — шаг планировщика раундов на текущем времени теста (ADR-0024: старт и завершение кампании делает тик).
+func (h *harness) tick() {
+	h.t.Helper()
+	if err := h.rounds.Tick(context.Background(), h.clock.Now()); err != nil {
+		h.t.Fatalf("Tick: %v", err)
+	}
+}
+
+// begin — владелец подтверждает запуск кампании, тик планировщика публикует сцену и открывает первый раунд.
+func (h *harness) begin() {
+	h.t.Helper()
+	mustContain(h.t, h.send(owner, groupChat, "/begin yes"), "Запускаю кампанию")
+	h.tick()
+}
+
+// finish — владелец подтверждает завершение, тик планировщика разыгрывает последний раунд и ставит финальную хронику.
+func (h *harness) finish() {
+	h.t.Helper()
+	mustContain(h.t, h.send(owner, groupChat, "/finish yes"), "Завершаю игру")
+	h.tick()
+}
+
 // private — чат пользователя с ботом.
 func private(u model.TelegramUser) model.TelegramChatID { return model.TelegramChatID(u.ID) }
 
@@ -552,8 +574,8 @@ func TestReplyKeyboard_PlayerStatus(t *testing.T) {
 		}
 	}
 
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
-	mustContain(t, h.send(owner, groupChat, "/finish yes"), "завершена")
+	h.begin()
+	h.finish()
 	h.send(alice, private(alice), "Персонаж")
 	if rk := h.tg.lastReply(private(alice)); len(rk.Rows) != 0 {
 		t.Fatalf("keyboard after finish = %+v", rk)
@@ -810,7 +832,7 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/act иду в башню"), "Игра не запущена")
 	mustContain(t, h.send(alice, private(alice), "иду в башню"), "Я понимаю только команды") // B17: игра не идёт — текст не заявка
 
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "уже запущена")
 	texts := h.outboxTexts()
 	if len(texts) != 2 {
@@ -899,7 +921,7 @@ func TestRound_PauseAfterSkipped(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт. Игра на паузе после пропущенных подряд раундов, возобновить: /pause")
@@ -927,7 +949,7 @@ func TestRound_StatusTransitionsAndWindow(t *testing.T) {
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 
 	// Старт вне окна: первый раунд в начале окна.
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 	mustContain(t, h.outboxTexts()[1], "Первый раунд в 13:00")
 	mustContain(t, h.privateOutbox(private(alice), model.OutboxPrivateOpen), "история началась", "Первый раунд откроется в 13:00") // B23
 	mustContain(t, h.send(alice, groupChat, "/status"), "Следующий раунд: в 13:00 (игровое окно 13:00–14:00)")
@@ -1006,7 +1028,7 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Рыночная площадь", "Знания: /knowledge (пока нет)")
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята: раунд 1")
 	mustContain(t, h.send(bob, private(bob), "/act осмотреть доску"), "Заявка принята: раунд 1")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
@@ -1065,7 +1087,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, h.send(owner, groupChat, "/round"), "Раунда с таким номером нет")
 	mustContain(t, h.send(owner, groupChat, "/finish yes"), "Игра не запущена")
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята: раунд 1")
 	mustContain(t, h.send(owner, groupChat, "/round"), "Раунд 1 — open", "Заявок: 1; итогов: 0; событий: 0", "• Элис (pending): «идти к башне»")
 	mustContain(t, h.send(owner, groupChat, "/round x"), "Формат: /round")
@@ -1073,7 +1095,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	// Завершение с открытым раундом: одна заявка разрешается без кворума, финальная хроника в группе.
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
 	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
-	mustContain(t, h.send(owner, groupChat, "/finish yes"), "Игра «Песочница» завершена")
+	h.finish()
 	msgs, _ := h.store.ListOutbox(context.Background(), g.ID)
 	var texts []string
 	for _, m := range msgs {
@@ -1093,7 +1115,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
 	h.joinAndCreate(alice, code2, "1", "Элис", "ж", "1", "-", "-")
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Зал Серой башни")
@@ -1102,7 +1124,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/reset"), "сброшена в черновик")
 	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Рыночная площадь")
 	mustContain(t, h.send(alice, groupChat, "/status"), "черновик")
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 1")
 }
 
@@ -1204,7 +1226,7 @@ func TestButtons_ActOption(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
 	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
@@ -1281,7 +1303,10 @@ func TestButtons_ConfirmBeginFinishPause(t *testing.T) {
 		t.Fatal("keyboard not cleared after cancel")
 	}
 	mustContain(t, h.send(alice, groupChat, "/status"), "черновик")
-	mustContain(t, h.press(owner, groupChat, 51, "/begin yes"), "запущена")
+	mustContain(t, h.press(owner, groupChat, 51, "/begin yes"), "Запускаю кампанию «Песочница»")
+	mustContain(t, h.send(alice, groupChat, "/status"), "запускается", "кампания запускается")
+	mustContain(t, h.press(owner, groupChat, 51, "/begin yes"), "уже запускается")
+	h.tick()
 	mustContain(t, h.send(alice, groupChat, "/status"), "идёт")
 
 	mustContain(t, h.send(owner, groupChat, "/pause"), "на паузе")
@@ -1298,7 +1323,11 @@ func TestButtons_ConfirmBeginFinishPause(t *testing.T) {
 		t.Fatalf("finish keyboard = %v", got)
 	}
 	mustContain(t, h.press(owner, groupChat, 53, "/finish no"), "Завершение отменено")
-	mustContain(t, h.press(owner, groupChat, 54, "/finish yes"), "Игра «Песочница» завершена")
+	mustContain(t, h.press(owner, groupChat, 54, "/finish yes"), "Завершаю игру «Песочница»")
+	mustContain(t, h.send(alice, groupChat, "/status"), "завершается")
+	mustContain(t, h.send(owner, groupChat, "/pause"), "Игра завершается")
+	h.tick()
+	mustContain(t, h.send(alice, groupChat, "/status"), "Игры нет")
 }
 
 // TestButtons_HelpAndGames (ADR-0015): под /help кнопки-ссылки на руководство (без GuideURL их нет); /games с одной
@@ -1342,7 +1371,7 @@ func TestParty_Card(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/party create Искатели"), "Группы соберутся при старте игры") // команд управления нет: аргументы игнорируются
 	mustContain(t, h.send(bob, private(bob), "/character"), "Группа: нет (/party)")
 
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 	reply := h.send(bob, private(bob), "/party")
 	mustContain(t, reply, "Группа «Ночной дозор»", "Локация: Рыночная площадь", "Участники:\n• Элис — active\n• Боб — active", "Группы ведёт рассказчик")
 	if strings.Contains(strings.ToLower(reply), "лидер") || len(h.tg.lastKeyboard(private(bob))) != 0 {
@@ -1367,7 +1396,7 @@ func TestParty_NewcomerInRunningGame(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 	// Группа ушла в башню; Боб появляется на площади и получает свою группу.
@@ -1398,7 +1427,7 @@ func TestQuests_Card(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
 	mustContain(t, h.send(alice, private(alice), "/quests"), "Фракция «Орден Рассвета»", "Цель: ещё не определена", "Квестов пока нет")
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 	mustContain(t, h.send(alice, private(alice), "/quests"), "Цель: Найти пропавшего гонца и вернуть печать Ордена. (начало)", "«След гонца» (сюжетный)", "○ Найти след\n○ Выйти к укрытию\n○ Вернуть печать", "✓ — сделано")
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
@@ -1431,7 +1460,7 @@ func TestCharacter_WelcomeByGameStatus(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
-	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	h.begin()
 
 	card := h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, card, "Персонаж создан", "Идёт раунд 1, заявки до", "Завязка:", "Варианты хода (Рыночная площадь):\n• разобрать приписку", "Нажмите вариант или напишите действие своими словами.")

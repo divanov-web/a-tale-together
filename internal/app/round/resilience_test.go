@@ -40,9 +40,7 @@ func TestTick_CrashRollsBackAndRetries(t *testing.T) {
 	w.svc.LLM = llm
 	j := &fakeJournal{}
 	w.svc.Journal = j
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	r1, sub, err := w.svc.Submit(ctx, w.game, w.chars[0], "иду к башне")
 	if err != nil {
@@ -94,9 +92,7 @@ func TestTick_FailsAfterMaxAttempts(t *testing.T) {
 	ctx := context.Background()
 	llm := &crashLLM{crashes: 3}
 	w.svc.LLM = llm
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	r1, sub, err := w.svc.Submit(ctx, w.game, w.chars[0], "иду к башне")
 	if err != nil {
@@ -157,17 +153,30 @@ func TestFinish(t *testing.T) {
 	if _, err := w.svc.Finish(ctx, w.game, 1); !errors.Is(err, ErrNotActive) {
 		t.Fatalf("finish draft: %v", err)
 	}
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "идти к башне"); err != nil {
 		t.Fatal(err)
 	}
 	w.clock.t = w.clock.t.Add(3 * time.Minute)
 	g, err := w.svc.Finish(ctx, w.game, 1)
-	if err != nil || g.Status != model.GameFinished || g.NextRoundAt != nil {
+	if err != nil || g.Status != model.GameFinishing || g.NextRoundAt == nil || !g.NextRoundAt.Equal(w.clock.t) {
 		t.Fatalf("finish = %+v, %v", g, err)
+	}
+	// Пока игра завершается (ADR-0024): заявки, пауза и повторное завершение отвечают по статусу, в outbox ничего нового.
+	if _, _, err := w.svc.Submit(ctx, g, w.chars[1], "ждать"); !errors.Is(err, ErrFinishing) {
+		t.Fatalf("submit while finishing: %v", err)
+	}
+	if _, err := w.svc.Finish(ctx, g, 1); !errors.Is(err, ErrFinishing) {
+		t.Fatalf("second finish while finishing: %v", err)
+	}
+	before := len(w.outbox(t))
+	w.tick(t, 0)
+	if g = w.game; g.Status != model.GameFinished || g.NextRoundAt != nil {
+		t.Fatalf("game after finishing tick = %+v", g)
+	}
+	if len(w.outbox(t)) <= before {
+		t.Fatal("finishing tick produced no messages")
 	}
 	r1, _ := w.store.RoundByNo(ctx, g.ID, 1)
 	if r1.Status != model.RoundPublished || r1.ClosedAt == nil || !r1.ClosedAt.Equal(w.clock.t) {
@@ -213,9 +222,7 @@ func TestBoundary_MaxRounds(t *testing.T) {
 	if err := w.store.UpdateGame(ctx, w.game); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	for i := 1; i <= 2; i++ {
 		if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "ждать"); err != nil {
@@ -245,9 +252,7 @@ func TestBoundary_EndsAt(t *testing.T) {
 	if err := w.store.UpdateGame(ctx, w.game); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	w.tick(t, 10*time.Minute) // раунд 1 пропущен, раунд 2 открыт (12:10)
 	w.tick(t, 10*time.Minute) // раунд 2 пропущен, раунд 3 открыт (12:20)
@@ -271,9 +276,7 @@ func TestReset(t *testing.T) {
 	ctx := context.Background()
 	llm := &fakeLLM{}
 	w.svc.LLM = llm
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	_, sub, err := w.svc.Submit(ctx, w.game, w.chars[0], "иду к башне")
 	if err != nil {
@@ -302,8 +305,9 @@ func TestReset(t *testing.T) {
 	if back.LocationID == nil || *back.LocationID != *w.chars[0].LocationID || back.HP != 6 || back.Status != model.CharacterActive || len(back.Knowledge) != 0 {
 		t.Fatalf("character after reset = %+v", back)
 	}
-	if g, err = w.svc.Begin(ctx, g, 1); err != nil || g.Status != model.GameActive {
-		t.Fatalf("begin after reset = %+v, %v", g, err)
+	w.game = g
+	if g = w.begin(t); g.Status != model.GameActive {
+		t.Fatalf("begin after reset = %+v", g)
 	}
 	if open, err := w.store.OpenRound(ctx, g.ID); err != nil || open.RoundNo != 1 {
 		t.Fatalf("round after reset = %+v, %v", open, err)
@@ -318,9 +322,7 @@ func TestDetail(t *testing.T) {
 	if _, err := w.svc.Detail(ctx, w.game, 0); !errors.Is(err, ErrNoRound) {
 		t.Fatalf("detail without rounds: %v", err)
 	}
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[1], "ждать"); err != nil {
 		t.Fatal(err)

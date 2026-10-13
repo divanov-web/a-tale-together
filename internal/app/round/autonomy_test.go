@@ -148,9 +148,8 @@ func TestTenRounds_Autonomous(t *testing.T) {
 		9:  {"", "идти дальше", "", "", ""},
 		10: {"ждать", "", "", "", "идти дальше"},
 	}
-	if _, err := w.svc.Begin(ctx, g, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.game = g
+	w.begin(t)
 	ticks, failedTicks := 0, 0
 	submitted := map[int]bool{}
 	for step := 0; step < 80; step++ {

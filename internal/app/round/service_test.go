@@ -76,6 +76,21 @@ func (w *world) reload(t *testing.T) model.Game {
 	return g
 }
 
+// begin — запуск кампании (ADR-0024): Begin переводит игру в `starting`, тик планировщика на том же времени делает
+// старт; возвращает игру после старта.
+func (w *world) begin(t *testing.T) model.Game {
+	t.Helper()
+	g, err := w.svc.Begin(context.Background(), w.game, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Status != model.GameStarting || g.NextRoundAt == nil || !g.NextRoundAt.Equal(w.clock.t) {
+		t.Fatalf("game after Begin = %+v", g)
+	}
+	w.tick(t, 0)
+	return w.game
+}
+
 func (w *world) tick(t *testing.T, d time.Duration) {
 	t.Helper()
 	w.clock.t = w.clock.t.Add(d)
@@ -98,10 +113,7 @@ func TestBegin_OpensFirstRoundAndScene(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t, model.DefaultGameSettings())
 	ctx := context.Background()
-	g, err := w.svc.Begin(ctx, w.game, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	g := w.begin(t)
 	if g.Status != model.GameActive || g.NextRoundAt == nil || !g.NextRoundAt.Equal(w.clock.t.Add(10*time.Minute)) {
 		t.Fatalf("game after begin = %+v", g)
 	}
@@ -118,6 +130,38 @@ func TestBegin_OpensFirstRoundAndScene(t *testing.T) {
 	}
 	if _, err := w.svc.Begin(ctx, g, 1); !errors.Is(err, ErrAlreadyStarted) {
 		t.Fatalf("second begin: %v", err)
+	}
+}
+
+// TestBegin_StartingIsAsync (ADR-0024): после Begin игра в `starting` без сцены и раунда; повторный Begin, пауза и
+// заявка отвечают «уже запускается»; тик делает старт один раз, следующий тик ничего не добавляет.
+func TestBegin_StartingIsAsync(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t, model.DefaultGameSettings())
+	ctx := context.Background()
+	g, err := w.svc.Begin(ctx, w.game, 1)
+	if err != nil || g.Status != model.GameStarting {
+		t.Fatalf("begin = %+v, %v", g, err)
+	}
+	if msgs := w.outbox(t); len(msgs) != 0 {
+		t.Fatalf("outbox before tick = %+v", msgs)
+	}
+	if _, err := w.svc.Begin(ctx, g, 1); !errors.Is(err, ErrStarting) {
+		t.Fatalf("second begin: %v", err)
+	}
+	if _, _, err := w.svc.Pause(ctx, g, 1); !errors.Is(err, ErrStarting) {
+		t.Fatalf("pause while starting: %v", err)
+	}
+	if _, _, err := w.svc.Submit(ctx, g, w.chars[0], "ждать"); !errors.Is(err, ErrStarting) {
+		t.Fatalf("submit while starting: %v", err)
+	}
+	w.tick(t, 0)
+	if w.game.Status != model.GameActive {
+		t.Fatalf("game after tick = %+v", w.game)
+	}
+	w.tick(t, time.Second)
+	if msgs := w.outbox(t); len(msgs) != 2 || msgs[0].Kind != model.OutboxScene || msgs[1].Kind != model.OutboxRoundOpen {
+		t.Fatalf("outbox after start = %+v", msgs)
 	}
 }
 
@@ -157,9 +201,7 @@ func TestTick_SkipWithoutQuorumAndCarrySubmissions(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t, model.DefaultGameSettings()) // кворум 2
 	ctx := context.Background()
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	r1, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "иду в башню")
 	if err != nil || r1.RoundNo != 1 {
@@ -216,9 +258,7 @@ func TestTick_FreezeSnapshotAndActivity(t *testing.T) {
 	s.MinRoundAnswers = 1
 	w := newWorld(t, s)
 	ctx := context.Background()
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	for i := 1; i <= 3; i++ {
 		if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "действую"); err != nil {
@@ -296,9 +336,7 @@ func TestSubmit_Validation(t *testing.T) {
 	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[0], "рано"); !errors.Is(err, ErrNotActive) {
 		t.Fatalf("draft: %v", err)
 	}
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	cases := []struct {
 		text string
@@ -352,9 +390,7 @@ func TestPause_And_Next(t *testing.T) {
 	if _, _, err := w.svc.Pause(ctx, w.game, 1); !errors.Is(err, ErrNotActive) {
 		t.Fatalf("pause draft: %v", err)
 	}
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	g, paused, err := w.svc.Pause(ctx, w.game, 1)
 	if err != nil || !paused || g.Status != model.GamePaused || g.NextRoundAt != nil {
@@ -438,9 +474,7 @@ func TestTick_LockedOrDbErrorIsReported(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t, model.DefaultGameSettings())
 	ctx := context.Background()
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.store.Err = errors.New("db down")
 	if err := w.svc.Tick(ctx, w.clock.t.Add(time.Hour)); err == nil {
 		t.Fatal("tick with broken store returned nil")
@@ -536,9 +570,7 @@ func TestResolve_Interpreter(t *testing.T) {
 	ctx := context.Background()
 	llm := &fakeLLM{}
 	w.svc.LLM = llm
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	_, sub1, err := w.svc.Submit(ctx, w.game, w.chars[0], "прислушиваюсь к толпе на площади")
 	if err != nil {
@@ -595,9 +627,7 @@ func TestResolve_Narrator(t *testing.T) {
 	ctx := context.Background()
 	llm := &fakeLLM{}
 	w.svc.LLM = llm
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	_, sub, err := w.svc.Submit(ctx, w.game, w.chars[0], "иду к башне")
 	if err != nil {
@@ -727,9 +757,7 @@ func TestFreeze_EntryMarks(t *testing.T) {
 	s.InactiveAfterRounds = 1
 	w := newWorld(t, s)
 	ctx := context.Background()
-	if _, err := w.svc.Begin(ctx, w.game, 1); err != nil {
-		t.Fatal(err)
-	}
+	w.begin(t)
 	w.reload(t)
 	if _, _, err := w.svc.Submit(ctx, w.game, w.chars[1], "осматриваюсь"); err != nil {
 		t.Fatal(err)
