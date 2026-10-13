@@ -390,9 +390,12 @@ func (h *harness) joinAndCreate(u model.TelegramUser, code string, answers ...st
 	return reply
 }
 
+// TestCharacter_CreateAutoAndManual: с флагом правил `manual_attributes` (B30) диалог спрашивает способ распределения
+// очков; автоматически — по архетипу, вручную — числа и пары навыков текстом.
 func TestCharacter_CreateAutoAndManual(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
+	h.svc.games.Defaults.ManualAttributes = true
 	code := h.createGame()
 
 	card := h.joinAndCreate(alice, code, "1", "Элис", "2", "воин", "1", "Высокая и шумная", "-")
@@ -425,7 +428,7 @@ func TestReplyKeyboard_PlayerStatus(t *testing.T) {
 	if rk := h.tg.lastReply(private(alice)); len(rk.Rows) != 0 {
 		t.Fatalf("keyboard before character = %+v", rk)
 	}
-	card := h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	card := h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
 	mustContain(t, card, "Персонаж создан")
 	sent := h.tg.sent[private(alice)]
 	mustContain(t, sent[len(sent)-2], "Кнопки под полем ввода")
@@ -455,7 +458,7 @@ func TestCharacter_ChatLinkAndJoinedNotice(t *testing.T) {
 	h := newHarness(t)
 	code := h.createGame()
 
-	h.joinAndCreate(alice, code, "1", "Элис", "2", "воин", "1", "Высокая и шумная", "Боится темноты")
+	h.joinAndCreate(alice, code, "1", "Элис", "2", "воин", "Высокая и шумная", "Боится темноты")
 	for _, row := range h.tg.lastKeyboard(private(alice)) {
 		for _, b := range row {
 			if b.URL != "" {
@@ -473,7 +476,7 @@ func TestCharacter_ChatLinkAndJoinedNotice(t *testing.T) {
 	}
 
 	h.tg.invite = "https://t.me/+abc"
-	h.joinAndCreate(bob, code, "1", "Боб", "1", "плут", "1", "-", "-")
+	h.joinAndCreate(bob, code, "1", "Боб", "1", "плут", "-", "-")
 	kb := h.tg.lastKeyboard(private(bob))
 	if last := kb[len(kb)-1]; len(last) != 1 || last[0].Text != "Перейти в чат игры" || last[0].URL != "https://t.me/+abc" {
 		t.Fatalf("link row = %+v", last)
@@ -492,7 +495,7 @@ func TestCharacter_ChatLinkAndJoinedNotice(t *testing.T) {
 	if c, _ = h.store.GetChatByTelegramID(context.Background(), groupChat); c.InviteLink != "" {
 		t.Fatalf("link not reset on my_chat_member: %q", c.InviteLink)
 	}
-	h.joinAndCreate(nobody, code, "1", "Никто", "3", "1", "1", "-", "-")
+	h.joinAndCreate(nobody, code, "1", "Никто", "3", "1", "-", "-")
 	if h.tg.invites != calls+1 {
 		t.Fatalf("invite calls = %d, want %d", h.tg.invites, calls+1)
 	}
@@ -510,7 +513,7 @@ func TestCharacter_AutoFaction(t *testing.T) {
 	if strings.Contains(reply, "Выберите фракцию") {
 		t.Fatalf("faction question shown: %q", reply)
 	}
-	for _, a := range []string{"Боб", "1", "плут", "1", "-"} {
+	for _, a := range []string{"Боб", "1", "плут", "-"} {
 		reply = h.send(bob, private(bob), a)
 	}
 	mustContain(t, h.send(bob, private(bob), "-"), "Персонаж создан", "Фракция: «Орден Рассвета»")
@@ -519,6 +522,7 @@ func TestCharacter_AutoFaction(t *testing.T) {
 func TestCharacter_ValidationInDialog(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
+	h.svc.games.Defaults.ManualAttributes = true
 	code := h.createGame()
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
 
@@ -691,8 +695,8 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 
 	mustContain(t, h.send(alice, groupChat, "/begin yes"), "Нет прав")
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "нет персонажей")
-	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, h.send(alice, private(alice), "/act иду в башню"), "Игра не запущена")
 	mustContain(t, h.send(alice, private(alice), "иду в башню"), "Я понимаю только команды") // B17: игра не идёт — текст не заявка
 
@@ -783,8 +787,8 @@ func TestRound_PauseAfterSkipped(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 2"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
@@ -809,8 +813,8 @@ func TestRound_StatusTransitionsAndWindow(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set play_window 13:00-14:00"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 
 	// Старт вне окна: первый раунд в начале окна.
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
@@ -889,8 +893,8 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Рыночная площадь", "Знания: /knowledge (пока нет)")
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята: раунд 1")
@@ -947,8 +951,8 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 2"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, h.send(owner, groupChat, "/round"), "Раунда с таким номером нет")
 	mustContain(t, h.send(owner, groupChat, "/finish yes"), "Игра не запущена")
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
@@ -978,7 +982,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	code2 := h.createGame()
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
-	h.joinAndCreate(alice, code2, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(alice, code2, "1", "Элис", "ж", "1", "-", "-")
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
@@ -1027,8 +1031,8 @@ func TestButtons_CharacterDialog(t *testing.T) {
 	if got := buttonData(kb); len(got) != 5 || got[0] != "@archetype 1" || got[4] != "@archetype 5" || kb[0][0].Text != "Воин" || len(kb[0]) != 3 {
 		t.Fatalf("archetype keyboard = %+v", kb)
 	}
-	mustContain(t, h.press(alice, private(alice), 12, "@archetype 1"), "Распределение очков")
-	mustContain(t, h.press(alice, private(alice), 13, "@distribution 1"), "Открытое описание")
+	// B30: без флага `manual_attributes` шага распределения нет — очки по архетипу, сразу описание.
+	mustContain(t, h.press(alice, private(alice), 12, "@archetype 1"), "Открытое описание")
 	if got := buttonData(h.tg.lastKeyboard(private(alice))); len(got) != 1 || got[0] != "@public_bio -" {
 		t.Fatalf("bio keyboard = %v", got)
 	}
@@ -1088,8 +1092,8 @@ func TestButtons_ActOption(t *testing.T) {
 	code := h.createGame()
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
@@ -1151,7 +1155,7 @@ func TestButtons_ConfirmBeginFinishPause(t *testing.T) {
 	h := newHarness(t)
 	code := h.createGame()
 	h.send(owner, private(owner), "/cancel")
-	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
 
 	mustContain(t, h.send(owner, groupChat, "/begin"), "Начать кампанию «Песочница»?")
 	kb := h.tg.lastKeyboard(groupChat)
@@ -1222,8 +1226,8 @@ func TestParty_Card(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
-	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, h.send(alice, private(alice), "/party"), "Группы соберутся при старте игры")
 	mustContain(t, h.send(alice, private(alice), "/party create Искатели"), "Группы соберутся при старте игры") // команд управления нет: аргументы игнорируются
 	mustContain(t, h.send(bob, private(bob), "/character"), "Группа: нет (/party)")
@@ -1252,12 +1256,12 @@ func TestParty_NewcomerInRunningGame(t *testing.T) {
 	code := h.createGame()
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 	// Группа ушла в башню; Боб появляется на площади и получает свою группу.
-	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, h.send(bob, private(bob), "/party"), "Группа «Вольные клинки»", "Локация: Рыночная площадь", "• Боб — active", "Другие группы:\n• Ночной дозор (1, Зал Серой башни (0, 1)): Элис")
 	// Лимит занят: следующий новичок идёт в ближайшую группу и входит в историю в её локации.
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
@@ -1268,7 +1272,7 @@ func TestParty_NewcomerInRunningGame(t *testing.T) {
 	}
 	mustContain(t, h.send(bob, private(bob), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
-	h.joinAndCreate(nobody, code, "1", "Никто", "1", "1", "1", "-", "-")
+	h.joinAndCreate(nobody, code, "1", "Никто", "1", "1", "-", "-")
 	mustContain(t, h.send(nobody, private(nobody), "/party"), "Группа «", "Локация: Зал Серой башни", "• Никто — active")
 	mustContain(t, h.send(nobody, private(nobody), "/character"), "Локация: Зал Серой башни")
 }
@@ -1282,7 +1286,7 @@ func TestQuests_Card(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
 	mustContain(t, h.send(owner, private(owner), "/set min_answers 1"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
 	mustContain(t, h.send(alice, private(alice), "/quests"), "Фракция «Орден Рассвета»", "Цель: ещё не определена", "Квестов пока нет")
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 	mustContain(t, h.send(alice, private(alice), "/quests"), "Цель: Найти пропавшего гонца и вернуть печать Ордена. (начало)", "«След гонца» (сюжетный)", "○ Найти след\n○ Выйти к укрытию\n○ Вернуть печать", "✓ — сделано")
@@ -1316,10 +1320,10 @@ func TestCharacter_WelcomeByGameStatus(t *testing.T) {
 	code := h.createGame()
 	h.send(owner, private(owner), "/cancel")
 	mustContain(t, h.send(owner, private(owner), "/set timezone UTC"), "Сохранено")
-	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
 	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
 
-	card := h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
+	card := h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, card, "Персонаж создан", "Идёт раунд 1, заявки до", "Завязка:", "Варианты хода (Рыночная площадь):\n• разобрать приписку", "Нажмите вариант или напишите действие своими словами.")
 	got := buttonData(h.tg.lastKeyboard(private(bob)))
 	if len(got) < 2 || !strings.HasPrefix(got[0], "/act #1:") || !strings.HasPrefix(got[len(got)-1], "/act #1:") {
@@ -1327,7 +1331,7 @@ func TestCharacter_WelcomeByGameStatus(t *testing.T) {
 	}
 
 	mustContain(t, h.send(owner, groupChat, "/pause"), "на паузе")
-	card = h.joinAndCreate(nobody, code, "1", "Ноб", "3", "1", "1", "-", "-")
+	card = h.joinAndCreate(nobody, code, "1", "Ноб", "3", "1", "-", "-")
 	mustContain(t, card, "Персонаж создан", "Игра на паузе")
 	if got := h.tg.lastKeyboard(private(nobody)); got != nil {
 		t.Fatalf("paused welcome keyboard = %v", got)

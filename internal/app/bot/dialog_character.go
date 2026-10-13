@@ -106,13 +106,15 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 			return question{}, false, fmt.Errorf("%w: выберите архетип номером или названием", game.ErrBadValue)
 		}
 		data.Archetype = a.Key
-		switch g.Mode {
-		case model.ModeNarrative:
+		// Ручное распределение очков только при флаге правил `manual_attributes` (B30): без него характеристики и
+		// навыки берутся из архетипа в любом режиме, шаги распределения пропускаются.
+		switch {
+		case !g.Settings.ManualAttributes || g.Mode == model.ModeNarrative:
 			if data.Attributes, data.Skills, err = rules.AutoDistribute(def, a.Key); err != nil {
 				return question{}, false, err
 			}
 			next = stepPublicBio
-		case model.ModeMechanics:
+		case g.Mode == model.ModeMechanics:
 			next = stepAttributes
 		default:
 			next = stepDistribution

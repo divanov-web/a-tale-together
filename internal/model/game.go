@@ -36,20 +36,21 @@ const (
 // GameSettings — необязательные настройки мира в `games.settings` (jsonb).
 type GameSettings struct {
 	SchemaVersion       int        `json:"schema_version"`
-	EndsAt              *time.Time `json:"ends_at,omitempty"`     // граница рассказа: дата
-	MaxRounds           int        `json:"max_rounds,omitempty"`  // граница рассказа: число раундов; 0 — без границы
-	MaxRoundPlayers     int        `json:"max_round_players"`     // сколько игроков обрабатывается за раунд; остальные — в очередь (этап 6 roadmap); админу не показывается
-	MaxParties          int        `json:"max_parties"`           // лимит групп в сезоне; группа держит одну локацию, поэтому это и лимит занятых локаций (ADR-0017)
-	MaxStoryQuests      int        `json:"max_story_quests"`      // активных сюжетных квестов на фракцию (пункт 28, ADR-0020); 0 — по умолчанию
-	MaxSideQuests       int        `json:"max_side_quests"`       // активных побочных квестов на фракцию; 0 — по умолчанию
-	MaxActiveGoals      int        `json:"max_active_goals"`      // сюжетные цели (пункт 17)
-	GoalCooldownRounds  int        `json:"goal_cooldown_rounds"`  // раундов до новой цели после отказа
-	InactiveAfterRounds int        `json:"inactive_after_rounds"` // пропусков подряд до статуса inactive
-	MinRoundAnswers     int        `json:"min_round_answers"`     // кворум: меньше заявок — раунд пропускается
-	AllowResubmit       bool       `json:"allow_resubmit"`        // разрешить менять заявку до дедлайна (не чаще раза в минуту); по умолчанию запрещено (решение руководителя 2026-10-10); настройка разработчика
-	DeathMode           DeathMode  `json:"death_mode,omitempty"`  // режим смерти (docs/game/death.md); реализуется только fake; настройка разработчика
-	DeathDays           int        `json:"death_days,omitempty"`  // срок выбытия при ненастоящей смерти, дней; настройка разработчика
-	PauseAfterSkipped   int        `json:"pause_after_skipped"`   // пропущенных без кворума раундов подряд до автоматической паузы; 0 — выключено; настройка разработчика, админу не показывается (B11)
+	EndsAt              *time.Time `json:"ends_at,omitempty"`           // граница рассказа: дата
+	MaxRounds           int        `json:"max_rounds,omitempty"`        // граница рассказа: число раундов; 0 — без границы
+	MaxRoundPlayers     int        `json:"max_round_players"`           // сколько игроков обрабатывается за раунд; остальные — в очередь (этап 6 roadmap); админу не показывается
+	MaxParties          int        `json:"max_parties"`                 // лимит групп в сезоне; группа держит одну локацию, поэтому это и лимит занятых локаций (ADR-0017)
+	MaxStoryQuests      int        `json:"max_story_quests"`            // активных сюжетных квестов на фракцию (пункт 28, ADR-0020); 0 — по умолчанию
+	MaxSideQuests       int        `json:"max_side_quests"`             // активных побочных квестов на фракцию; 0 — по умолчанию
+	MaxActiveGoals      int        `json:"max_active_goals"`            // сюжетные цели (пункт 17)
+	GoalCooldownRounds  int        `json:"goal_cooldown_rounds"`        // раундов до новой цели после отказа
+	InactiveAfterRounds int        `json:"inactive_after_rounds"`       // пропусков подряд до статуса inactive
+	MinRoundAnswers     int        `json:"min_round_answers"`           // кворум: меньше заявок — раунд пропускается
+	AllowResubmit       bool       `json:"allow_resubmit"`              // разрешить менять заявку до дедлайна (не чаще раза в минуту); по умолчанию запрещено (решение руководителя 2026-10-10); настройка разработчика
+	DeathMode           DeathMode  `json:"death_mode,omitempty"`        // режим смерти (docs/game/death.md); реализуется только fake; настройка разработчика
+	DeathDays           int        `json:"death_days,omitempty"`        // срок выбытия при ненастоящей смерти, дней; настройка разработчика
+	PauseAfterSkipped   int        `json:"pause_after_skipped"`         // пропущенных без кворума раундов подряд до автоматической паузы; 0 — выключено; настройка разработчика, админу не показывается (B11)
+	ManualAttributes    bool       `json:"manual_attributes,omitempty"` // ручное распределение характеристик и навыков при создании персонажа; выключено: всегда автораспределение по архетипу в любом режиме (решение руководителя 2026-10-13, B30); настройка разработчика
 }
 
 // Кворум раунда по умолчанию и в режиме разработки.
