@@ -25,7 +25,7 @@ func Apply(snap *model.RoundSnapshot, events []model.Event) error {
 				to := model.LocationID(num(p, "to"))
 				c.LocationID = &to
 				if l, ok := snap.Location(to); ok {
-					l.Visited = true
+					l.Visited, l.Hidden = true, false // вход открывает скрытую клетку (ADR-0025)
 				}
 			}
 		case model.EventCellDiscovered:
@@ -44,14 +44,19 @@ func Apply(snap *model.RoundSnapshot, events []model.Event) error {
 				Difficulty  int                 `json:"difficulty"`
 				Terrain     string              `json:"terrain"`
 				Stage       model.LocationStage `json:"stage"`
+				Hidden      bool                `json:"hidden"`
+				DistantView string              `json:"distant_view"`
 			}
 			if err := json.Unmarshal(ev.Payload, &cell); err != nil {
 				return fmt.Errorf("engine.Apply: event %d: %w", ev.Seq, err)
 			}
 			if l, ok := snap.Location(cell.LocationID); ok {
 				l.Name, l.Description, l.Difficulty, l.Terrain, l.Stage = cell.Name, cell.Description, cell.Difficulty, cell.Terrain, cell.Stage
+				if cell.Stage == model.StageDetailed {
+					l.Hidden = false
+				}
 			} else {
-				snap.Locations = append(snap.Locations, model.SnapshotLocation{ID: cell.LocationID, X: cell.X, Y: cell.Y, Name: cell.Name, Description: cell.Description, Difficulty: cell.Difficulty, Terrain: cell.Terrain, Stage: cell.Stage, Objects: []model.LocationObject{}})
+				snap.Locations = append(snap.Locations, model.SnapshotLocation{ID: cell.LocationID, X: cell.X, Y: cell.Y, Name: cell.Name, Description: cell.Description, Difficulty: cell.Difficulty, Terrain: cell.Terrain, Stage: cell.Stage, Hidden: cell.Hidden, DistantView: cell.DistantView, Objects: []model.LocationObject{}})
 			}
 		case model.EventQuestStageDone:
 			var done struct {

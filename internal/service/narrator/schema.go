@@ -3,7 +3,7 @@ package narrator
 import "encoding/json"
 
 // PromptVersion — версия промпта рассказчика, пишется в `llm_runs.prompt_version` и `rounds.narration`.
-const PromptVersion = "narrator/v6"
+const PromptVersion = "narrator/v7"
 
 // Schema — JSON-схема ответа модели: общий текст раунда, блок на сцену (`scene_id` из входа: группа в локации или
 // персонажи без группы) с упомянутыми событиями (docs/llm/round-calls.md) и пакет мира `world` (пункт 27: клетки

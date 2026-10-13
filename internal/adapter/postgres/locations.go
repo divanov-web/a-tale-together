@@ -12,11 +12,11 @@ import (
 	"taletogether/internal/model"
 )
 
-const locationColumns = `id, game_id, name, description, difficulty, x, y, stage, terrain, visited_at, start, created_at`
+const locationColumns = `id, game_id, name, description, difficulty, x, y, stage, terrain, visited_at, hidden, distant_view, start, created_at`
 
 func scanLocation(row pgx.Row) (model.Location, error) {
 	var l model.Location
-	err := row.Scan(&l.ID, &l.GameID, &l.Name, &l.Description, &l.Difficulty, &l.X, &l.Y, &l.Stage, &l.Terrain, &l.VisitedAt, &l.Start, &l.CreatedAt)
+	err := row.Scan(&l.ID, &l.GameID, &l.Name, &l.Description, &l.Difficulty, &l.X, &l.Y, &l.Stage, &l.Terrain, &l.VisitedAt, &l.Hidden, &l.DistantView, &l.Start, &l.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Location{}, model.ErrNotFound
 	}
@@ -29,9 +29,9 @@ func (s *Store) CreateLocation(ctx context.Context, l model.Location) (model.Loc
 	if l.Stage == "" {
 		l.Stage = model.StageDetailed
 	}
-	const q = `INSERT INTO locations (game_id, name, description, difficulty, x, y, stage, terrain, visited_at, start)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING ` + locationColumns
-	out, err := scanLocation(s.db(ctx).QueryRow(ctx, q, l.GameID, l.Name, l.Description, l.Difficulty, l.X, l.Y, l.Stage, l.Terrain, l.VisitedAt, l.Start))
+	const q = `INSERT INTO locations (game_id, name, description, difficulty, x, y, stage, terrain, visited_at, hidden, distant_view, start)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING ` + locationColumns
+	out, err := scanLocation(s.db(ctx).QueryRow(ctx, q, l.GameID, l.Name, l.Description, l.Difficulty, l.X, l.Y, l.Stage, l.Terrain, l.VisitedAt, l.Hidden, l.DistantView, l.Start))
 	if err != nil {
 		return model.Location{}, fmt.Errorf("postgres.CreateLocation: %w", err)
 	}
@@ -42,11 +42,11 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING ` + locationColumns
 	return out, nil
 }
 
-// UpdateLocation сохраняет имя, описание, сложность, стадию, тип местности и время первого посещения клетки.
+// UpdateLocation сохраняет имя, описание, сложность, стадию, тип местности, время первого посещения и видимость клетки.
 func (s *Store) UpdateLocation(ctx context.Context, l model.Location) error {
-	const q = `UPDATE locations SET name = $3, description = $4, difficulty = $5, stage = $6, terrain = $7, visited_at = $8, updated_at = now()
+	const q = `UPDATE locations SET name = $3, description = $4, difficulty = $5, stage = $6, terrain = $7, visited_at = $8, hidden = $9, distant_view = $10, updated_at = now()
 WHERE game_id = $1 AND id = $2`
-	if _, err := s.db(ctx).Exec(ctx, q, l.GameID, l.ID, l.Name, l.Description, l.Difficulty, l.Stage, l.Terrain, l.VisitedAt); err != nil {
+	if _, err := s.db(ctx).Exec(ctx, q, l.GameID, l.ID, l.Name, l.Description, l.Difficulty, l.Stage, l.Terrain, l.VisitedAt, l.Hidden, l.DistantView); err != nil {
 		return fmt.Errorf("postgres.UpdateLocation: %w", err)
 	}
 	return nil
@@ -191,7 +191,7 @@ func (s *Store) ResetWorld(ctx context.Context, game model.GameID) error {
 		`UPDATE parties SET location_id = NULL WHERE game_id = $1`,
 		`DELETE FROM locations WHERE game_id = $1 AND NOT start`,
 		`DELETE FROM world_objects WHERE game_id = $1`,
-		`UPDATE locations SET visited_at = NULL, stage = 'detailed', updated_at = now() WHERE game_id = $1`,
+		`UPDATE locations SET visited_at = NULL, stage = 'detailed', hidden = false, distant_view = '', updated_at = now() WHERE game_id = $1`,
 	} {
 		if _, err := s.db(ctx).Exec(ctx, q, game); err != nil {
 			return fmt.Errorf("postgres.ResetWorld: %w", err)

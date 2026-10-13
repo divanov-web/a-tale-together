@@ -63,10 +63,13 @@ type cellPayload struct {
 	Difficulty  int                 `json:"difficulty"`
 	Terrain     string              `json:"terrain"`
 	Stage       model.LocationStage `json:"stage"`
-	Source      string              `json:"source"` // model | template
+	Hidden      bool                `json:"hidden,omitempty"`       // карточка скрытого соседа (ADR-0025)
+	DistantView string              `json:"distant_view,omitempty"` // вид скрытого соседа издалека
+	Source      string              `json:"source"`                 // model | template
 }
 
-// applyWorld записывает пакет мира: детализирует клетки (строка локации, объекты) и создаёт карточки соседей,
+// applyWorld записывает пакет мира: детализирует клетки (строка локации, объекты; клетка становится видимой) и
+// создаёт карточки соседей (скрытость и вид издалека из карточки, ADR-0025),
 // каждое изменение — событием `cell_generated` / `object_created` с видимостью в клетке; события дописываются в журнал
 // за событиями движка и сворачиваются в состояние, чтобы варианты следующего раунда видели новые объекты.
 func (s *Service) applyWorld(ctx context.Context, g model.Game, r model.Round, state *model.RoundSnapshot, pkg narrator.WorldPackage, now time.Time) ([]model.Event, error) {
@@ -86,7 +89,7 @@ func (s *Service) applyWorld(ctx context.Context, g model.Game, r model.Round, s
 			continue
 		}
 		visited := now
-		loc := model.Location{ID: l.ID, GameID: g.ID, Name: cell.Name, Description: cell.Description, Difficulty: cell.Difficulty, X: l.X, Y: l.Y, Stage: model.StageDetailed, Terrain: cell.Terrain, VisitedAt: &visited, Start: l.Start}
+		loc := model.Location{ID: l.ID, GameID: g.ID, Name: cell.Name, Description: cell.Description, Difficulty: cell.Difficulty, X: l.X, Y: l.Y, Stage: model.StageDetailed, Terrain: cell.Terrain, VisitedAt: &visited, Hidden: false, DistantView: l.DistantView, Start: l.Start}
 		if err := s.store.UpdateLocation(ctx, loc); err != nil {
 			return nil, err
 		}
@@ -107,7 +110,7 @@ func (s *Service) applyWorld(ctx context.Context, g model.Game, r model.Round, s
 		}
 	}
 	for _, n := range pkg.Neighbors {
-		created, err := s.store.CreateLocation(ctx, model.Location{GameID: g.ID, Name: n.Name, Description: n.Card, X: n.X, Y: n.Y, Stage: model.StageCard, Terrain: n.Terrain})
+		created, err := s.store.CreateLocation(ctx, model.Location{GameID: g.ID, Name: n.Name, Description: n.Card, X: n.X, Y: n.Y, Stage: model.StageCard, Terrain: n.Terrain, Hidden: n.Hidden, DistantView: n.DistantView})
 		if err != nil {
 			return nil, err
 		}
@@ -115,7 +118,7 @@ func (s *Service) applyWorld(ctx context.Context, g model.Game, r model.Round, s
 		if n.Template {
 			source = "template"
 		}
-		if err := emit(model.EventCellGenerated, created.ID, cellPayload{LocationID: created.ID, X: n.X, Y: n.Y, Name: n.Name, Description: n.Card, Terrain: n.Terrain, Stage: model.StageCard, Source: source}); err != nil {
+		if err := emit(model.EventCellGenerated, created.ID, cellPayload{LocationID: created.ID, X: n.X, Y: n.Y, Name: n.Name, Description: n.Card, Terrain: n.Terrain, Stage: model.StageCard, Hidden: n.Hidden, DistantView: n.DistantView, Source: source}); err != nil {
 			return nil, err
 		}
 	}
@@ -160,7 +163,7 @@ func (s *Service) startPackage(ctx context.Context, g model.Game, start model.Lo
 		neighbors = narrator.TemplateWorld(narrator.Tasks{Neighbors: tasks}).Neighbors
 	}
 	for _, n := range neighbors {
-		if _, err := s.store.CreateLocation(ctx, model.Location{GameID: g.ID, Name: n.Name, Description: n.Card, X: n.X, Y: n.Y, Stage: model.StageCard, Terrain: n.Terrain}); err != nil {
+		if _, err := s.store.CreateLocation(ctx, model.Location{GameID: g.ID, Name: n.Name, Description: n.Card, X: n.X, Y: n.Y, Stage: model.StageCard, Terrain: n.Terrain, Hidden: n.Hidden, DistantView: n.DistantView}); err != nil {
 			return err
 		}
 	}

@@ -24,8 +24,8 @@ func TestTexts_Templates(t *testing.T) {
 		{"opening scene", openingScene(g, openingTemplate(g, "В {{world_title}} наступает осень. {{faction_good}} против {{faction_evil}}.", factions)),
 			"«Мир» — начало истории\n\nВ Мир наступает осень. Орден против Гильдия."},
 		{"opening scene empty", openingScene(g, openingTemplate(g, "  ", nil)), "«Мир» — начало истории\n\nИстория начинается."},
-		{"round open", roundOpenText(g, r1, 0, now), "Раунд 1 открыт\nЗаявки до 12:10: /act <текст> здесь или в личке с ботом"},
-		{"round open carried", roundOpenText(g, r2, 1, now), "Раунд 2 открыт\nЗаявки до 12:20: /act <текст> здесь или в личке с ботом\nПеренесено заявок из пропущенного раунда: 1."},
+		{"round open", roundOpenText(g, r1, 0, now), "Раунд 1 открыт\nЗаявки до 12:10: /act <текст> здесь или в личке с ботом. Соседние места: /scout"},
+		{"round open carried", roundOpenText(g, r2, 1, now), "Раунд 2 открыт\nЗаявки до 12:20: /act <текст> здесь или в личке с ботом. Соседние места: /scout\nПеренесено заявок из пропущенного раунда: 1."},
 		{"round skipped", roundSkippedText(g, r1), "Раунд 1\nНедостаточное количество участников. Раунд пропущен."},
 		{"round failed", roundFailedText(g, r1), "Раунд 1 не удалось разрешить\nСбой на стороне бота. Заявки перенесены в следующий раунд."},
 		{"paused", pausedText(), "Игра на паузе\nРаунды не открываются. Возобновить: /pause."},
@@ -36,8 +36,8 @@ func TestTexts_Templates(t *testing.T) {
 		{"first round later", firstRoundLaterText(g, at(10, 0).AddDate(0, 0, 1), now), "Игра запущена\nРаунды открываются в игровое окно 10:00–22:00. Первый раунд в 11.10 10:00."},
 		{"finished no characters", finishedText(g, 2, "игру завершил администратор", nil, nil, model.CharacterModelDef{}), "«Мир» — история завершена\n\nИгру завершил администратор. Раундов сыграно: 2."},
 		{"chronicle quiet", chronicleText(g, r1, nil, &model.RoundSnapshot{}), "Раунд 1 — итоги\n\n• тихий раунд: никто ничего заметного не сделал"},
-		{"personal open", roundOpenPersonalText(g, r1, "", now), "«Мир» — раунд 1 открыт\n\nЗаявки до 12:10: напишите, что делает персонаж, или /act <текст>. Одна заявка на раунд."},
-		{"personal open options", roundOpenPersonalText(g, r1, "Варианты для вас (Площадь):\n• x", now), "«Мир» — раунд 1 открыт\n\nЗаявки до 12:10: напишите, что делает персонаж, или /act <текст>. Одна заявка на раунд.\n\nВарианты для вас (Площадь):\n• x"},
+		{"personal open", roundOpenPersonalText(g, r1, "", now), "«Мир» — раунд 1 открыт\n\nЗаявки до 12:10: напишите, что делает персонаж, или /act <текст>. Одна заявка на раунд. Куда можно пойти — /scout."},
+		{"personal open options", roundOpenPersonalText(g, r1, "Варианты для вас (Площадь):\n• x", now), "«Мир» — раунд 1 открыт\n\nЗаявки до 12:10: напишите, что делает персонаж, или /act <текст>. Одна заявка на раунд. Куда можно пойти — /scout.\n\nВарианты для вас (Площадь):\n• x"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -62,17 +62,17 @@ func TestTexts_Notice(t *testing.T) {
 	res := model.ActionResult{Intent: model.Intent{RawText: "осмотреть доску"}, Status: model.ResultResolved, Summary: "осматривает: доска объявлений — успех", Check: &model.CheckInfo{Param: 6, Difficulty: 5, ChancePct: 60, Roll: 37}}
 	own := []model.Event{{Type: model.EventFactLearned, Visibility: model.VisibilityPrivate, Payload: json.RawMessage(`{"fact":"Гонца видели у башни."}`)}}
 	options := "Варианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 4, шанс 70%"
-	want := "«Мир» — раунд 1 — ваш итог\n\nЗаявка «осмотреть доску»: осматривает: доска объявлений — успех\nШанс был 60%\n• Гонца видели у башни.\n\n" + options + "\n\nСледующая заявка: /act <текст> после открытия раунда."
+	want := "«Мир» — раунд 1 — ваш итог\n\nЗаявка «осмотреть доску»: осматривает: доска объявлений — успех\nШанс был 60%\n• Гонца видели у башни.\n\n" + options + "\n\nСледующая заявка: /act <текст> после открытия раунда. Куда можно пойти — /scout."
 	if got := noticeText(g, model.Round{RoundNo: 1}, res, own, rules.Preset(g.Mode), options); got != want {
 		t.Errorf("notice =\n%q\nwant\n%q", got, want)
 	}
 	rejected := model.ActionResult{Intent: model.Intent{RawText: "крадусь"}, Status: model.ResultRejected, Reason: "действие появится позже"}
-	want = "«Мир» — раунд 1 — ваш итог\n\nЗаявка «крадусь»: отклонена — действие появится позже\n\nСледующая заявка: /act <текст> после открытия раунда."
+	want = "«Мир» — раунд 1 — ваш итог\n\nЗаявка «крадусь»: отклонена — действие появится позже\n\nСледующая заявка: /act <текст> после открытия раунда. Куда можно пойти — /scout."
 	if got := noticeText(g, model.Round{RoundNo: 1}, rejected, nil, rules.Preset(g.Mode), ""); got != want {
 		t.Errorf("rejected notice =\n%q\nwant\n%q", got, want)
 	}
 	g.Mode = model.ModeMechanics
-	if got := noticeText(g, model.Round{RoundNo: 1}, res, nil, rules.Preset(g.Mode), ""); got != "«Мир» — раунд 1 — ваш итог\n\nЗаявка «осмотреть доску»: осматривает: доска объявлений — успех\nПроверка: параметр 6, сложность 5, шанс 60%, бросок 37\n\nСледующая заявка: /act <текст> после открытия раунда." {
+	if got := noticeText(g, model.Round{RoundNo: 1}, res, nil, rules.Preset(g.Mode), ""); got != "«Мир» — раунд 1 — ваш итог\n\nЗаявка «осмотреть доску»: осматривает: доска объявлений — успех\nПроверка: параметр 6, сложность 5, шанс 60%, бросок 37\n\nСледующая заявка: /act <текст> после открытия раунда. Куда можно пойти — /scout." {
 		t.Errorf("mechanics notice = %q", got)
 	}
 }
@@ -92,12 +92,12 @@ func TestTexts_OptionsFor(t *testing.T) {
 	state := snapshot(w.game, chars, locations, nil, nil, def)
 	opts := narrator.Options(&state, def, model.ModeBalanced)
 	alice := state.Characters[0]
-	want := "Варианты для вас (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 4, шанс 70%\n• идти на север: Зал Серой башни"
+	want := "Варианты для вас (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 4, шанс 70%"
 	if got := optionsFor(alice, &state, opts, "Варианты для вас"); got != want {
 		t.Errorf("balanced =\n%q\nwant\n%q", got, want)
 	}
 	// B19: в «повествовании» личный шанс тоже в процентах, сложность берётся из вариантов этого режима.
-	if got := optionsFor(alice, &state, narrator.Options(&state, def, model.ModeNarrative), "Варианты на раунд 2"); got != "Варианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 4, шанс 70%\n• идти на север: Зал Серой башни" {
+	if got := optionsFor(alice, &state, narrator.Options(&state, def, model.ModeNarrative), "Варианты на раунд 2"); got != "Варианты на раунд 2 (Рыночная площадь):\n• разобрать приписку (Разум/внимательность): параметр 6, сложность 4, шанс 70%" {
 		t.Errorf("narrative = %q", got)
 	}
 	// Подвал: сложность локации 1, у плута без атлетики и воровства шансы 20 % и 30 %; снимок локальный (пункт 27):
@@ -111,14 +111,14 @@ func TestTexts_OptionsFor(t *testing.T) {
 	chars[0].LocationID = &cellar
 	state = snapshot(w.game, chars, locations, nil, nil, def)
 	opts = narrator.Options(&state, def, model.ModeBalanced)
-	if got := optionsFor(state.Characters[0], &state, opts, "Варианты для вас"); got != "Варианты для вас (Подвал башни):\n• выбить (Сила/атлетика): параметр 2, сложность 5, шанс 20%\n• отпереть (Ловкость/воровство): параметр 3, сложность 5, шанс 30%\n• идти на юг: Зал Серой башни" {
+	if got := optionsFor(state.Characters[0], &state, opts, "Варианты для вас"); got != "Варианты для вас (Подвал башни):\n• выбить (Сила/атлетика): параметр 2, сложность 5, шанс 20%\n• отпереть (Ловкость/воровство): параметр 3, сложность 5, шанс 30%" {
 		t.Errorf("cellar = %q", got)
 	}
 	state.Characters[0].LocationID = nil
 	if got := optionsFor(state.Characters[0], &state, opts, "Варианты для вас"); got != "" {
 		t.Errorf("no location = %q", got)
 	}
-	// Клетка без объектов: только переходы.
+	// Клетка без объектов: вариантов нет — переходы среди них не предлагаются (B36), соседей показывает /scout.
 	var hall model.LocationID
 	for _, l := range locations {
 		if l.Name == "Зал Серой башни" {
@@ -126,7 +126,7 @@ func TestTexts_OptionsFor(t *testing.T) {
 		}
 	}
 	state.Characters[0].LocationID = &hall
-	if got := optionsFor(state.Characters[0], &state, narrator.Options(&state, def, model.ModeBalanced), "Варианты для вас"); got != "Варианты для вас (Зал Серой башни):\n• идти на север: Подвал башни\n• идти на юг: Рыночная площадь" {
+	if got := optionsFor(state.Characters[0], &state, narrator.Options(&state, def, model.ModeBalanced), "Варианты для вас"); got != "" {
 		t.Errorf("no approaches = %q", got)
 	}
 }

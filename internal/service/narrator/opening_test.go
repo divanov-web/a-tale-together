@@ -25,7 +25,7 @@ var goodOpening = strings.Repeat("Над площадью туман, и Эли�
 const goodStart = `"start":{"location_id":1,"name":"Площадь у колодца","description":"Сердце города; у колодца толпа.","difficulty":0,"objects":[
  {"key":"well","title":"колодец","description":"","state":"","hidden":false,"approaches":[{"action":"explore","title":"заглянуть в колодец","attribute":"wits","skill":"awareness","difficulty":5,"on_success":{"state":null,"reveal":"ring","fact":null},"on_fail":{"condition":"exhausted","damage":null,"fact":null}}]},
  {"key":"ring","title":"кольцо на дне","description":"","state":"","hidden":true,"approaches":[{"action":"interact","title":"достать кольцо","attribute":null,"skill":null,"difficulty":0,"on_success":{"state":"taken","reveal":null,"fact":"Кольцо с печатью Ордена."},"on_fail":null}]}]},
- "neighbors":[{"direction":"north","name":"Серая башня","terrain":"ruins","card":"Башня темнеет над крышами."},{"direction":"east","name":"Рынок","terrain":"town","card":"Шум торговых рядов."},{"direction":"south","name":"Лишний","terrain":"road","card":"Не из задания."}]`
+ "neighbors":[{"direction":"north","name":"Серая башня","terrain":"ruins","card":"Башня темнеет над крышами.","visible":true,"distant_view":""},{"direction":"east","name":"Рынок","terrain":"town","card":"Шум торговых рядов.","visible":false,"distant_view":"шум торговых рядов"},{"direction":"south","name":"Лишний","terrain":"road","card":"Не из задания.","visible":true,"distant_view":""}]`
 
 func openingJSON(text string) string {
 	return `{"text":"` + text + `",` + goodStart + `}`
@@ -60,6 +60,9 @@ func TestOpening_Valid(t *testing.T) {
 	}
 	if res.Neighbors == nil || len(res.Neighbors) != 2 || res.Neighbors[0].Name != "Серая башня" || res.Neighbors[0].X != 0 || res.Neighbors[0].Y != 1 || res.Neighbors[1].Terrain != "town" || res.Neighbors[0].Template {
 		t.Fatalf("neighbors = %+v", res.Neighbors)
+	}
+	if res.Neighbors[0].Hidden || !res.Neighbors[1].Hidden || res.Neighbors[1].DistantView != "шум торговых рядов" {
+		t.Fatalf("neighbor visibility = %+v", res.Neighbors)
 	}
 	// Лишний сосед не из задания отброшен с замечанием; дозапроса по пакету нет.
 	if len(res.Issues) != 0 {

@@ -154,7 +154,8 @@ func (s *RoundSnapshot) Exits(loc *SnapshotLocation) []Exit {
 	return out
 }
 
-// ExitTo находит выход клетки по цели заявки: направление словом или имя соседа (без учёта регистра).
+// ExitTo находит выход клетки по цели заявки: направление словом или имя видимого соседа (без учёта регистра).
+// Имя скрытого соседа игроку неизвестно и не сопоставляется (ADR-0025): туда идут по направлению.
 func (s *RoundSnapshot) ExitTo(loc *SnapshotLocation, target string) (Exit, bool) {
 	if d, ok := ParseDirection(target); ok {
 		if n, ok := s.Neighbor(loc, d); ok {
@@ -163,7 +164,7 @@ func (s *RoundSnapshot) ExitTo(loc *SnapshotLocation, target string) (Exit, bool
 		return Exit{}, false
 	}
 	for _, e := range s.Exits(loc) {
-		if strings.EqualFold(strings.TrimSpace(target), e.To.Name) {
+		if !e.To.Hidden && strings.EqualFold(strings.TrimSpace(target), e.To.Name) {
 			return e, true
 		}
 	}

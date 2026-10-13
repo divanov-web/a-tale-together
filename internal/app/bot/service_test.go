@@ -564,16 +564,17 @@ func TestReplyKeyboard_PlayerStatus(t *testing.T) {
 	mustContain(t, card, "Персонаж создан")
 	sent := h.tg.sent[private(alice)]
 	mustContain(t, sent[len(sent)-2], "Кнопки под полем ввода")
-	want := model.ReplyKeyboard{Rows: [][]string{{"Персонаж", "Описание", "Знания"}, {"Группа", "Квесты"}}, Placeholder: "Опишите действие…"}
+	want := model.ReplyKeyboard{Rows: [][]string{{"Персонаж", "Описание", "Знания"}, {"Группа", "Квесты", "Разведка"}}, Placeholder: "Опишите действие…"}
 	if rk := h.tg.lastReply(private(alice)); !reflect.DeepEqual(rk, want) {
 		t.Fatalf("player keyboard = %+v", rk)
 	}
-	for label, command := range map[string]string{"Персонаж": "/character", "Описание": "/bio", "Знания": "/knowledge", "Группа": "/party", "Квесты": "/quests"} {
+	for label, command := range map[string]string{"Персонаж": "/character", "Описание": "/bio", "Знания": "/knowledge", "Группа": "/party", "Квесты": "/quests", "Разведка": "/scout"} {
 		if got, want := h.send(alice, private(alice), label), h.send(alice, private(alice), command); got != want {
 			t.Fatalf("button %q = %q, command %s = %q", label, got, command, want)
 		}
 	}
 
+	h.clock.advance(time.Minute) // лимит частоты сообщений игрока
 	h.begin()
 	h.finish()
 	h.send(alice, private(alice), "Персонаж")
@@ -723,10 +724,10 @@ func TestCommands_MenuByContext(t *testing.T) {
 		t.Fatalf("private menu = %s", privateMenu)
 	}
 	// B20: меню группы для всех — только команды игры здесь и сейчас; /help по-прежнему перечисляет всё.
-	if groupMenu != "[help status act]" {
+	if groupMenu != "[help status act scout]" {
 		t.Fatalf("group menu = %s", groupMenu)
 	}
-	if adminMenu := names(h.svc.Menu(ctxGroup, true)); adminMenu != "[help chat mod owner create begin pause finish status act next replay round reset]" {
+	if adminMenu := names(h.svc.Menu(ctxGroup, true)); adminMenu != "[help chat mod owner create begin pause finish status act scout next replay round reset]" {
 		t.Fatalf("admin menu = %s", adminMenu)
 	}
 	mustContain(t, h.send(alice, private(alice), "/help"), "в личке", "/join", "/cancel", "/ping")
@@ -740,7 +741,7 @@ func TestCommands_MenuByContext(t *testing.T) {
 func TestCommands_ManagerMenu(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	admin := "[help chat mod owner create begin pause finish status act next replay round reset]"
+	admin := "[help chat mod owner create begin pause finish status act scout next replay round reset]"
 	h.addBot(owner)
 	if got := fmt.Sprint(h.tg.memberMenu(groupChat, owner.ID)); got != admin {
 		t.Fatalf("owner menu after add = %s", got)
@@ -1035,8 +1036,12 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 
 	texts := h.outboxTexts()
 	// Пункт 19: Элис уходит одна — отделяется новой группой, Боб остаётся в прежней; названия групп в хронике нет.
-	mustContain(t, texts[2], "Раунд 1 — итоги", "• Элис (@alice) отделяется от группы и уходит своей дорогой из «Рыночная площадь» в «Зал Серой башни»", "— Рыночная площадь (Боб) —",
+	// B36: переходов среди «Вариантов» нет, поэтому блок площади без подходов не печатается, блок зала — со следом.
+	mustContain(t, texts[2], "Раунд 1 — итоги", "• Элис (@alice) отделяется от группы и уходит своей дорогой из «Рыночная площадь» в «Зал Серой башни»", "— Зал Серой башни (Элис) —",
 		"• Элис уходит из «Рыночная площадь» в «Зал Серой башни»")
+	if strings.Contains(texts[2], "идти на") {
+		t.Fatalf("chronicle offers moves: %q", texts[2])
+	}
 	privates := map[model.TelegramChatID][]string{}
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
 	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
@@ -1465,8 +1470,9 @@ func TestCharacter_WelcomeByGameStatus(t *testing.T) {
 
 	card := h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-")
 	mustContain(t, card, "Персонаж создан", "Идёт раунд 1, заявки до", "Завязка:", "Варианты хода (Рыночная площадь):\n• разобрать приписку", "Нажмите вариант или напишите действие своими словами.")
+	// B36: кнопки только у подходов объектов, кнопок направлений нет.
 	got := buttonData(h.tg.lastKeyboard(private(bob)))
-	if len(got) < 2 || !strings.HasPrefix(got[0], "/act #1:") || !strings.HasPrefix(got[len(got)-1], "/act #1:") {
+	if len(got) != 1 || !strings.HasPrefix(got[0], "/act #1:") || strings.Contains(got[0], ":move:") {
 		t.Fatalf("active welcome keyboard = %v", got)
 	}
 
@@ -1476,4 +1482,24 @@ func TestCharacter_WelcomeByGameStatus(t *testing.T) {
 	if got := h.tg.lastKeyboard(private(nobody)); got != nil {
 		t.Fatalf("paused welcome keyboard = %v", got)
 	}
+}
+
+// TestScout_Card (B36, ADR-0025): `/scout` в личке и группе показывает клетку персонажа и четыре направления; направление
+// без клетки — «неизведанная территория», после старта шаблонные соседи видимы с карточкой; без персонажа — отказ.
+func TestScout_Card(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	mustContain(t, h.send(owner, private(owner), "/scout"), "Персонажа ещё нет")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
+	before := h.send(alice, private(alice), "/scout")
+	// До старта в мире шаблона только площадь и зал башни: остальные направления без клеток.
+	mustContain(t, before, "Разведка: Рыночная площадь (0, 0)\n\n• на север: Зал Серой башни\n• на юг: неизведанная территория\n• на запад: неизведанная территория\n• на восток: неизведанная территория\n\nПереход: напишите, куда идёт персонаж")
+	h.begin()
+	after := h.send(alice, groupChat, "/scout")
+	mustContain(t, after, "Разведка: Рыночная площадь (0, 0)", "• на север: Зал Серой башни\n", "• на юг: Неизведанные земли — Что там, отсюда не разглядеть.")
+	if strings.Contains(after, "идти на") {
+		t.Fatalf("scout offers buttons text: %q", after)
+	}
+	mustContain(t, h.send(owner, groupChat, "/scout"), "Персонажа ещё нет")
 }

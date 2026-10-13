@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -136,5 +137,54 @@ func TestApply_WorldPackage(t *testing.T) {
 	}
 	if c, _ := snap.Character(snap.Characters[2].ID); len(c.Knowledge) != 0 {
 		t.Fatalf("reward leaked to non-addressee: %v", c.Knowledge)
+	}
+}
+
+// TestScenario_S19_HiddenNeighbor (B36, ADR-0025): в скрытую клетку идут по направлению; её имя игроку неизвестно
+// и не сопоставляется; в перечне выходов скрытый сосед подписан видом издалека или «неизведанная территория»;
+// вход открывает клетку при свёртке; карточка скрытого соседа из `cell_generated` несёт скрытость и вид.
+func TestScenario_S19_HiddenNeighbor(t *testing.T) {
+	t.Parallel()
+	snap := grid()
+	snap.Locations = append(snap.Locations,
+		model.SnapshotLocation{ID: 4, Name: "Деревня", Description: "Десяток дворов.", X: -1, Y: 0, Stage: model.StageCard, Hidden: true, DistantView: "дым над крышами", Objects: []model.LocationObject{}},
+		model.SnapshotLocation{ID: 5, Name: "Пещера", Description: "Чёрный зев.", X: 0, Y: -1, Stage: model.StageCard, Hidden: true, Objects: []model.LocationObject{}},
+	)
+	res := Resolve(snap, []model.Intent{
+		{SubmissionID: 1, CharacterID: 11, ActionType: model.ActionMove, Target: "west"},
+		{SubmissionID: 2, CharacterID: 12, ActionType: model.ActionMove, Target: "Деревня"},
+		{SubmissionID: 3, CharacterID: 13, ActionType: model.ActionMove, Target: "лес"},
+		{SubmissionID: 4, CharacterID: 14, ActionType: model.ActionMove, Target: "к деревне"},
+	}, 3)
+	if r := res.Results[0]; r.Status != model.ResultResolved || r.Summary != "переходит: Площадь → Деревня" {
+		t.Fatalf("move west = %+v", r)
+	}
+	want := "выходы: на север: Лес, на юг: неизведанная территория, на запад: неизведанная территория (дым над крышами), на восток: Дорога"
+	if r := res.Results[1]; r.Status != model.ResultRejected || !strings.Contains(r.Reason, "нет выхода «Деревня»") || !strings.HasSuffix(r.Reason, want) {
+		t.Fatalf("move by hidden name = %+v", r)
+	}
+	if r := res.Results[2]; r.Status != model.ResultResolved || r.Summary != "переходит: Площадь → Лес" {
+		t.Fatalf("move by visible name = %+v", r)
+	}
+	if r := res.Results[3]; r.Status != model.ResultRejected {
+		t.Fatalf("move by hidden stem = %+v", r)
+	}
+	after := grid()
+	after.Locations = append(after.Locations, snap.Locations[3], snap.Locations[4])
+	if err := Apply(&after, res.Events); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := after.Location(4); l.Hidden || !l.Visited {
+		t.Fatalf("village after move = %+v", l)
+	}
+	if l, _ := after.Location(5); !l.Hidden {
+		t.Fatalf("cave untouched = %+v", l)
+	}
+	card := model.Event{Type: model.EventCellGenerated, Payload: json.RawMessage(`{"location_id":6,"x":1,"y":1,"name":"Холм","description":"Лысый холм.","terrain":"hills","stage":"card","hidden":true,"distant_view":"огни на холме"}`)}
+	if err := Apply(&after, []model.Event{card}); err != nil {
+		t.Fatal(err)
+	}
+	if l, ok := after.Location(6); !ok || !l.Hidden || l.DistantView != "огни на холме" || l.Glimpse() != "неизведанная территория (огни на холме)" {
+		t.Fatalf("generated hidden card = %+v", l)
 	}
 }

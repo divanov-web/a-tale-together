@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -185,6 +186,8 @@ type LocationObject struct {
 
 // Location — клетка сетки мира (docs/game/world.md): координаты от стартовой `(0,0)`, стадия, тип местности, имя
 // как подпись (не ключ), объекты из `world_objects`. Выходы по четырём направлениям считает код по соседям.
+// Скрытая клетка (ADR-0025) известна игрокам только видом издалека: имя и карточка им и интерпретатору не
+// показываются, пока персонаж не войдёт.
 type Location struct {
 	ID          LocationID
 	GameID      GameID
@@ -195,9 +198,16 @@ type Location struct {
 	Stage       LocationStage
 	Terrain     string
 	VisitedAt   *time.Time // первый вход персонажа; nil у непосещённой
+	Hidden      bool       // сосед не виден издалека: для игрока «неизведанная территория» (ADR-0025)
+	DistantView string     // как выглядит скрытая клетка издалека («дым над лесом»); пусто — ничего не видно
 	Objects     []LocationObject
 	Start       bool // стартовая клетка персонажей, `(0,0)`
 	CreatedAt   time.Time
+}
+
+// Glimpse — что видно о клетке издалека: имя видимой, у скрытой «неизведанная территория» с видом в скобках.
+func (l Location) Glimpse() string {
+	return glimpse(l.Name, l.Hidden, l.DistantView)
 }
 
 // LocationTemplate — стартовая клетка в шаблоне жанра (единственная локация шаблона с пункта 27).
@@ -221,9 +231,28 @@ type SnapshotLocation struct {
 	Stage        LocationStage    `json:"stage"`
 	Terrain      string           `json:"terrain,omitempty"`
 	Visited      bool             `json:"visited,omitempty"`
+	Hidden       bool             `json:"hidden,omitempty"`       // скрытый сосед (ADR-0025); старые снимки — видимые
+	DistantView  string           `json:"distant_view,omitempty"` // вид скрытой клетки издалека
 	Start        bool             `json:"start,omitempty"`
 	DiscoveredBy []FactionID      `json:"discovered_by,omitempty"` // фракции, чьи персонажи уже входили в клетку
 	Objects      []LocationObject `json:"objects"`
+}
+
+// Glimpse — что видно о клетке издалека: имя видимой, у скрытой «неизведанная территория» с видом в скобках.
+func (l SnapshotLocation) Glimpse() string {
+	return glimpse(l.Name, l.Hidden, l.DistantView)
+}
+
+// glimpse — общая подпись клетки для игрока и интерпретатора (ADR-0025): имя скрытой клетки не раскрывается.
+func glimpse(name string, hidden bool, view string) string {
+	if !hidden {
+		return name
+	}
+	view = strings.TrimRight(strings.TrimSpace(view), ".")
+	if view == "" {
+		return UnknownTerritory
+	}
+	return UnknownTerritory + " (" + view + ")"
 }
 
 // Discovered сообщает, открыла ли фракция клетку.
@@ -242,9 +271,10 @@ type Exit struct {
 	To        *SnapshotLocation
 }
 
-// Title — подпись выхода: «на север: Лес».
+// Title — подпись выхода: «на север: Лес»; у скрытого соседа — «на восток: неизведанная территория (дым над
+// крышами)» (ADR-0025).
 func (e Exit) Title() string {
-	return e.Direction.Toward() + ": " + e.To.Name
+	return e.Direction.Toward() + ": " + e.To.Glimpse()
 }
 
 // Object возвращает объект локации по ключу.

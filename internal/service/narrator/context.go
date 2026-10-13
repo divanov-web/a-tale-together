@@ -103,11 +103,14 @@ type scene struct {
 	Characters  []sceneCharacter    `json:"characters"`
 }
 
-// sceneExit — выход по направлению: имя соседа и его карточка.
+// sceneExit — выход по направлению: имя соседа и его карточка; у скрытого соседа (ADR-0025) вместо них `hidden` и
+// вид издалека — модель описывает только его.
 type sceneExit struct {
-	Direction model.Direction `json:"direction"`
-	Name      string          `json:"name"`
-	Card      string          `json:"card,omitempty"`
+	Direction   model.Direction `json:"direction"`
+	Name        string          `json:"name,omitempty"`
+	Card        string          `json:"card,omitempty"`
+	Hidden      bool            `json:"hidden,omitempty"`
+	DistantView string          `json:"distant_view,omitempty"`
 }
 
 // Label — внутренняя подпись сцены (`NarrationScene.Party`): имя группы с локацией в скобках, у одиночек — название
@@ -221,9 +224,14 @@ func BuildInput(p Params) Input {
 			sc.Party = pt.Name
 		}
 		for _, e := range p.State.Exits(l) {
-			x := sceneExit{Direction: e.Direction, Name: e.To.Name}
-			if e.To.Stage == model.StageCard {
-				x.Card = e.To.Description
+			x := sceneExit{Direction: e.Direction}
+			switch {
+			case e.To.Hidden:
+				x.Hidden, x.DistantView = true, e.To.DistantView
+			case e.To.Stage == model.StageCard:
+				x.Name, x.Card = e.To.Name, e.To.Description
+			default:
+				x.Name = e.To.Name
 			}
 			sc.Exits = append(sc.Exits, x)
 		}
@@ -252,9 +260,6 @@ func BuildInput(p Params) Input {
 		in.Events = append(in.Events, e)
 	}
 	for _, opt := range Options(p.State, p.Def, p.Mode) {
-		if opt.Move != "" {
-			continue // выходы уже в сценах
-		}
 		a := approachIn{LocationID: opt.LocationID, Object: opt.ObjectTitle, Title: opt.Title, Attribute: opt.Attribute, Skill: opt.Skill}
 		if p.Mode != model.ModeNarrative {
 			a.Difficulty = opt.Difficulty
@@ -351,11 +356,10 @@ func nonNilFactions(f []Faction) []Faction {
 }
 
 // Option — вариант следующего раунда: подход объекта с посчитанной кодом сложностью и шансом каждого присутствующего
-// персонажа либо переход по направлению к соседней клетке (`Move`, пункт 27; `Object` = MoveObject, `Idx` — номер
-// направления в model.Directions).
+// персонажа. Переходов среди вариантов нет (B36, ADR-0025): куда идти, игрок пишет сам, соседей показывает `/scout`.
 type Option struct {
 	LocationID  model.LocationID
-	Object      string // ключ объекта или MoveObject
+	Object      string // ключ объекта
 	ObjectTitle string
 	Idx         int
 	Title       string
@@ -363,11 +367,7 @@ type Option struct {
 	Skill       string // название навыка
 	Difficulty  int    // итоговая: подход + локация; 0 — без броска
 	Chances     []Chance
-	Move        model.Direction // переход: направление; пусто у подхода объекта
 }
-
-// MoveObject — значение Option.Object у варианта-перехода (ссылка кнопки `#раунд:локация:move:направление`).
-const MoveObject = "move"
 
 // Chance — параметр и шанс персонажа на подход, в процентах (в группу не выводится, для личных подсказок; B15).
 type Chance struct {
@@ -378,8 +378,8 @@ type Chance struct {
 
 // Options считает варианты каждой занятой клетки для следующего раунда (шаг 8 в docs/llm/round-calls.md): подходы
 // видимых объектов (сложность по пресету режима плюс сложность локации, шанс по параметру каждого присутствующего
-// персонажа), затем переходы по направлениям к существующим соседям (пункт 27). Исчерпанные подходы
-// (`engine.ApproachDone`: объект уже в целевом состоянии, факт известен всем присутствующим; B8) не предлагаются.
+// персонажа). Исчерпанные подходы (`engine.ApproachDone`: объект уже в целевом состоянии, факт известен всем
+// присутствующим; B8) не предлагаются; переходы по направлениям не предлагаются (B36, ADR-0025).
 func Options(state *model.RoundSnapshot, def model.CharacterModelDef, mode model.GameMode) []Option {
 	var out []Option
 	if state == nil {
@@ -430,21 +430,8 @@ func Options(state *model.RoundSnapshot, def model.CharacterModelDef, mode model
 				out = append(out, opt)
 			}
 		}
-		for _, e := range state.Exits(&l) {
-			out = append(out, Option{LocationID: l.ID, Object: MoveObject, ObjectTitle: e.To.Name, Idx: directionIndex(e.Direction), Title: "идти " + e.Title(), Move: e.Direction})
-		}
 	}
 	return out
-}
-
-// directionIndex — номер направления в model.Directions.
-func directionIndex(d model.Direction) int {
-	for i, x := range model.Directions {
-		if x == d {
-			return i
-		}
-	}
-	return -1
 }
 
 // OptionsText — блок подходов сцены для сообщения в группу: заголовок и пункт на подход с новой строки,
@@ -453,10 +440,6 @@ func directionIndex(d model.Direction) int {
 func OptionsText(opts []Option, mode model.GameMode) string {
 	parts := make([]string, 0, len(opts))
 	for _, o := range opts {
-		if o.Move != "" {
-			parts = append(parts, "• "+o.Title)
-			continue
-		}
 		if o.Attribute == "" {
 			parts = append(parts, "• "+o.Title+" (без броска)")
 			continue

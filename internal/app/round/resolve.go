@@ -47,7 +47,7 @@ func snapshot(g model.Game, chars []model.Character, locations []model.Location,
 			objects = []model.LocationObject{}
 		}
 		snap.Locations = append(snap.Locations, model.SnapshotLocation{ID: l.ID, Name: l.Name, Description: l.Description, Difficulty: l.Difficulty, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain,
-			Visited: l.VisitedAt != nil, Start: l.Start, DiscoveredBy: discoveries[l.ID], Objects: objects})
+			Visited: l.VisitedAt != nil, Hidden: l.Hidden, DistantView: l.DistantView, Start: l.Start, DiscoveredBy: discoveries[l.ID], Objects: objects})
 	}
 	for _, sub := range subs {
 		snap.Submissions = append(snap.Submissions, model.SnapshotSubmission{SubmissionID: sub.ID, CharacterID: sub.CharacterID, Text: sub.RawText, SubmittedAt: sub.SubmittedAt})
@@ -321,7 +321,8 @@ func (s *Service) saveState(ctx context.Context, g model.Game, r model.Round, be
 		}
 		if !prev.Visited && l.Visited {
 			visited := now
-			if err := s.store.UpdateLocation(ctx, model.Location{ID: l.ID, GameID: g.ID, Name: l.Name, Description: l.Description, Difficulty: l.Difficulty, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain, VisitedAt: &visited, Start: l.Start}); err != nil {
+			// Вход открывает клетку: hidden уже снят свёрткой (ADR-0025).
+			if err := s.store.UpdateLocation(ctx, model.Location{ID: l.ID, GameID: g.ID, Name: l.Name, Description: l.Description, Difficulty: l.Difficulty, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain, VisitedAt: &visited, Hidden: l.Hidden, DistantView: l.DistantView, Start: l.Start}); err != nil {
 				return err
 			}
 		}

@@ -289,14 +289,16 @@ func TestOptions(t *testing.T) {
 	t.Parallel()
 	st := tower()
 	opts := Options(&st, def(), model.ModeBalanced)
-	// Подходы объектов, затем переходы по направлениям (пункт 27): зал → юг (подвал), подвал → север (зал).
-	if len(opts) != 5 || opts[0].LocationID != 1 || opts[0].Title != "осмотреть статую" || len(opts[0].Chances) != 1 || opts[0].Chances[0].Nickname != "Маг" {
+	// Только подходы объектов: переходов по направлениям среди вариантов нет (B36, ADR-0025).
+	if len(opts) != 3 || opts[0].LocationID != 1 || opts[0].Title != "осмотреть статую" || len(opts[0].Chances) != 1 || opts[0].Chances[0].Nickname != "Маг" {
 		t.Fatalf("options = %+v", opts)
 	}
-	if mv := opts[1]; mv.Move != model.South || mv.Object != MoveObject || mv.Idx != 1 || mv.Title != "идти на юг: Подвал башни" || opts[4].Move != model.North {
-		t.Fatalf("move options = %+v / %+v", opts[1], opts[4])
+	for _, o := range opts {
+		if strings.HasPrefix(o.Title, "идти") || o.Object == "move" {
+			t.Fatalf("move option = %+v", o)
+		}
 	}
-	door, pick := opts[2], opts[3]
+	door, pick := opts[1], opts[2]
 	if door.Difficulty != 5 || door.Attribute != "Сила" || door.Skill != "Атлетика" || len(door.Chances) != 2 || door.Chances[0].Nickname != "Вор" || door.Chances[0].Pct != 20 || door.Chances[1].Pct != 70 {
 		t.Errorf("door option = %+v", door)
 	}
@@ -304,16 +306,16 @@ func TestOptions(t *testing.T) {
 	if pick.Difficulty != 5 || pick.Skill != "Воровство" || pick.Chances[0].Pct != 80 || pick.Chances[1].Pct != 10 {
 		t.Errorf("pick option = %+v", pick)
 	}
-	text := OptionsText(opts[2:], model.ModeBalanced)
-	if text != "Варианты:\n• выбить (Сила/атлетика, сложность 5)\n• отпереть (Ловкость/воровство, сложность 5)\n• идти на север: Зал башни" {
+	text := OptionsText(opts[1:], model.ModeBalanced)
+	if text != "Варианты:\n• выбить (Сила/атлетика, сложность 5)\n• отпереть (Ловкость/воровство, сложность 5)" {
 		t.Errorf("text = %q", text)
 	}
-	words := OptionsText(opts[2:], model.ModeNarrative)
+	words := OptionsText(opts[1:], model.ModeNarrative)
 	if strings.ContainsAny(words, "0123456789") || !strings.Contains(words, "• выбить (Сила/атлетика, обычно)\n• отпереть (Ловкость/воровство, обычно)") {
 		t.Errorf("narrative text = %q", words)
 	}
 	st.Locations[1].Objects[1].Revealed = true
-	if o := Options(&st, def(), model.ModeBalanced); len(o) != 6 || o[4].Attribute != "" || !strings.Contains(OptionsText(o[4:], model.ModeBalanced), "• дёрнуть (без броска)") {
+	if o := Options(&st, def(), model.ModeBalanced); len(o) != 4 || o[3].Attribute != "" || !strings.Contains(OptionsText(o[3:], model.ModeBalanced), "• дёрнуть (без броска)") {
 		t.Errorf("revealed options = %+v", o)
 	}
 	if OptionsText(nil, model.ModeBalanced) != "" {
@@ -324,7 +326,41 @@ func TestOptions(t *testing.T) {
 	st.Locations[1].Objects[0].Approaches[1].OnSuccess = json.RawMessage(`{"state":"open"}`)
 	st.Characters[2].Knowledge = []string{"статуя: ничего примечательного"}
 	o := Options(&st, def(), model.ModeBalanced)
-	if len(o) != 4 || o[0].Move != model.South || o[1].Title != "выбить" || o[2].Title != "дёрнуть" || o[3].Move != model.North {
+	if len(o) != 2 || o[0].Title != "выбить" || o[1].Title != "дёрнуть" {
 		t.Errorf("exhausted options = %+v", o)
+	}
+}
+
+// TestBuildInput_HiddenExit (ADR-0025): скрытый сосед уходит модели как `hidden` с видом издалека, без имени и
+// карточки; видимая карточка — с именем и карточкой.
+func TestBuildInput_HiddenExit(t *testing.T) {
+	t.Parallel()
+	st := tower()
+	st.Locations = append(st.Locations,
+		model.SnapshotLocation{ID: 3, Name: "Деревня", Description: "Десяток дворов.", X: 1, Y: 0, Stage: model.StageCard, Hidden: true, DistantView: "дым над крышами", Objects: []model.LocationObject{}},
+		model.SnapshotLocation{ID: 4, Name: "Опушка", Description: "Кромка леса.", X: -1, Y: 0, Stage: model.StageCard, Objects: []model.LocationObject{}},
+	)
+	in := BuildInput(Params{State: &st, Def: def()})
+	hall := in.Scenes[0]
+	if len(hall.Exits) != 3 {
+		t.Fatalf("exits = %+v", hall.Exits)
+	}
+	var east, west sceneExit
+	for _, e := range hall.Exits {
+		switch e.Direction {
+		case model.East:
+			east = e
+		case model.West:
+			west = e
+		}
+	}
+	if !east.Hidden || east.DistantView != "дым над крышами" || east.Name != "" || east.Card != "" {
+		t.Fatalf("hidden exit = %+v", east)
+	}
+	if west.Hidden || west.Name != "Опушка" || west.Card != "Кромка леса." {
+		t.Fatalf("visible card exit = %+v", west)
+	}
+	if enc := in.Encode(); strings.Contains(enc, "Деревня") || strings.Contains(enc, "Десяток дворов") {
+		t.Fatalf("hidden neighbor leaked: %s", enc)
 	}
 }

@@ -232,3 +232,27 @@ func TestBuildInput_NoLeaks(t *testing.T) {
 		t.Errorf("submissions = %+v", in.Submissions)
 	}
 }
+
+// TestBuildInput_HiddenExit (ADR-0025): выход к скрытому соседу подписан видом издалека без имени; цель `move` по
+// имени скрытого соседа не проходит проверку, по направлению — проходит.
+func TestBuildInput_HiddenExit(t *testing.T) {
+	t.Parallel()
+	snap := cellar()
+	snap.Locations = append(snap.Locations, model.SnapshotLocation{ID: 3, Name: "Деревня", Description: "Десяток дворов.", X: 1, Y: 0, Stage: model.StageCard, Hidden: true, DistantView: "дым над крышами", Objects: []model.LocationObject{}})
+	in := BuildInput(snap, def())
+	hall := in.Scenes[0]
+	if len(hall.Exits) != 2 || hall.Exits[1].To != "east" || hall.Exits[1].Title != "на восток: неизведанная территория (дым над крышами)" {
+		t.Fatalf("exits = %+v", hall.Exits)
+	}
+	if enc := in.Encode(); strings.Contains(enc, "Деревня") {
+		t.Fatalf("hidden name leaked: %s", enc)
+	}
+	v := newValidator(snap, def())
+	sub := model.SnapshotSubmission{SubmissionID: 73, CharacterID: 13, Text: "иду на дым"}
+	if _, err := v.intent(sub, rawIntent{SubmissionID: 73, ActionType: "move", Target: "Деревня"}); err == nil || !strings.Contains(err.Error(), "неизведанная территория (дым над крышами)") {
+		t.Fatalf("move by hidden name = %v", err)
+	}
+	if got, err := v.intent(sub, rawIntent{SubmissionID: 73, ActionType: "move", Target: "east"}); err != nil || got.Target != "east" {
+		t.Fatalf("move by direction = %+v, %v", got, err)
+	}
+}

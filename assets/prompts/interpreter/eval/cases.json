@@ -16,7 +16,8 @@
            {"action": "explore", "title": "найти потайной рычаг", "attribute": "wits", "skill": "awareness", "difficulty": 3, "on_success": {"reveal": "hidden_lever"}}
          ]},
          {"key": "hidden_lever", "title": "потайной рычаг", "hidden_until_revealed": true}
-       ]}
+       ]},
+      {"id": 3, "name": "Лесная деревня", "description": "Десяток дворов у кромки леса.", "difficulty": 0, "x": 1, "y": 0, "stage": "card", "hidden": true, "distant_view": "дым над лесом", "objects": []}
     ],
     "characters": [
       {"id": 11, "nickname": "Вор", "status": "active", "hp": 6, "max_hp": 6, "location_id": 2, "conditions": [], "attributes": {"strength": 2, "agility": 4, "wits": 3, "will": 3}, "skills": {"thievery": 3, "stealth": 2}, "inventory": [{"key": "lockpicks", "title": "Отмычки", "bonus": {"skill": "thievery", "dice": 1}}], "knowledge": []},
@@ -67,6 +68,10 @@
        {"submission_id": 21, "action_type": ["interact"], "target": "cellar_door", "approach_idx": 1},
        {"submission_id": 22, "action_type": ["explore", "interact"], "has_check": true},
        {"submission_id": 23, "action_type": ["move"], "target": "south"},
-       {"submission_id": 24, "action_type": ["explore"], "target": "statue"}]}
+       {"submission_id": 24, "action_type": ["explore"], "target": "statue"}]},
+    {"name": "move-hidden-by-view", "submissions": [{"submission_id": 90, "character_id": 13, "text": "иду туда, где над лесом поднимается дым"}],
+     "expect": [{"submission_id": 90, "action_type": ["move"], "target": "east"}]},
+    {"name": "move-hidden-by-name", "submissions": [{"submission_id": 91, "character_id": 13, "text": "иду в лесную деревню"}],
+     "expect": [{"submission_id": 91, "action_type": ["move", "explore", "wait"]}]}
   ]
 }

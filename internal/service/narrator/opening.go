@@ -14,7 +14,7 @@ import (
 )
 
 // OpeningPromptVersion — версия промпта завязки, пишется в `llm_runs.prompt_version`.
-const OpeningPromptVersion = "narrator/opening-v3"
+const OpeningPromptVersion = "narrator/opening-v4"
 
 // Границы текста завязки в рунах: короче — не завязка, длиннее — не влезает в сообщение; в выжимку для хроник
 // уходит начало до openingDigestRune.
@@ -28,7 +28,7 @@ const (
 var ErrOpening = errors.New("narrator: завязка не по правилам")
 
 // OpeningSchema — JSON-схема ответа: текст завязки и стартовый пакет (ADR-0019): стартовая клетка с объектами и
-// карточки соседей по направлениям; цель и сюжетный квест каждой фракции (ADR-0020).
+// карточки соседей по направлениям с видимостью (ADR-0025); цель и сюжетный квест каждой фракции (ADR-0020).
 var OpeningSchema = json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -55,9 +55,11 @@ var OpeningSchema = json.RawMessage(`{
           "direction": {"type": "string", "enum": ["north", "south", "west", "east"]},
           "name": {"type": "string"},
           "terrain": {"type": "string"},
-          "card": {"type": "string"}
+          "card": {"type": "string"},
+          "visible": {"type": "boolean"},
+          "distant_view": {"type": "string"}
         },
-        "required": ["direction", "name", "terrain", "card"],
+        "required": ["direction", "name", "terrain", "card", "visible", "distant_view"],
         "additionalProperties": false
       }
     }
@@ -149,7 +151,7 @@ func (in OpeningInput) Encode() string {
 
 // OpeningSystemPrompt — системная часть промпта завязки текущей версии.
 func OpeningSystemPrompt() string {
-	b, err := prompts.FS.ReadFile("narrator/opening-v3.md")
+	b, err := prompts.FS.ReadFile("narrator/opening-v4.md")
 	if err != nil {
 		panic("narrator: opening prompt: " + err.Error())
 	}
@@ -233,10 +235,12 @@ type openingFaction struct {
 }
 
 type openingNeighbor struct {
-	Direction model.Direction `json:"direction"`
-	Name      string          `json:"name"`
-	Terrain   string          `json:"terrain"`
-	Card      string          `json:"card"`
+	Direction   model.Direction `json:"direction"`
+	Name        string          `json:"name"`
+	Terrain     string          `json:"terrain"`
+	Card        string          `json:"card"`
+	Visible     bool            `json:"visible"`      // ADR-0025
+	DistantView string          `json:"distant_view"` // вид скрытого соседа издалека
 }
 
 // openingCall — один вызов модели и разбор ответа; возвращает ответ и замечания к тексту.
@@ -295,7 +299,7 @@ func validateOpeningWorld(out openingResponse, p OpeningParams) (*GeneratedCell,
 	var neighbors []GeneratedNeighbor
 	for _, t := range p.Neighbors {
 		n, ok := byDir[t.Direction]
-		card, more := validateNeighbor(rawNeighbor{X: t.X, Y: t.Y, Name: n.Name, Terrain: n.Terrain, Card: n.Card}, ok, t)
+		card, more := validateNeighbor(rawNeighbor{X: t.X, Y: t.Y, Name: n.Name, Terrain: n.Terrain, Card: n.Card, Visible: n.Visible, DistantView: n.DistantView}, ok, t)
 		issues = append(issues, more...)
 		neighbors = append(neighbors, card)
 	}

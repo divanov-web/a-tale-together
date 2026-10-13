@@ -61,7 +61,7 @@ const worldResponse = `{"chronicle":"Лес встречает тишиной.",
     {"key":"cache","title":"тайник под корнями","description":"","state":"","hidden":true,"approaches":[{"action":"interact","title":"вскрыть","attribute":null,"skill":null,"difficulty":0,"on_success":{"state":"open","reveal":null,"fact":"Внутри печать Ордена."},"on_fail":null}]},
     {"key":"extra","title":"лишний объект","description":"","state":"","hidden":false,"approaches":[]}]},
   {"location_id":77,"name":"Чужая клетка","description":"Не из задания.","difficulty":0,"objects":[]}],
-  "neighbors":[{"x":0,"y":2,"name":"Болото","terrain":"swamp","card":"Туман над осокой."},{"x":5,"y":5,"name":"Лишний","terrain":"road","card":"Не из задания."}]}}`
+  "neighbors":[{"x":0,"y":2,"name":"Болото","terrain":"swamp","card":"Туман над осокой.","visible":false,"distant_view":"Туман стелется низко."},{"x":5,"y":5,"name":"Лишний","terrain":"road","card":"Не из задания.","visible":true,"distant_view":""}]}}`
 
 // TestNarrate_WorldPackage: пакет мира проверяется по заданиям: клетка из задания принята (ключи в snake_case, объекты
 // сверх лимита и подход с неизвестной характеристикой отброшены, reveal указывает на скрытый объект), чужие клетка и
@@ -107,6 +107,10 @@ func TestNarrate_WorldPackage(t *testing.T) {
 	}
 	if len(w.Neighbors) != 3 || w.Neighbors[0].Name != "Болото" || w.Neighbors[0].Terrain != "swamp" || w.Neighbors[0].Template || !w.Neighbors[1].Template || w.Neighbors[1].X != -1 || !w.Neighbors[2].Template {
 		t.Fatalf("neighbors = %+v", w.Neighbors)
+	}
+	// ADR-0025: скрытость и вид издалека из карточки; шаблонный сосед виден.
+	if !w.Neighbors[0].Hidden || w.Neighbors[0].DistantView != "Туман стелется низко." || w.Neighbors[1].Hidden || w.Neighbors[1].DistantView != "" {
+		t.Fatalf("visibility = %+v", w.Neighbors)
 	}
 	if w.Templated() != 3 {
 		t.Fatalf("templated = %d", w.Templated())

@@ -42,7 +42,7 @@ func (s *Store) UpdateLocation(_ context.Context, l model.Location) error {
 	if !ok || ex.GameID != l.GameID {
 		return model.ErrNotFound
 	}
-	ex.Name, ex.Description, ex.Difficulty, ex.Stage, ex.Terrain, ex.VisitedAt = l.Name, l.Description, l.Difficulty, l.Stage, l.Terrain, l.VisitedAt
+	ex.Name, ex.Description, ex.Difficulty, ex.Stage, ex.Terrain, ex.VisitedAt, ex.Hidden, ex.DistantView = l.Name, l.Description, l.Difficulty, l.Stage, l.Terrain, l.VisitedAt, l.Hidden, l.DistantView
 	s.locations[l.ID] = ex
 	return nil
 }
@@ -174,7 +174,7 @@ func (s *Store) ResetWorld(_ context.Context, game model.GameID) error {
 		if l.Start {
 			sid := id
 			start = &sid
-			l.Objects, l.VisitedAt, l.Stage = []model.LocationObject{}, nil, model.StageDetailed
+			l.Objects, l.VisitedAt, l.Stage, l.Hidden, l.DistantView = []model.LocationObject{}, nil, model.StageDetailed, false, ""
 			s.locations[id] = l
 			continue
 		}

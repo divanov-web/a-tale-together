@@ -132,7 +132,7 @@ func (w *worldLLM) Complete(_ context.Context, call applm.Call, req model.LLMReq
 		}
 		for _, n := range in.Generate.Neighbors {
 			w.generated++
-			neighbors = append(neighbors, map[string]any{"x": n.X, "y": n.Y, "name": fmt.Sprintf("Клетка %d,%d", n.X, n.Y), "terrain": "forest", "card": "Лес шумит."})
+			neighbors = append(neighbors, map[string]any{"x": n.X, "y": n.Y, "name": fmt.Sprintf("Клетка %d,%d", n.X, n.Y), "terrain": "forest", "card": "Лес шумит.", "visible": n.Direction != model.West, "distant_view": "шум листвы"})
 		}
 	}
 	raw, _ := json.Marshal(map[string]any{"chronicle": "Ветер.", "scenes": scenes, "world": map[string]any{"cells": cells, "neighbors": neighbors, "quests": quests, "stages": stages, "goals": goals}})
@@ -154,7 +154,7 @@ const startPackageJSON = `{"text":"Над площадью туман, Элис,
               {"key":"lodge","title":"Добраться до сторожки","summary":"Дойти до сторожки.","distance":1,"condition":"visited","reward":""},
               {"key":"cargo","title":"Забрать груз","summary":"Сундук должен быть открыт.","distance":1,"condition":"object_state","reward":"Груз у Гильдии."}]}}],
  "start":{"location_id":%d,"name":"Площадь у колодца","description":"Сердце города; у колодца толпа.","difficulty":0,"objects":[{"key":"well","title":"колодец","description":"","state":"","hidden":false,"approaches":[{"action":"explore","title":"заглянуть в колодец","attribute":"wits","skill":"awareness","difficulty":5,"on_success":{"state":null,"reveal":null,"fact":"На дне блестит кольцо."},"on_fail":null}]}]},
- "neighbors":[{"direction":"north","name":"Опушка","terrain":"forest","card":"Кромка леса."},{"direction":"south","name":"Южные ворота","terrain":"town","card":"Ворота на тракт."},{"direction":"west","name":"Переулки","terrain":"town","card":"Тесные дворы."},{"direction":"east","name":"Рынок","terrain":"town","card":"Торговые ряды."}]}`
+ "neighbors":[{"direction":"north","name":"Опушка","terrain":"forest","card":"Кромка леса.","visible":true,"distant_view":""},{"direction":"south","name":"Южные ворота","terrain":"town","card":"Ворота на тракт.","visible":true,"distant_view":""},{"direction":"west","name":"Переулки","terrain":"town","card":"Тесные дворы.","visible":false,"distant_view":"гул голосов за углом"},{"direction":"east","name":"Рынок","terrain":"town","card":"Торговые ряды.","visible":true,"distant_view":""}]}`
 
 // startWorld — мир только со стартовой клеткой (как после `/create`): остальное достраивают завязка и рассказчик.
 func startWorld(t *testing.T) *world {
@@ -221,8 +221,15 @@ func TestBegin_StartPackage(t *testing.T) {
 	if n := w.at(t, 0, 1); n.Name != "Опушка" || n.Stage != model.StageCard || n.Terrain != "forest" || n.Description != "Кромка леса." || n.VisitedAt != nil {
 		t.Fatalf("north card = %+v", n)
 	}
-	if e := w.at(t, 1, 0); e.Name != "Рынок" {
+	if e := w.at(t, 1, 0); e.Name != "Рынок" || e.Hidden {
 		t.Fatalf("east card = %+v", e)
+	}
+	// ADR-0025: скрытый сосед хранится со скрытостью и видом издалека; `/scout` подписывает его видом.
+	if west := w.at(t, -1, 0); !west.Hidden || west.DistantView != "гул голосов за углом" || west.Glimpse() != "неизведанная территория (гул голосов за углом)" {
+		t.Fatalf("west card = %+v", west)
+	}
+	if text, err := ScoutText(w.chars[0], w.locations(t)); err != nil || !strings.Contains(text, "• на север: Опушка — Кромка леса.\n• на юг: Южные ворота — Ворота на тракт.\n• на запад: неизведанная территория (гул голосов за углом)\n• на восток: Рынок — Торговые ряды.") {
+		t.Fatalf("scout = %q, %v", text, err)
 	}
 	// Личное «раунд открыт» предлагает колодец и четыре перехода.
 	var open string
@@ -231,7 +238,7 @@ func TestBegin_StartPackage(t *testing.T) {
 			open = m.Text
 		}
 	}
-	if !strings.Contains(open, "• заглянуть в колодец (Разум/внимательность): параметр 6, сложность 5, шанс 60%\n• идти на север: Опушка\n• идти на юг: Южные ворота\n• идти на запад: Переулки\n• идти на восток: Рынок") {
+	if !strings.Contains(open, "• заглянуть в колодец (Разум/внимательность): параметр 6, сложность 5, шанс 60%") || strings.Contains(open, "идти на") {
 		t.Fatalf("personal open = %q", open)
 	}
 

@@ -565,14 +565,15 @@ func sameParty(a, b *model.SnapshotCharacter) bool {
 	return a.PartyID != nil && b.PartyID != nil && *a.PartyID == *b.PartyID
 }
 
-// exitTo — выход клетки по цели: направление словом или имя соседа (`RoundSnapshot.ExitTo`), иначе имя соседа по
-// основе слов (`matches`: «к башне» ≈ «Зал Серой башни») — для запасного разбора кодом.
+// exitTo — выход клетки по цели: направление словом или имя соседа (`RoundSnapshot.ExitTo`), иначе имя видимого
+// соседа по основе слов (`matches`: «к башне» ≈ «Зал Серой башни») — для запасного разбора кодом. Имя скрытого
+// соседа не сопоставляется (ADR-0025).
 func (r *resolver) exitTo(loc *model.SnapshotLocation, target string) (model.Exit, bool) {
 	if e, ok := r.snap.ExitTo(loc, target); ok {
 		return e, true
 	}
 	for _, e := range r.snap.Exits(loc) {
-		if matches(target, e.To.Name) {
+		if !e.To.Hidden && matches(target, e.To.Name) {
 			return e, true
 		}
 	}

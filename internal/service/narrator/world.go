@@ -162,13 +162,15 @@ type GeneratedCell struct {
 	Template    bool
 }
 
-// GeneratedNeighbor — карточка соседа.
+// GeneratedNeighbor — карточка соседа; скрытый (ADR-0025) известен игрокам только видом издалека до первого входа.
 type GeneratedNeighbor struct {
-	X, Y     int
-	Name     string
-	Terrain  string
-	Card     string
-	Template bool
+	X, Y        int
+	Name        string
+	Terrain     string
+	Card        string
+	Hidden      bool   // модель решила, что сосед из занятой клетки не виден
+	DistantView string // что видно издалека; пусто — «неизведанная территория»
+	Template    bool
 }
 
 // rawWorld — блок `world` ответа модели по Schema.
@@ -220,11 +222,13 @@ type rawBad struct {
 }
 
 type rawNeighbor struct {
-	X       int    `json:"x"`
-	Y       int    `json:"y"`
-	Name    string `json:"name"`
-	Terrain string `json:"terrain"`
-	Card    string `json:"card"`
+	X           int    `json:"x"`
+	Y           int    `json:"y"`
+	Name        string `json:"name"`
+	Terrain     string `json:"terrain"`
+	Card        string `json:"card"`
+	Visible     bool   `json:"visible"`      // виден ли сосед из клетки задания (ADR-0025)
+	DistantView string `json:"distant_view"` // вид скрытого соседа издалека
 }
 
 // objectsSchema — массив объектов клетки (пакет мира, стартовый пакет, размещение этапа).
@@ -292,9 +296,11 @@ const neighborSchema = `{
     "y": {"type": "integer"},
     "name": {"type": "string"},
     "terrain": {"type": "string"},
-    "card": {"type": "string"}
+    "card": {"type": "string"},
+    "visible": {"type": "boolean"},
+    "distant_view": {"type": "string"}
   },
-  "required": ["x", "y", "name", "terrain", "card"],
+  "required": ["x", "y", "name", "terrain", "card", "visible", "distant_view"],
   "additionalProperties": false
 }`
 
@@ -543,12 +549,16 @@ func validateApproach(a rawApproach, objects []model.LocationObject, self int, d
 	return ap, nil
 }
 
-// validateNeighbor — карточка соседа: имя, тип местности и одно предложение; пусто — шаблон.
+// validateNeighbor — карточка соседа: имя, тип местности и одно предложение; пусто — шаблон. Скрытость и вид
+// издалека (ADR-0025) берутся у модели как есть: вид только у скрытого соседа, обрезан до лимита карточки.
 func validateNeighbor(n rawNeighbor, ok bool, task NeighborTask) (GeneratedNeighbor, []string) {
 	if !ok {
 		return templateNeighbor(task), []string{fmt.Sprintf("сосед (%d, %d) не описан: шаблон", task.X, task.Y)}
 	}
-	card := GeneratedNeighbor{X: task.X, Y: task.Y, Name: clip(n.Name, model.MaxCellNameRunes), Terrain: normalizeKey(n.Terrain), Card: clip(n.Card, model.MaxCardRunes)}
+	card := GeneratedNeighbor{X: task.X, Y: task.Y, Name: clip(n.Name, model.MaxCellNameRunes), Terrain: normalizeKey(n.Terrain), Card: clip(n.Card, model.MaxCardRunes), Hidden: !n.Visible}
+	if card.Hidden {
+		card.DistantView = clip(n.DistantView, model.MaxCardRunes)
+	}
 	var issues []string
 	if card.Name == "" {
 		return templateNeighbor(task), []string{fmt.Sprintf("сосед (%d, %d) без имени: шаблон", task.X, task.Y)}
@@ -563,7 +573,7 @@ func validateNeighbor(n rawNeighbor, ok bool, task NeighborTask) (GeneratedNeigh
 	return card, issues
 }
 
-// TemplateWorld закрывает все задания шаблоном: клетка «дорога», карточки «неизведанные земли», сюжетные квесты
+// TemplateWorld закрывает все задания шаблоном: клетка «дорога», карточки «неизведанные земли» (видимые), сюжетные квесты
 // и цели из шаблона жанра, этапы объектом «след» (сбой модели, отсутствие провайдера или превышение бюджета).
 func TemplateWorld(tasks Tasks) WorldPackage {
 	var out WorldPackage

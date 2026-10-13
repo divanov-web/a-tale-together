@@ -69,6 +69,7 @@ func (s *Service) registry() []command {
 		{name: "finish", contexts: ctxGroup, description: "завершить игру: последний раунд и финальная хроника", run: s.gameFinish, needsChat: true, adminOnly: true},
 		{name: "status", contexts: ctxAny, description: "состояние игры, раунд и причина простоя", run: s.gameStatus, needsChat: true},
 		{name: "act", contexts: ctxAny, description: "<текст> — заявка на текущий раунд", groupDesc: "<текст> — открытая заявка на текущий раунд", run: s.act, needsChat: true},
+		{name: "scout", contexts: ctxAny, description: "разведка: что в соседних клетках", run: s.scout, needsChat: true},
 		{name: "set", contexts: ctxPrivate, description: "<параметр> <значение> — настройка игры", run: s.gameSet},
 		{name: "join", contexts: ctxPrivate, description: "<код> — войти в игру", run: s.join},
 		{name: "games", contexts: ctxPrivate, description: "[номер] — мои игры и выбор текущей", run: s.gamesList},

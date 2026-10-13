@@ -238,8 +238,8 @@ func (v *validator) safe(sub model.SnapshotSubmission, fb *rawFallback, reason s
 	return model.Intent{SubmissionID: sub.SubmissionID, CharacterID: sub.CharacterID, ActionType: model.ActionWait, Ambiguities: []string{reason}, RawText: sub.Text}
 }
 
-// findExit — выход клетки по цели модели: направление (`north`, «на север») или имя соседа; цель нормализуется в
-// ключ направления, который понимает движок.
+// findExit — выход клетки по цели модели: направление (`north`, «на север») или имя видимого соседа (имя скрытого
+// не сопоставляется, ADR-0025); цель нормализуется в ключ направления, который понимает движок.
 func findExit(snap model.RoundSnapshot, loc *model.SnapshotLocation, target string) (model.Exit, bool) {
 	return snap.ExitTo(loc, target)
 }
@@ -279,7 +279,7 @@ func hasApproach(o model.LocationObject, t model.ActionType) bool {
 func exitsList(snap model.RoundSnapshot, loc *model.SnapshotLocation) string {
 	var out []string
 	for _, e := range snap.Exits(loc) {
-		out = append(out, string(e.Direction)+" ("+e.To.Name+")")
+		out = append(out, string(e.Direction)+" ("+e.To.Glimpse()+")")
 	}
 	return strings.Join(out, ", ")
 }

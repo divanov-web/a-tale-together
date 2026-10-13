@@ -64,9 +64,9 @@ func (s *Service) Welcome(ctx context.Context, g model.Game, c model.Character) 
 		return joinBlocks(head, summary, "Напишите, что делает персонаж, или /act <текст>."), nil, nil
 	}
 	options := optionsFor(*sc, &state, opts, "Варианты хода")
-	hint := "Напишите, что делает персонаж, или /act <текст>."
+	hint := "Напишите, что делает персонаж, или /act <текст>. " + scoutHint
 	if options != "" {
-		hint = "Нажмите вариант или напишите действие своими словами."
+		hint = "Нажмите вариант или напишите действие своими словами. " + scoutHint
 	}
 	return joinBlocks(head, summary, options, hint), optionsKeyboard(*sc, opts, open.RoundNo), nil
 }

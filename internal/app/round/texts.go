@@ -55,7 +55,7 @@ func openingScene(g model.Game, text string) string {
 }
 
 func roundOpenText(g model.Game, r model.Round, carried int, now time.Time) string {
-	text := fmt.Sprintf("%s открыт\nЗаявки до %s: /act <текст> здесь или в личке с ботом", header(g, r.RoundNo), FormatTime(g, r.DeadlineAt, now))
+	text := fmt.Sprintf("%s открыт\nЗаявки до %s: /act <текст> здесь или в личке с ботом. Соседние места: /scout", header(g, r.RoundNo), FormatTime(g, r.DeadlineAt, now))
 	if carried > 0 {
 		text += fmt.Sprintf("\nПеренесено заявок из пропущенного раунда: %d.", carried)
 	}
@@ -234,13 +234,16 @@ func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model
 	if options != "" {
 		b.WriteString("\n\n" + options)
 	}
-	b.WriteString("\n\nСледующая заявка: /act <текст> после открытия раунда.")
+	b.WriteString("\n\nСледующая заявка: /act <текст> после открытия раунда. " + scoutHint)
 	return b.String()
 }
 
+// scoutHint — подсказка к личным сообщениям раунда: переходов среди вариантов нет (B36, ADR-0025), куда идти — `/scout`.
+const scoutHint = "Куда можно пойти — /scout."
+
 // roundOpenPersonalText — личное «раунд открыт» с вариантами (B15) персонажам, не получившим уведомление о заявке.
 func roundOpenPersonalText(g model.Game, r model.Round, options string, now time.Time) string {
-	text := fmt.Sprintf("«%s» — раунд %d открыт\n\nЗаявки до %s: напишите, что делает персонаж, или /act <текст>. Одна заявка на раунд.", g.Title, r.RoundNo, FormatTime(g, r.DeadlineAt, now))
+	text := fmt.Sprintf("«%s» — раунд %d открыт\n\nЗаявки до %s: напишите, что делает персонаж, или /act <текст>. Одна заявка на раунд. %s", g.Title, r.RoundNo, FormatTime(g, r.DeadlineAt, now), scoutHint)
 	if options != "" {
 		text += "\n\n" + options
 	}
@@ -257,10 +260,6 @@ func optionsFor(c model.SnapshotCharacter, state *model.RoundSnapshot, opts []na
 	var lines []string
 	for _, o := range opts {
 		if o.LocationID != *c.LocationID {
-			continue
-		}
-		if o.Move != "" {
-			lines = append(lines, "• "+o.Title)
 			continue
 		}
 		if o.Attribute == "" {
