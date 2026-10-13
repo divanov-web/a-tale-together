@@ -19,7 +19,7 @@
 Персонажи:{{if not .Characters}} пока нет{{end}}
 {{range .Characters}}• {{.Nickname}} — {{.Archetype}}, {{if .Gender}}{{.Gender}}, {{end}}{{.Faction}}, {{.Status}}
 {{end}}Группы:{{if not .Parties}} пока нет{{end}}
-{{range .Parties}}• {{.Name}} ({{.Count}}){{if .Location}}, {{.Location}}{{end}}: {{.Members}}
+{{range .Parties}}• {{.Members}}{{if .Location}} — {{.Location}}{{end}}
 {{end}}
 {{if .CurrentRound}}Текущий раунд: {{.CurrentRound}}
 {{end}}{{if .LastRound}}Предыдущий раунд: {{.LastRound}}

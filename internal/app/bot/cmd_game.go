@@ -128,9 +128,8 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 	case model.GameFinishing:
 		next = "игра завершается: последний раунд и финальная хроника скоро в группе"
 	}
-	type partyRow struct {
-		Name, Location, Members string
-		Count                   int
+	type partyRow struct { // группа без названия: состав и клетка (решение руководителя 2026-10-13)
+		Location, Members string
 	}
 	var parties []partyRow
 	if infos, err := s.games.Parties(ctx, g); err == nil {
@@ -141,7 +140,7 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 			}
 		}
 		for _, p := range infos {
-			row := partyRow{Name: p.Party.Name, Count: len(p.Members)}
+			row := partyRow{}
 			if p.Party.LocationID != nil {
 				row.Location = locNames[*p.Party.LocationID]
 			}

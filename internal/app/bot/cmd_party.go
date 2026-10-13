@@ -11,7 +11,9 @@ import (
 
 // party — /party: карточка группы персонажа в текущей игре (пункт 19, ADR-0017). Группы собирает и ведёт код:
 // при старте все в одной группе, новичок входит в группу своей локации, расхождение делит или удерживает группу в
-// раунде; команд входа и выхода у игрока нет. Лидер группы не показывается (решение руководителя 2026-10-11).
+// раунде; команд входа и выхода у игрока нет. Лидер группы не показывается (решение руководителя 2026-10-11), названия
+// групп тоже: механика групп геймдизайном не проработана, группа в карточке — только состав и клетка (решение
+// руководителя 2026-10-13).
 func (s *Service) party(ctx context.Context, req *request) error {
 	g, err := s.games.Current(ctx, req.user)
 	if err != nil {
@@ -41,7 +43,7 @@ func (s *Service) party(ctx context.Context, req *request) error {
 	var b strings.Builder
 	switch {
 	case mine != nil:
-		fmt.Fprintf(&b, "Группа «%s»\n", mine.Party.Name)
+		b.WriteString("Ваша группа\n")
 		if mine.Party.LocationID != nil {
 			fmt.Fprintf(&b, "Локация: %s\n", names[*mine.Party.LocationID])
 		}
@@ -61,13 +63,13 @@ func (s *Service) party(ctx context.Context, req *request) error {
 		}
 		where := ""
 		if p.Party.LocationID != nil {
-			where = ", " + names[*p.Party.LocationID]
+			where = " — " + names[*p.Party.LocationID]
 		}
 		members := make([]string, 0, len(p.Members))
 		for _, m := range p.Members {
 			members = append(members, m.Nickname)
 		}
-		others = append(others, fmt.Sprintf("• %s (%d%s): %s", p.Party.Name, len(p.Members), where, strings.Join(members, ", ")))
+		others = append(others, fmt.Sprintf("• %s%s", strings.Join(members, ", "), where))
 	}
 	if len(others) > 0 {
 		b.WriteString("\n\nДругие группы:\n" + strings.Join(others, "\n"))

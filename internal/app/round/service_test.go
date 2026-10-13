@@ -664,10 +664,10 @@ func TestResolve_Narrator(t *testing.T) {
 	}
 	msgs := w.outbox(t)
 	fallback := msgs[2]
-	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "Раунд 1 — итоги\n\n• Элис (@Элис) отделяется от группы «Ночной дозор» и уходит из «Рыночная площадь» в «Зал Серой башни»: теперь это группа «Вольные клинки»\n• Элис уходит из «Рыночная площадь» в «Зал Серой башни»") {
+	if fallback.Kind != model.OutboxChronicle || !strings.Contains(fallback.Text, "Раунд 1 — итоги\n\n• Элис (@Элис) отделяется от группы и уходит своей дорогой из «Рыночная площадь» в «Зал Серой башни»\n• Элис уходит из «Рыночная площадь» в «Зал Серой башни»") {
 		t.Fatalf("fallback chronicle = %q", fallback.Text)
 	}
-	if !strings.Contains(fallback.Text, "— Ночной дозор (Рыночная площадь): Боб, Кэт —\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 4)") {
+	if !strings.Contains(fallback.Text, "— Рыночная площадь (Боб, Кэт) —\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 4)") {
 		t.Fatalf("fallback options = %q", fallback.Text)
 	}
 	// Второй раунд: рассказчик отвечает; в его контексте сцены, события и выжимка только из завязки (прошлой хроники не было).
@@ -692,7 +692,7 @@ func TestResolve_Narrator(t *testing.T) {
 		t.Fatalf("scene locations = %+v", r2.Narration.Scenes)
 	}
 	input := llm.inputs[len(llm.inputs)-1]
-	if !strings.Contains(input, `"round_no":2`) || !strings.Contains(input, `"actor":"Боб"`) || !strings.Contains(input, `"previous":["В Мир наступает осень."]`) || !strings.Contains(input, `"tone":"Маленький город`) || !strings.Contains(input, `"party":"Ночной дозор"`) || strings.Contains(input, "leader") {
+	if !strings.Contains(input, `"round_no":2`) || !strings.Contains(input, `"actor":"Боб"`) || !strings.Contains(input, `"previous":["В Мир наступает осень."]`) || !strings.Contains(input, `"tone":"Маленький город`) || strings.Contains(input, "Ночной дозор") || strings.Contains(input, "leader") {
 		t.Fatalf("narrator input = %s", input)
 	}
 	var chron model.OutboxMessage
@@ -704,7 +704,7 @@ func TestResolve_Narrator(t *testing.T) {
 	if chron.ID == 0 {
 		t.Fatalf("chronicle message for round 2 missing: %+v", w.outbox(t))
 	}
-	want := "Раунд 2\n\nОсень в Мире густеет.\n\n— Ночной дозор (Рыночная площадь) —\nБоб (@Боб) читает объявление.\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 4)\n• идти на север: Зал Серой башни\n• идти на юг: Неизведанные земли\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли\n\n— Вольные клинки (Зал Серой башни) —\nЭлис (@Элис) ждёт в зале.\n\nВарианты:\n• разобраться на месте (без броска)\n• идти на север: Подвал башни\n• идти на юг: Рыночная площадь\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли"
+	want := "Раунд 2\n\nОсень в Мире густеет.\n\n— Рыночная площадь —\nБоб (@Боб) читает объявление.\n\nВарианты:\n• разобрать приписку (Разум/внимательность, сложность 4)\n• идти на север: Зал Серой башни\n• идти на юг: Неизведанные земли\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли\n\n— Зал Серой башни —\nЭлис (@Элис) ждёт в зале.\n\nВарианты:\n• разобраться на месте (без броска)\n• идти на север: Подвал башни\n• идти на юг: Рыночная площадь\n• идти на запад: Неизведанные земли\n• идти на восток: Неизведанные земли"
 	if chron.Text != want {
 		t.Fatalf("chronicle text = %q\nwant %q", chron.Text, want)
 	}
@@ -728,7 +728,7 @@ func TestResolve_Narrator(t *testing.T) {
 			parts = append(parts, m)
 		}
 	}
-	if len(parts) != 3 || parts[1].Part != 2 || !strings.HasPrefix(parts[1].Text, "Раунд 3 (продолжение)\n") || len([]rune(parts[0].Text)) > partLimit || !strings.Contains(parts[2].Text, "— Вольные клинки (Зал Серой башни) —\nТихо.") {
+	if len(parts) != 3 || parts[1].Part != 2 || !strings.HasPrefix(parts[1].Text, "Раунд 3 (продолжение)\n") || len([]rune(parts[0].Text)) > partLimit || !strings.Contains(parts[2].Text, "— Зал Серой башни —\nТихо.") {
 		t.Fatalf("parts = %d: %+v", len(parts), parts)
 	}
 }

@@ -179,14 +179,15 @@ func TestBuildInput_PartyScenes(t *testing.T) {
 	if in.Scenes[1].Label() != "Ночной дозор (Подвал башни)" || in.Scenes[2].Label() != "Подвал башни" {
 		t.Errorf("labels = %q / %q", in.Scenes[1].Label(), in.Scenes[2].Label())
 	}
-	if strings.Contains(in.Encode(), "leader") {
-		t.Error("leader leaked into narrator input")
+	// Лидер и названия групп в контекст не попадают (решения руководителя 2026-10-11 и 2026-10-13).
+	if enc := in.Encode(); strings.Contains(enc, "leader") || strings.Contains(enc, "Ночной дозор") || strings.Contains(enc, "Вольные клинки") || strings.Contains(enc, "Странники") {
+		t.Error("leader or party name leaked into narrator input")
 	}
 	ev := in.Events[len(in.Events)-2]
-	if ev.Actor != "Ночной дозор" || ev.Summary != "группа «Ночной дозор» держится вместе и уходит из «Подвал башни» в «Зал башни»; Кузнец хотел в «Тайный ход»" {
+	if ev.Actor != "группа" || ev.Summary != "группа держится вместе и уходит из «Подвал башни» в «Зал башни»; Кузнец хотел в «Тайный ход»" {
 		t.Errorf("held event = %+v", ev)
 	}
-	if sp := in.Events[len(in.Events)-1]; sp.Summary != "Бродяга отделяется от группы «Вольные клинки» и уходит из «Зал башни» в «Подвал башни»: теперь это группа «Странники»" {
+	if sp := in.Events[len(in.Events)-1]; sp.Summary != "Бродяга отделяется от группы и уходит своей дорогой из «Зал башни» в «Подвал башни»" {
 		t.Errorf("split event = %+v", sp)
 	}
 	resp := `{"chronicle":"Ночь.","scenes":[{"scene_id":1,"text":"Маг ждёт.","event_seqs":[119,123]},{"scene_id":2,"text":"Вор открыл дверь, дозор ушёл наверх.","event_seqs":[117,122]},{"scene_id":3,"text":"Кузнец бил в дверь.","event_seqs":[118]}]}`

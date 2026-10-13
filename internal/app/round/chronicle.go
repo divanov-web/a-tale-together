@@ -29,11 +29,7 @@ func chronicleMessage(g model.Game, r model.Round, events []model.Event, state *
 			b.WriteString("\n\n" + n.Chronicle)
 		}
 		for _, sc := range n.Scenes {
-			label := sc.Party
-			if l, ok := state.Location(sc.LocationID); ok && label == "" {
-				label = l.Name
-			}
-			fmt.Fprintf(&b, "\n\n— %s —", label)
+			fmt.Fprintf(&b, "\n\n— %s —", sceneLabel(sc, state))
 			if sc.Text != "" {
 				b.WriteString("\n" + sc.Text)
 			}
@@ -49,7 +45,8 @@ func chronicleMessage(g model.Game, r model.Round, events []model.Event, state *
 		if line == "" {
 			continue
 		}
-		// Блок на группу в локации, затем персонажи без группы (пункт 19), как в сценах рассказчика.
+		// Блок на группу в локации, затем персонажи без группы (пункт 19), как в сценах рассказчика; подпись — локация и
+		// присутствующие, без названия группы.
 		for _, pt := range state.Parties {
 			var present []string
 			for _, c := range state.Characters {
@@ -58,7 +55,7 @@ func chronicleMessage(g model.Game, r model.Round, events []model.Event, state *
 				}
 			}
 			if len(present) > 0 {
-				fmt.Fprintf(&b, "\n\n— %s (%s): %s —\n\n%s", pt.Name, l.Name, strings.Join(present, ", "), line)
+				fmt.Fprintf(&b, "\n\n— %s (%s) —\n\n%s", l.Name, strings.Join(present, ", "), line)
 			}
 		}
 		var present []string
@@ -72,6 +69,19 @@ func chronicleMessage(g model.Game, r model.Round, events []model.Event, state *
 		}
 	}
 	return b.String()
+}
+
+// sceneLabel — подпись блока сцены для игроков: только название локации. Внутренняя подпись `NarrationScene.Party`
+// («Группа (Локация)») хранит имя группы для сопоставления сцен, но игрокам названия групп не показываются
+// (решение руководителя 2026-10-13: механика групп геймдизайном ещё не проработана).
+func sceneLabel(sc model.NarrationScene, state *model.RoundSnapshot) string {
+	if l, ok := state.Location(sc.LocationID); ok {
+		return l.Name
+	}
+	if at := strings.LastIndex(sc.Party, " ("); at > 0 && strings.HasSuffix(sc.Party, ")") {
+		return sc.Party[at+2 : len(sc.Party)-1]
+	}
+	return sc.Party
 }
 
 func hasParty(state *model.RoundSnapshot, id model.PartyID) bool {

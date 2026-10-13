@@ -91,7 +91,7 @@ type limits struct {
 type scene struct {
 	SceneID     int                 `json:"scene_id"`
 	LocationID  model.LocationID    `json:"location_id"`
-	Party       string              `json:"party,omitempty"` // имя группы; пусто — персонажи без группы в этой локации (пункт 19)
+	Party       string              `json:"-"` // имя группы для внутренней подписи сцены; пусто — персонажи без группы в этой локации (пункт 19). Модели не передаётся: названия групп игрокам не показываются (решение руководителя 2026-10-13)
 	Name        string              `json:"name"`
 	Description string              `json:"description"`
 	X           int                 `json:"x"`
@@ -110,7 +110,8 @@ type sceneExit struct {
 	Card      string          `json:"card,omitempty"`
 }
 
-// Label — подпись сцены в хронике: имя группы с локацией в скобках, у одиночек — название локации.
+// Label — внутренняя подпись сцены (`NarrationScene.Party`): имя группы с локацией в скобках, у одиночек — название
+// локации; по ней код сопоставляет и сортирует сцены, игрокам хроника показывает только локацию.
 func (sc scene) Label() string {
 	if sc.Party == "" {
 		return sc.Name

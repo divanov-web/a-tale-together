@@ -30,7 +30,7 @@ func TestPlanTasks(t *testing.T) {
 	st := gridState()
 	known := map[[2]int]bool{{0, 0}: true, {0, 1}: true, {1, 1}: true} // восточный сосед леса уже есть в мире вне снимка
 	tasks := PlanTasks(&st, func(x, y int) bool { return known[[2]int{x, y}] })
-	if len(tasks.Cells) != 1 || tasks.Cells[0].LocationID != 2 || tasks.Cells[0].Card != "Тёмная кромка леса." || tasks.Cells[0].Parties[0] != "Дозор" {
+	if len(tasks.Cells) != 1 || tasks.Cells[0].LocationID != 2 || tasks.Cells[0].Card != "Тёмная кромка леса." || tasks.Cells[0].Parties[0] != "Вор" {
 		t.Fatalf("cells = %+v", tasks.Cells)
 	}
 	if len(tasks.Neighbors) != 2 || tasks.Neighbors[0].Direction != model.North || tasks.Neighbors[0].Y != 2 || tasks.Neighbors[1].Direction != model.West || tasks.Neighbors[1].OfName != "Лес" {

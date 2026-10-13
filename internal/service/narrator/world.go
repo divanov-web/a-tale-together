@@ -23,7 +23,7 @@ type CellTask struct {
 	Name       string           `json:"name"`
 	Terrain    string           `json:"terrain"`
 	Card       string           `json:"card"`
-	Parties    []string         `json:"parties"` // кто вошёл: имена групп или никнеймы одиночек
+	Parties    []string         `json:"parties"` // кто вошёл: никнеймы присутствующих
 }
 
 // NeighborTask — недостающий сосед занятой клетки: нужна карточка.
@@ -65,12 +65,7 @@ func PlanTasks(state *model.RoundSnapshot, exists func(x, y int) bool) Tasks {
 		if c.LocationID == nil || c.Status.Absent() {
 			continue
 		}
-		label := c.Nickname
-		if c.PartyID != nil {
-			if p, ok := state.Party(*c.PartyID); ok {
-				label = p.Name
-			}
-		}
+		label := c.Nickname // названия групп модели не передаются (решение руководителя 2026-10-13)
 		if _, seen := occupied[*c.LocationID]; !seen {
 			order = append(order, *c.LocationID)
 		}

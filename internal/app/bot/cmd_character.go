@@ -73,18 +73,29 @@ func (s *Service) renderCharacter(ctx context.Context, g model.Game, c model.Cha
 	if c.Status == model.CharacterDead {
 		death = fmt.Sprintf("выбыл, до возвращения раундов: %d", c.DeathRoundsLeft)
 	}
-	partyName := ""
+	// Группа — спутники по составу, без названия (решение руководителя 2026-10-13).
+	party := ""
 	if c.PartyID != nil {
 		if parties, err := s.games.Parties(ctx, g); err == nil {
 			for _, p := range parties {
-				if p.Party.ID == *c.PartyID {
-					partyName = p.Party.Name
+				if p.Party.ID != *c.PartyID {
+					continue
+				}
+				var mates []string
+				for _, m := range p.Members {
+					if m.ID != c.ID {
+						mates = append(mates, m.Nickname)
+					}
+				}
+				party = "только вы"
+				if len(mates) > 0 {
+					party = "с " + strings.Join(mates, ", ")
 				}
 			}
 		}
 	}
 	return templates.Render("character", map[string]any{
-		"Location": location, "Knowledge": len(c.Knowledge), "Death": death, "Party": partyName,
+		"Location": location, "Knowledge": len(c.Knowledge), "Death": death, "Party": party,
 		"Nickname": c.Nickname, "Gender": c.Gender.Word(), "Archetype": archetype, "Faction": faction, "Status": string(c.Status), "Game": g.Title,
 		"HP": c.HP, "Conditions": strings.Join(c.Conditions, ", "), "Attributes": strings.Join(attrs, ", "),
 		"Skills": strings.Join(skills, ", "), "Inventory": strings.Join(items, ", "),

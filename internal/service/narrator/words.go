@@ -10,25 +10,25 @@ import (
 )
 
 // Describe — событие словами: кто действует и что произошло; для хроники без модели и для контекста рассказчика.
-// Второе событие перехода (копия для локации назначения) описывается как приход. У событий группы актёр — группа;
-// лидер не называется (пункт 19).
+// Второе событие перехода (копия для локации назначения) описывается как приход. У событий группы актёр — «группа»
+// без названия (названия групп игрокам и модели не показываются, решение руководителя 2026-10-13); лидер не называется (пункт 19).
 func Describe(ev model.Event, state *model.RoundSnapshot) (actor, summary string) {
 	switch ev.Type {
 	case model.EventPartySplit:
-		actor = payloadStr(ev, "party")
+		actor = "группа"
 		names := payloadList(ev, "nicknames")
-		verb := "отделяется от группы «%s» и уходит"
+		verb := "отделяется от группы и уходит своей дорогой"
 		if strings.Contains(names, ", ") {
-			verb = "отделяются от группы «%s» и уходят"
+			verb = "отделяются от группы и уходят своей дорогой"
 		}
-		return actor, fmt.Sprintf("%s "+verb+" из «%s» в «%s»: теперь это группа «%s»", names, actor, payloadStr(ev, "from_name"), payloadStr(ev, "to_name"), payloadStr(ev, "new_party"))
+		return actor, fmt.Sprintf("%s "+verb+" из «%s» в «%s»", names, payloadStr(ev, "from_name"), payloadStr(ev, "to_name"))
 	case model.EventPartyHeld:
-		actor = payloadStr(ev, "party")
+		actor = "группа"
 		wanted := heldWords(ev)
 		if to := payloadStr(ev, "to_name"); to != "" {
-			return actor, fmt.Sprintf("группа «%s» держится вместе и уходит из «%s» в «%s»%s", actor, payloadStr(ev, "from_name"), to, wanted)
+			return actor, fmt.Sprintf("группа держится вместе и уходит из «%s» в «%s»%s", payloadStr(ev, "from_name"), to, wanted)
 		}
-		return actor, fmt.Sprintf("группа «%s» держится вместе и остаётся в «%s»%s", actor, payloadStr(ev, "from_name"), wanted)
+		return actor, fmt.Sprintf("группа держится вместе и остаётся в «%s»%s", payloadStr(ev, "from_name"), wanted)
 	}
 	actor = nickname(ev, state, "character_id")
 	switch ev.Type {
