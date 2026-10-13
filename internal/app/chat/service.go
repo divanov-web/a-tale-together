@@ -15,6 +15,7 @@ type Store interface {
 	GetChatByTelegramID(ctx context.Context, id model.TelegramChatID) (model.Chat, error)
 	CreateChat(ctx context.Context, c model.Chat) (model.Chat, error)
 	UpdateChatStatus(ctx context.Context, id model.ChatID, status model.BotStatus, title string) error
+	SetChatInviteLink(ctx context.Context, id model.ChatID, link string) error
 	SetChatOwner(ctx context.Context, id model.ChatID, owner model.UserID) error
 	AddModerator(ctx context.Context, chat model.ChatID, user, grantedBy model.UserID) error
 	RemoveModerator(ctx context.Context, chat model.ChatID, user model.UserID) error
@@ -107,6 +108,25 @@ func (s *Service) OfTelegram(ctx context.Context, id model.TelegramChatID) (mode
 		return model.Chat{}, fmt.Errorf("chat.OfTelegram: %w", err)
 	}
 	return c, nil
+}
+
+// InviteLink возвращает ссылку-приглашение чата: сохранённую или созданную через create и сохранённую (ADR-0022).
+// Ошибка create (бот не администратор, нет права приглашать) возвращается вызывающему: кнопки ссылки тогда нет.
+func (s *Service) InviteLink(ctx context.Context, c model.Chat, create func(ctx context.Context) (string, error)) (string, error) {
+	if c.InviteLink != "" {
+		return c.InviteLink, nil
+	}
+	if c.BotStatus == model.BotLeft {
+		return "", fmt.Errorf("chat.InviteLink: bot left chat %d", c.ID)
+	}
+	link, err := create(ctx)
+	if err != nil {
+		return "", fmt.Errorf("chat.InviteLink: %w", err)
+	}
+	if err := s.store.SetChatInviteLink(ctx, c.ID, link); err != nil {
+		return "", fmt.Errorf("chat.InviteLink: %w", err)
+	}
+	return link, nil
 }
 
 // CanManage сообщает, может ли пользователь управлять играми чата: владелец или модератор из списка.

@@ -45,6 +45,7 @@ type Store interface {
 	SetCharacterParty(ctx context.Context, game model.GameID, id model.CharacterID, party *model.PartyID) error
 	NicknameTaken(ctx context.Context, game model.GameID, season model.SeasonID, nickname string) (bool, error)
 	GetChat(ctx context.Context, id model.ChatID) (model.Chat, error)
+	EnqueueOutbox(ctx context.Context, m model.OutboxMessage) error
 	SetCurrentGame(ctx context.Context, user model.UserID, game *model.GameID) error
 	CreateLocation(ctx context.Context, l model.Location) (model.Location, error)
 	ListLocations(ctx context.Context, game model.GameID) ([]model.Location, error)
@@ -215,6 +216,15 @@ func (s *Service) CanAdmin(ctx context.Context, game model.Game, user model.User
 		return false, fmt.Errorf("game.CanAdmin: %w", err)
 	}
 	return ok, nil
+}
+
+// Chat возвращает групповой чат игры.
+func (s *Service) Chat(ctx context.Context, game model.Game) (model.Chat, error) {
+	c, err := s.store.GetChat(ctx, game.ChatID)
+	if err != nil {
+		return model.Chat{}, fmt.Errorf("game.Chat: %w", err)
+	}
+	return c, nil
 }
 
 // Get возвращает игру по id.

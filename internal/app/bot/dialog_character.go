@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -180,6 +181,9 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 			return question{}, false, err
 		}
 		kb = append(kb, []model.Button{{Text: "Мой персонаж", Data: model.CallbackCommand("character", "")}})
+		if link := s.gameChatLink(ctx, g); link != "" {
+			kb = append(kb, []model.Button{{Text: "Перейти в чат игры", URL: link}})
+		}
 		return question{text: "Персонаж создан!\n\n" + strings.TrimRight(card, "\n") + "\n\n" + next, kb: kb}, true, nil
 	default:
 		return question{}, false, fmt.Errorf("bot.characterStep: unknown step %q", d.Step)
@@ -190,6 +194,24 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 	d.Step = next
 	q, err := s.characterQuestion(ctx, g, next)
 	return q, false, err
+}
+
+// gameChatLink — ссылка-приглашение в группу игры для кнопки под итогом создания персонажа (B24, ADR-0022); пусто,
+// если Telegram отказал (бот не администратор или без права приглашать): итог создания от этого не ломается.
+func (s *Service) gameChatLink(ctx context.Context, g model.Game) string {
+	c, err := s.games.Chat(ctx, g)
+	if err != nil {
+		s.logger.Warn("game chat not found", slog.Int64("game_id", int64(g.ID)), slog.Any("err", err))
+		return ""
+	}
+	link, err := s.chats.InviteLink(ctx, c, func(ctx context.Context) (string, error) {
+		return s.tg.CreateInviteLink(ctx, c.TelegramChatID)
+	})
+	if err != nil {
+		s.logger.Info("game chat invite link unavailable", slog.Int64("game_id", int64(g.ID)), slog.Any("err", err))
+		return ""
+	}
+	return link
 }
 
 // characterQuestion — вопрос шага с подсказкой по модели персонажа и кнопками ответов (ADR-0015): фракция, пол,

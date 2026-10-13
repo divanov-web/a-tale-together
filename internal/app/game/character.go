@@ -170,6 +170,10 @@ func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user mod
 		Status: model.CharacterActive, FactionID: faction.ID, HP: hp, Conditions: []string{}, Inventory: inventory, LocationID: start, Knowledge: []string{},
 		Attributes: d.Attributes, Skills: d.Skills,
 	}
+	chat, err := s.store.GetChat(ctx, game.ChatID)
+	if err != nil {
+		return model.Character{}, fmt.Errorf("game.CreateCharacter: chat: %w", err)
+	}
 	var created model.Character
 	err = s.store.InTx(ctx, func(ctx context.Context) error {
 		if err := s.assignParty(ctx, game, genre, &c); err != nil {
@@ -186,15 +190,35 @@ func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user mod
 				return err
 			}
 			created.PartyID = c.PartyID
-			return s.adoptLeader(ctx, game, created)
+			if err := s.adoptLeader(ctx, game, created); err != nil {
+				return err
+			}
 		}
-		return nil
+		if chat.BotStatus == model.BotLeft {
+			return nil
+		}
+		// Объявление в группе (B25, ADR-0022) в одной транзакции с персонажем: повтор создания отклонит уникальность.
+		return s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: game.ID, TelegramChatID: chat.TelegramChatID, Kind: model.OutboxJoined,
+			Part: 1, Text: JoinedNotice(created, archetype.Title, faction), SendAfter: s.clock.Now()})
 	})
 	if err != nil {
 		return model.Character{}, fmt.Errorf("game.CreateCharacter: %w", err)
 	}
 	s.logger.Info("character created", slog.Int64("game_id", int64(game.ID)), slog.Int64("character_id", int64(created.ID)))
 	return created, nil
+}
+
+// JoinedNotice — объявление в группе о новом персонаже (B25): никнейм с архетипом, фракция и открытое описание;
+// скрытое описание в группу не попадает (принцип 6).
+func JoinedNotice(c model.Character, archetype string, f model.Faction) string {
+	var b strings.Builder
+	b.WriteString("Новый участник\n\n")
+	b.WriteString(c.Nickname + " — " + archetype + "\n")
+	b.WriteString("Фракция: «" + f.Title + "»\n")
+	if c.PublicBio != "" {
+		b.WriteString("Описание: " + c.PublicBio + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // adoptLeader назначает персонажа лидером его группы, если лидера ещё нет (группа создана для него при входе).

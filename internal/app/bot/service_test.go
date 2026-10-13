@@ -25,6 +25,8 @@ type fakeTelegram struct {
 	keyboards map[model.TelegramChatID][]model.Keyboard // клавиатура каждого отправленного сообщения; nil — без кнопок
 	cleared   []int64                                   // сообщения, с которых сняты кнопки (ADR-0015)
 	admins    map[model.TelegramUserID]bool
+	invite    string // ссылка, которую вернёт CreateInviteLink; пусто — отказ (бот не администратор)
+	invites   int    // число вызовов CreateInviteLink
 	menu      [][]model.BotCommand
 	member    map[memberScope][]model.BotCommand // меню участников чатов (B20); nil — снято
 }
@@ -75,6 +77,14 @@ func buttonData(kb model.Keyboard) []string {
 
 func (f *fakeTelegram) IsChatAdmin(_ context.Context, _ model.TelegramChatID, user model.TelegramUserID) (bool, error) {
 	return f.admins[user], nil
+}
+
+func (f *fakeTelegram) CreateInviteLink(_ context.Context, _ model.TelegramChatID) (string, error) {
+	f.invites++
+	if f.invite == "" {
+		return "", errors.New("Bad Request: not enough rights to manage chat invite link")
+	}
+	return f.invite, nil
 }
 
 func (f *fakeTelegram) SetCommands(_ context.Context, private, group []model.BotCommand) error {
@@ -384,6 +394,57 @@ func TestCharacter_CreateAutoAndManual(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/status"), "Игроки: 3\n", "Персонажей: 2", "Орден Рассвета (good): 1", "Элис — warrior, женский, Орден Рассвета", "Боб — rogue, мужской")
 }
 
+// TestCharacter_ChatLinkAndJoinedNotice: под итогом создания кнопка-ссылка в чат игры, если Telegram дал ссылку
+// (B24), ссылка создаётся один раз на чат и сбрасывается при my_chat_member; в группу через outbox уходит объявление
+// без скрытого описания (B25).
+func TestCharacter_ChatLinkAndJoinedNotice(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+
+	h.joinAndCreate(alice, code, "1", "Элис", "2", "воин", "1", "Высокая и шумная", "Боится темноты")
+	for _, row := range h.tg.lastKeyboard(private(alice)) {
+		for _, b := range row {
+			if b.URL != "" {
+				t.Fatalf("link button without rights: %+v", b)
+			}
+		}
+	}
+	notices := h.joinedNotices()
+	if len(notices) != 1 {
+		t.Fatalf("outbox = %q", notices)
+	}
+	mustContain(t, notices[0], "Новый участник\n\nЭлис — Воин\nФракция: «Орден Рассвета»\nОписание: Высокая и шумная")
+	if strings.Contains(notices[0], "темноты") {
+		t.Fatalf("secret bio leaked: %q", notices[0])
+	}
+
+	h.tg.invite = "https://t.me/+abc"
+	h.joinAndCreate(bob, code, "1", "Боб", "1", "плут", "1", "-", "-")
+	kb := h.tg.lastKeyboard(private(bob))
+	if last := kb[len(kb)-1]; len(last) != 1 || last[0].Text != "Перейти в чат игры" || last[0].URL != "https://t.me/+abc" {
+		t.Fatalf("link row = %+v", last)
+	}
+	notices = h.joinedNotices()
+	mustContain(t, notices[1], "Боб — Плут\nФракция: «Орден Рассвета»")
+	if strings.Contains(notices[1], "Описание") {
+		t.Fatalf("empty bio shown: %q", notices[1])
+	}
+	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
+	if c.InviteLink != "https://t.me/+abc" {
+		t.Fatalf("link not stored: %q", c.InviteLink)
+	}
+	calls := h.tg.invites
+	h.addBot(owner)
+	if c, _ = h.store.GetChatByTelegramID(context.Background(), groupChat); c.InviteLink != "" {
+		t.Fatalf("link not reset on my_chat_member: %q", c.InviteLink)
+	}
+	h.joinAndCreate(nobody, code, "1", "Никто", "3", "1", "1", "-", "-")
+	if h.tg.invites != calls+1 {
+		t.Fatalf("invite calls = %d, want %d", h.tg.invites, calls+1)
+	}
+}
+
 // TestCharacter_AutoFaction: с настройкой AutoFaction шаг выбора фракции пропускается, персонаж во фракции добрых.
 func TestCharacter_AutoFaction(t *testing.T) {
 	t.Parallel()
@@ -531,8 +592,20 @@ func TestCommands_ManagerMenu(t *testing.T) {
 	}
 }
 
-// outboxTexts — тексты очереди исходящих игры в порядке постановки.
+// outboxTexts — тексты очереди исходящих игры в группу в порядке постановки, без объявлений о новых персонажах (B25).
 func (h *harness) outboxTexts() []string {
+	h.t.Helper()
+	return h.groupOutbox(func(k model.OutboxKind) bool { return k != model.OutboxJoined })
+}
+
+// joinedNotices — объявления в группе о новых персонажах (B25) в порядке постановки.
+func (h *harness) joinedNotices() []string {
+	h.t.Helper()
+	return h.groupOutbox(func(k model.OutboxKind) bool { return k == model.OutboxJoined })
+}
+
+// groupOutbox — тексты очереди исходящих игры в группу с видом, подходящим под keep.
+func (h *harness) groupOutbox(keep func(model.OutboxKind) bool) []string {
 	h.t.Helper()
 	c, err := h.store.GetChatByTelegramID(context.Background(), groupChat)
 	if err != nil {
@@ -548,7 +621,7 @@ func (h *harness) outboxTexts() []string {
 	}
 	var out []string
 	for _, m := range msgs {
-		if m.TelegramChatID == groupChat {
+		if m.TelegramChatID == groupChat && keep(m.Kind) {
 			out = append(out, m.Text)
 		}
 	}
@@ -837,7 +910,7 @@ func TestRound_FinishResetAndDetail(t *testing.T) {
 	msgs, _ := h.store.ListOutbox(context.Background(), g.ID)
 	var texts []string
 	for _, m := range msgs {
-		if m.TelegramChatID == groupChat {
+		if m.TelegramChatID == groupChat && m.Kind != model.OutboxJoined {
 			texts = append(texts, m.Text)
 		}
 	}

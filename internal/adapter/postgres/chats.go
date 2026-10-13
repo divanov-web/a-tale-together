@@ -12,14 +12,14 @@ import (
 
 // chatCols — столбцы chats с алиасом таблицы для scanChat.
 func chatCols(a string) string {
-	return fmt.Sprintf("%[1]sid, %[1]stelegram_chat_id, %[1]stype, %[1]stitle, %[1]sowner_user_id, %[1]sbot_status, %[1]sadded_at, %[1]sleft_at", a)
+	return fmt.Sprintf("%[1]sid, %[1]stelegram_chat_id, %[1]stype, %[1]stitle, %[1]sowner_user_id, %[1]sbot_status, %[1]sadded_at, %[1]sleft_at, %[1]sinvite_link", a)
 }
 
 var chatColumns = chatCols("")
 
 func scanChat(row pgx.Row) (model.Chat, error) {
 	var c model.Chat
-	err := row.Scan(&c.ID, &c.TelegramChatID, &c.Type, &c.Title, &c.OwnerUserID, &c.BotStatus, &c.AddedAt, &c.LeftAt)
+	err := row.Scan(&c.ID, &c.TelegramChatID, &c.Type, &c.Title, &c.OwnerUserID, &c.BotStatus, &c.AddedAt, &c.LeftAt, &c.InviteLink)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Chat{}, model.ErrNotFound
 	}
@@ -58,15 +58,24 @@ RETURNING ` + chatColumns
 	return out, nil
 }
 
-// UpdateChatStatus меняет статус бота и название чата; при уходе бота ставит left_at.
+// UpdateChatStatus меняет статус бота и название чата; при уходе бота ставит left_at. Ссылка-приглашение сбрасывается:
+// права бота могли измениться (ADR-0022).
 func (s *Store) UpdateChatStatus(ctx context.Context, id model.ChatID, status model.BotStatus, title string) error {
 	const q = `
-UPDATE chats SET bot_status = $2, title = $3,
+UPDATE chats SET bot_status = $2, title = $3, invite_link = '',
     left_at = CASE WHEN $2 = 'left' THEN now() ELSE NULL END,
     updated_at = now()
 WHERE id = $1`
 	if _, err := s.db(ctx).Exec(ctx, q, id, status, title); err != nil {
 		return fmt.Errorf("postgres.UpdateChatStatus: %w", err)
+	}
+	return nil
+}
+
+// SetChatInviteLink сохраняет ссылку-приглашение чата (ADR-0022).
+func (s *Store) SetChatInviteLink(ctx context.Context, id model.ChatID, link string) error {
+	if _, err := s.db(ctx).Exec(ctx, `UPDATE chats SET invite_link = $2, updated_at = now() WHERE id = $1`, id, link); err != nil {
+		return fmt.Errorf("postgres.SetChatInviteLink: %w", err)
 	}
 	return nil
 }

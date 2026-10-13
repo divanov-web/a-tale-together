@@ -47,9 +47,10 @@ type Messenger interface {
 	ClearKeyboard(ctx context.Context, chat model.TelegramChatID, messageID int64) error
 }
 
-// ChatAPI — запросы о чате и меню команд (B20).
+// ChatAPI — запросы о чате, ссылка-приглашение (ADR-0022) и меню команд (B20).
 type ChatAPI interface {
 	IsChatAdmin(ctx context.Context, chat model.TelegramChatID, user model.TelegramUserID) (bool, error)
+	CreateInviteLink(ctx context.Context, chat model.TelegramChatID) (string, error)
 	SetCommands(ctx context.Context, private, group []model.BotCommand) error
 	SetMemberCommands(ctx context.Context, chat model.TelegramChatID, user model.TelegramUserID, cmds []model.BotCommand) error
 }

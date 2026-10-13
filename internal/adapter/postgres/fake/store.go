@@ -276,6 +276,16 @@ func (s *Store) GetChat(_ context.Context, id model.ChatID) (model.Chat, error) 
 	return c, nil
 }
 
+// SetChatInviteLink — см. postgres.Store.
+func (s *Store) SetChatInviteLink(_ context.Context, id model.ChatID, link string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.chats[id]
+	c.InviteLink = link
+	s.chats[id] = c
+	return nil
+}
+
 // CreateChat — см. postgres.Store.
 func (s *Store) CreateChat(_ context.Context, c model.Chat) (model.Chat, error) {
 	s.mu.Lock()
@@ -296,7 +306,7 @@ func (s *Store) UpdateChatStatus(_ context.Context, id model.ChatID, status mode
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := s.chats[id]
-	c.BotStatus, c.Title, c.LeftAt = status, title, nil
+	c.BotStatus, c.Title, c.LeftAt, c.InviteLink = status, title, nil, ""
 	if status == model.BotLeft {
 		t := s.now()
 		c.LeftAt = &t

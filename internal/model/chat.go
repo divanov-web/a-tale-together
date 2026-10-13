@@ -22,6 +22,7 @@ type Chat struct {
 	BotStatus      BotStatus
 	AddedAt        time.Time
 	LeftAt         *time.Time
+	InviteLink     string // ссылка-приглашение, созданная ботом (ADR-0022); пусто — ещё нет или сброшена
 }
 
 // ChatMemberChange — изменение статуса бота в чате (update my_chat_member).

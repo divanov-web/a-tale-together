@@ -149,6 +149,19 @@ func classify(err error) error {
 	return err
 }
 
+// inviteLinkName — подпись ссылок-приглашений бота в списке ссылок группы.
+const inviteLinkName = "A Tale Together"
+
+// CreateInviteLink создаёт дополнительную ссылку-приглашение в группу (`createChatInviteLink`, ADR-0022); основная
+// ссылка группы не отзывается. Нужны права администратора с приглашением пользователей.
+func (c *Client) CreateInviteLink(ctx context.Context, chat model.TelegramChatID) (string, error) {
+	l, err := c.bot.CreateChatInviteLink(ctx, &bot.CreateChatInviteLinkParams{ChatID: int64(chat), Name: inviteLinkName})
+	if err != nil {
+		return "", fmt.Errorf("telegram.CreateInviteLink: chat %d: %w", chat, err)
+	}
+	return l.InviteLink, nil
+}
+
 // IsChatAdmin сообщает, является ли пользователь создателем или администратором группы Telegram.
 func (c *Client) IsChatAdmin(ctx context.Context, chat model.TelegramChatID, user model.TelegramUserID) (bool, error) {
 	m, err := c.bot.GetChatMember(ctx, &bot.GetChatMemberParams{ChatID: int64(chat), UserID: int64(user)})
