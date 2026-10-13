@@ -23,6 +23,7 @@ type Store interface {
 	UpsertUser(ctx context.Context, u model.TelegramUser) (model.User, error)
 	MarkStarted(ctx context.Context, id model.UserID) error
 	GetUserByUsername(ctx context.Context, username string) (model.User, error)
+	GetUserByTelegramID(ctx context.Context, id model.TelegramUserID) (model.User, error)
 	ChatsOfUser(ctx context.Context, user model.UserID) ([]model.Chat, error)
 	ListActiveChats(ctx context.Context) ([]model.Chat, error)
 }
@@ -40,9 +41,11 @@ type Telegram interface {
 	ChatAPI
 }
 
-// Messenger — ответы на команды (ADR-0006): текст, текст с кнопками и снятие кнопок после нажатия (ADR-0015).
+// Messenger — ответы на команды (ADR-0006): текст, текст с кнопками, снятие кнопок после нажатия (ADR-0015)
+// и reply-клавиатура лички (ADR-0021).
 type Messenger interface {
 	SendText(ctx context.Context, chat model.TelegramChatID, text string) error
+	SendReplyKeyboard(ctx context.Context, chat model.TelegramChatID, text string, rk model.ReplyKeyboard) error
 	SendKeyboard(ctx context.Context, chat model.TelegramChatID, text string, kb model.Keyboard) error
 	ClearKeyboard(ctx context.Context, chat model.TelegramChatID, messageID int64) error
 }
@@ -238,6 +241,9 @@ func (s *Service) Handle(ctx context.Context, in model.Incoming) error {
 
 // dispatch выполняет шаг диалога или команду; ошибки сценария возвращаются как есть, ответ на них даёт Handle.
 func (s *Service) dispatch(ctx context.Context, req *request) error {
+	if cmd, ok := buttonCommand(req.in.Text); ok && req.in.IsPrivate() && req.in.Command == "" && req.in.Callback == nil {
+		req.in.Command = cmd // нажатие reply-кнопки: подпись приходит текстом (ADR-0021)
+	}
 	in := req.in
 	if in.Command == "" {
 		if !in.IsPrivate() {
@@ -314,13 +320,17 @@ func (s *Service) replyPrivateKeyboard(ctx context.Context, user model.User, tex
 	return nil
 }
 
-// send отправляет текст с кнопками или без и пишет исходящее в журнал чата.
+// send отправляет текст с кнопками или без и пишет исходящее в журнал чата. Ответ в личку без inline-кнопок несёт
+// reply-клавиатуру по статусу пользователя (B29, ADR-0021): у одного сообщения Telegram только одна клавиатура.
 func (s *Service) send(ctx context.Context, chat model.TelegramChatID, updateID int64, text string, kb model.Keyboard) error {
 	rec := model.ChatLogRecord{Kind: model.ChatLogOut, Chat: chat, UpdateID: updateID, Text: text}
 	var err error
-	if len(kb) > 0 {
+	switch {
+	case len(kb) > 0:
 		err = s.tg.SendKeyboard(ctx, chat, text, kb)
-	} else {
+	case chat > 0:
+		err = s.sendPrivate(ctx, chat, text)
+	default:
 		err = s.tg.SendText(ctx, chat, text)
 	}
 	if err != nil {

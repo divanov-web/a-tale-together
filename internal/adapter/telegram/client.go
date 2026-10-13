@@ -1,4 +1,4 @@
-// Package telegram — адаптер Telegram Bot API на go-telegram/bot (ADR-0004): long polling, отправка текста и inline-кнопок (ADR-0015).
+// Package telegram — адаптер Telegram Bot API на go-telegram/bot (ADR-0004): long polling, отправка текста, inline-кнопок (ADR-0015) и reply-клавиатуры лички (ADR-0021).
 package telegram
 
 import (
@@ -89,6 +89,14 @@ func (c *Client) SendKeyboard(ctx context.Context, chat model.TelegramChatID, te
 	return nil
 }
 
+// SendReplyKeyboard отправляет текст и ставит в личке постоянную клавиатуру под полем ввода или снимает её (ADR-0021).
+func (c *Client) SendReplyKeyboard(ctx context.Context, chat model.TelegramChatID, text string, rk model.ReplyKeyboard) error {
+	if _, err := c.bot.SendMessage(ctx, &bot.SendMessageParams{ChatID: int64(chat), Text: text, ReplyMarkup: replyMarkup(rk)}); err != nil {
+		return fmt.Errorf("telegram.SendReplyKeyboard: chat %d: %w", chat, classify(err))
+	}
+	return nil
+}
+
 // Send отправляет текст с кнопками (nil — без них) и возвращает идентификатор сообщения Telegram; используется воркером outbox.
 // Ошибки классифицируются для повторов (ADR-0013): окончательный отказ Telegram → `model.ErrSendRejected`,
 // 429 → `model.RetryAfterError`, остальное (сеть, 5xx, таймаут) — временная ошибка.
@@ -125,6 +133,22 @@ func markup(kb model.Keyboard) *models.InlineKeyboardMarkup {
 		rows = append(rows, r)
 	}
 	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+// replyMarkup собирает reply-клавиатуру Telegram: постоянную и сжатую по высоте; без рядов — снятие клавиатуры.
+func replyMarkup(rk model.ReplyKeyboard) models.ReplyMarkup {
+	if len(rk.Rows) == 0 {
+		return &models.ReplyKeyboardRemove{RemoveKeyboard: true}
+	}
+	rows := make([][]models.KeyboardButton, 0, len(rk.Rows))
+	for _, row := range rk.Rows {
+		r := make([]models.KeyboardButton, 0, len(row))
+		for _, text := range row {
+			r = append(r, models.KeyboardButton{Text: text})
+		}
+		rows = append(rows, r)
+	}
+	return &models.ReplyKeyboardMarkup{Keyboard: rows, IsPersistent: true, ResizeKeyboard: true, InputFieldPlaceholder: rk.Placeholder}
 }
 
 // classify сопоставляет ошибку библиотеки с сентинелами модели: отказы 400/401/403/404 и переезд чата — окончательные,

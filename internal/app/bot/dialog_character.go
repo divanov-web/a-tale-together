@@ -180,11 +180,10 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 		if err != nil {
 			return question{}, false, err
 		}
-		kb = append(kb, []model.Button{{Text: "Мой персонаж", Data: model.CallbackCommand("character", "")}})
 		if link := s.gameChatLink(ctx, g); link != "" {
 			kb = append(kb, []model.Button{{Text: "Перейти в чат игры", URL: link}})
 		}
-		return question{text: "Персонаж создан!\n\n" + strings.TrimRight(card, "\n") + "\n\n" + next, kb: kb}, true, nil
+		return question{text: "Персонаж создан!\n\n" + strings.TrimRight(card, "\n") + "\n\n" + next, kb: kb, before: playerKeyboardHint}, true, nil
 	default:
 		return question{}, false, fmt.Errorf("bot.characterStep: unknown step %q", d.Step)
 	}

@@ -215,6 +215,18 @@ func (s *Store) GetUser(_ context.Context, id model.UserID) (model.User, error) 
 	return u, nil
 }
 
+// GetUserByTelegramID — см. postgres.Store.
+func (s *Store) GetUserByTelegramID(_ context.Context, id model.TelegramUserID) (model.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, u := range s.users {
+		if u.TelegramID == id {
+			return u, nil
+		}
+	}
+	return model.User{}, model.ErrNotFound
+}
+
 // GetUserByUsername — см. postgres.Store.
 func (s *Store) GetUserByUsername(_ context.Context, username string) (model.User, error) {
 	s.mu.Lock()

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -22,8 +23,9 @@ import (
 // fakeTelegram записывает отправленные тексты по чатам; admins — кто админ в группах Telegram.
 type fakeTelegram struct {
 	sent      map[model.TelegramChatID][]string
-	keyboards map[model.TelegramChatID][]model.Keyboard // клавиатура каждого отправленного сообщения; nil — без кнопок
-	cleared   []int64                                   // сообщения, с которых сняты кнопки (ADR-0015)
+	keyboards map[model.TelegramChatID][]model.Keyboard      // клавиатура каждого отправленного сообщения; nil — без кнопок
+	cleared   []int64                                        // сообщения, с которых сняты кнопки (ADR-0015)
+	replies   map[model.TelegramChatID][]model.ReplyKeyboard // reply-клавиатуры сообщений в личку (ADR-0021)
 	admins    map[model.TelegramUserID]bool
 	invite    string // ссылка, которую вернёт CreateInviteLink; пусто — отказ (бот не администратор)
 	invites   int    // число вызовов CreateInviteLink
@@ -48,6 +50,23 @@ func (f *fakeTelegram) SendKeyboard(_ context.Context, chat model.TelegramChatID
 	}
 	f.keyboards[chat] = append(f.keyboards[chat], kb)
 	return nil
+}
+
+func (f *fakeTelegram) SendReplyKeyboard(_ context.Context, chat model.TelegramChatID, text string, rk model.ReplyKeyboard) error {
+	if f.replies == nil {
+		f.replies = map[model.TelegramChatID][]model.ReplyKeyboard{}
+	}
+	f.replies[chat] = append(f.replies[chat], rk)
+	return f.SendKeyboard(context.Background(), chat, text, nil)
+}
+
+// lastReply — reply-клавиатура последнего сообщения в личку, отправленного с ней (ADR-0021).
+func (f *fakeTelegram) lastReply(chat model.TelegramChatID) model.ReplyKeyboard {
+	rks := f.replies[chat]
+	if len(rks) == 0 {
+		return model.ReplyKeyboard{}
+	}
+	return rks[len(rks)-1]
 }
 
 func (f *fakeTelegram) ClearKeyboard(_ context.Context, _ model.TelegramChatID, messageID int64) error {
@@ -392,6 +411,40 @@ func TestCharacter_CreateAutoAndManual(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/start join_"+code), "Вы уже в игре")
 	mustContain(t, h.send(alice, private(alice), "/me"), "@alice", "персонаж Элис", "Личка: открыта")
 	mustContain(t, h.send(owner, groupChat, "/status"), "Игроки: 3\n", "Персонажей: 2", "Орден Рассвета (good): 1", "Элис — warrior, женский, Орден Рассвета", "Боб — rogue, мужской")
+}
+
+// TestReplyKeyboard_PlayerStatus (B29, ADR-0021): reply-клавиатура лички следует за статусом игрока — до персонажа
+// снята, после создания кнопки сведений о персонаже с подсказкой ввода, подпись кнопки работает как команда,
+// после завершения игры следующий ответ снимает клавиатуру.
+func TestReplyKeyboard_PlayerStatus(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+
+	h.send(alice, private(alice), "/start")
+	if rk := h.tg.lastReply(private(alice)); len(rk.Rows) != 0 {
+		t.Fatalf("keyboard before character = %+v", rk)
+	}
+	card := h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "1", "-", "-")
+	mustContain(t, card, "Персонаж создан")
+	sent := h.tg.sent[private(alice)]
+	mustContain(t, sent[len(sent)-2], "Кнопки под полем ввода")
+	want := model.ReplyKeyboard{Rows: [][]string{{"Персонаж", "Описание", "Знания"}, {"Группа", "Квесты"}}, Placeholder: "Опишите действие…"}
+	if rk := h.tg.lastReply(private(alice)); !reflect.DeepEqual(rk, want) {
+		t.Fatalf("player keyboard = %+v", rk)
+	}
+	for label, command := range map[string]string{"Персонаж": "/character", "Описание": "/bio", "Знания": "/knowledge", "Группа": "/party", "Квесты": "/quests"} {
+		if got, want := h.send(alice, private(alice), label), h.send(alice, private(alice), command); got != want {
+			t.Fatalf("button %q = %q, command %s = %q", label, got, command, want)
+		}
+	}
+
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "запущена")
+	mustContain(t, h.send(owner, groupChat, "/finish yes"), "завершена")
+	h.send(alice, private(alice), "Персонаж")
+	if rk := h.tg.lastReply(private(alice)); len(rk.Rows) != 0 {
+		t.Fatalf("keyboard after finish = %+v", rk)
+	}
 }
 
 // TestCharacter_ChatLinkAndJoinedNotice: под итогом создания кнопка-ссылка в чат игры, если Telegram дал ссылку
@@ -978,9 +1031,9 @@ func TestButtons_CharacterDialog(t *testing.T) {
 	mustContain(t, h.press(alice, private(alice), 14, "@public_bio -"), "Скрытое описание")
 	card := h.press(alice, private(alice), 15, "@secret_bio -")
 	mustContain(t, card, "Персонаж создан", "Элис — Воин\nПол: женский")
-	// B23: игра не начата — только кнопка «Мой персонаж».
+	// B23: игра не начата — inline-кнопок нет, сведения о персонаже на reply-клавиатуре (B29).
 	mustContain(t, card, "Администратор ещё не начал историю")
-	if got := buttonData(h.tg.lastKeyboard(private(alice))); len(got) != 1 || got[0] != "/character" {
+	if got := h.tg.lastKeyboard(private(alice)); got != nil {
 		t.Fatalf("final card keyboard = %v", got)
 	}
 	// Кнопка завершённого диалога не заявка и не ошибка.
@@ -1263,14 +1316,14 @@ func TestCharacter_WelcomeByGameStatus(t *testing.T) {
 	card := h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "1", "-", "-")
 	mustContain(t, card, "Персонаж создан", "Идёт раунд 1, заявки до", "Завязка:", "Варианты хода (Рыночная площадь):\n• разобрать приписку", "Нажмите вариант или напишите действие своими словами.")
 	got := buttonData(h.tg.lastKeyboard(private(bob)))
-	if len(got) < 2 || !strings.HasPrefix(got[0], "/act #1:") || got[len(got)-1] != "/character" {
+	if len(got) < 2 || !strings.HasPrefix(got[0], "/act #1:") || !strings.HasPrefix(got[len(got)-1], "/act #1:") {
 		t.Fatalf("active welcome keyboard = %v", got)
 	}
 
 	mustContain(t, h.send(owner, groupChat, "/pause"), "на паузе")
 	card = h.joinAndCreate(nobody, code, "1", "Ноб", "3", "1", "1", "-", "-")
 	mustContain(t, card, "Персонаж создан", "Игра на паузе")
-	if got := buttonData(h.tg.lastKeyboard(private(nobody))); len(got) != 1 || got[0] != "/character" {
+	if got := h.tg.lastKeyboard(private(nobody)); got != nil {
 		t.Fatalf("paused welcome keyboard = %v", got)
 	}
 }

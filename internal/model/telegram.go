@@ -67,6 +67,13 @@ type Button struct {
 // Keyboard — ряды кнопок под сообщением; nil — без кнопок.
 type Keyboard [][]Button
 
+// ReplyKeyboard — постоянная клавиатура под полем ввода в личке (ADR-0021): ряды подписей кнопок (нажатие отправляет
+// подпись текстом) и подсказка в поле ввода. Без рядов — снять клавиатуру (`ReplyKeyboardRemove`).
+type ReplyKeyboard struct {
+	Rows        [][]string
+	Placeholder string
+}
+
 // CallbackDataMaxLen — лимит Telegram на данные кнопки в байтах.
 const CallbackDataMaxLen = 64
 

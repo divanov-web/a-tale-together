@@ -63,6 +63,15 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (model.U
 	return u, nil
 }
 
+// GetUserByTelegramID находит пользователя по идентификатору Telegram (он же чат лички).
+func (s *Store) GetUserByTelegramID(ctx context.Context, id model.TelegramUserID) (model.User, error) {
+	u, err := scanUser(s.db(ctx).QueryRow(ctx, `SELECT `+userColumns+` FROM users WHERE telegram_id = $1`, id))
+	if err != nil {
+		return model.User{}, fmt.Errorf("postgres.GetUserByTelegramID: %w", err)
+	}
+	return u, nil
+}
+
 // MarkStarted фиксирует первый /start в личке; повтор не меняет дату.
 func (s *Store) MarkStarted(ctx context.Context, id model.UserID) error {
 	if _, err := s.db(ctx).Exec(ctx, `UPDATE users SET started_at = coalesce(started_at, now()), updated_at = now() WHERE id = $1`, id); err != nil {

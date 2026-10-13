@@ -78,3 +78,15 @@ func TestCallback_IncomingAndMarkup(t *testing.T) {
 		t.Fatalf("markup = %+v", m.InlineKeyboard)
 	}
 }
+
+// TestReplyMarkup (ADR-0021): ряды подписей — постоянная сжатая клавиатура с подсказкой ввода, без рядов — снятие.
+func TestReplyMarkup(t *testing.T) {
+	t.Parallel()
+	m, ok := replyMarkup(model.ReplyKeyboard{Rows: [][]string{{"Персонаж", "Знания"}, {"Квесты"}}, Placeholder: "Опишите действие…"}).(*models.ReplyKeyboardMarkup)
+	if !ok || len(m.Keyboard) != 2 || m.Keyboard[0][1].Text != "Знания" || !m.IsPersistent || !m.ResizeKeyboard || m.InputFieldPlaceholder != "Опишите действие…" {
+		t.Fatalf("reply markup = %+v", m)
+	}
+	if r, ok := replyMarkup(model.ReplyKeyboard{}).(*models.ReplyKeyboardRemove); !ok || !r.RemoveKeyboard {
+		t.Fatalf("remove markup = %+v", r)
+	}
+}

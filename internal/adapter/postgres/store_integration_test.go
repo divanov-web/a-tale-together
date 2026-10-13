@@ -86,6 +86,12 @@ func TestUpsertUser_Twice_OneRow(t *testing.T) {
 	if _, err := s.GetUserByUsername(ctx, "ALICE"); !errors.Is(err, model.ErrNotFound) {
 		t.Fatalf("username cleared but found: %v", err)
 	}
+	if byTG, err := s.GetUserByTelegramID(ctx, u.ID); err != nil || byTG.ID != second.ID {
+		t.Fatalf("GetUserByTelegramID = %+v, %v", byTG, err)
+	}
+	if _, err := s.GetUserByTelegramID(ctx, u.ID+1); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("unknown telegram id: %v", err)
+	}
 }
 
 // TestGameFlow проходит путь пункта 02–04 на реальной схеме: чат → игра с сезоном и фракциями → участник → персонаж.

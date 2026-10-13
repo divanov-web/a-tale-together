@@ -57,13 +57,21 @@ func (s *Service) handleDialogAnswer(ctx context.Context, req *request) error {
 	} else if err := s.dialogs.SaveDialog(ctx, d); err != nil {
 		return err
 	}
+	if reply.before != "" {
+		if err := s.reply(ctx, req.in, reply.before); err != nil {
+			return err
+		}
+	}
 	return s.replyKeyboard(ctx, req.in, reply.text, reply.kb)
 }
 
 // question — вопрос диалога: текст и кнопки с ответами шага (ADR-0015); свободные поля без кнопок, кроме «Прервать».
+// before — сообщение перед итогом, без inline-кнопок: оно ставит reply-клавиатуру лички (ADR-0021), а итог
+// с кнопками остаётся последним.
 type question struct {
-	text string
-	kb   model.Keyboard
+	text   string
+	kb     model.Keyboard
+	before string
 }
 
 // dialogQuestion — текущий вопрос диалога любого вида.
