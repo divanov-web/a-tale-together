@@ -10,7 +10,7 @@ import (
 )
 
 // TestSay_Validation — S21 (пункт 32, ADR-0027): реплика принимается по правилам заявки — текст, статус игры и
-// персонажа, открытый раунд, одна на раунд; место заявки не занимает.
+// персонажа, открытый раунд, одна на раунд, до 200 символов; место заявки не занимает.
 func TestSay_Validation(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t, model.DefaultGameSettings())
@@ -23,7 +23,7 @@ func TestSay_Validation(t *testing.T) {
 	for _, tc := range []struct {
 		text string
 		want error
-	}{{"", ErrEmpty}, {"   ", ErrEmpty}, {string(make([]rune, 501)), ErrTooLong}} {
+	}{{"", ErrEmpty}, {"   ", ErrEmpty}, {string(make([]rune, 201)), ErrSpeechTooLong}} {
 		if _, _, err := w.svc.Say(ctx, w.game, w.chars[0], tc.text); !errors.Is(err, tc.want) {
 			t.Fatalf("Say(%q) = %v; want %v", tc.text, err, tc.want)
 		}

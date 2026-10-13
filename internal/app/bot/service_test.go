@@ -1571,7 +1571,7 @@ func TestSay_Command(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/say привет"), "Игра не запущена")
 	h.begin()
 	mustContain(t, h.send(alice, private(alice), "/say"), "Формат: /say")
-	mustContain(t, h.send(alice, private(alice), "/say "+strings.Repeat("я", 501)), "до 500 символов")
+	mustContain(t, h.send(alice, private(alice), "/say "+strings.Repeat("я", 201)), "Реплика до 200 символов")
 	mustContain(t, h.send(alice, private(alice), "/say Я здесь, не стреляйте!"), "Реплика принята: раунд 1, до ")
 	mustContain(t, h.send(alice, private(alice), "/say Повторяю!"), "Реплика на этот раунд уже принята")
 	mustContain(t, h.send(bob, groupChat, "/say Кто идёт?"), "Реплика принята: раунд 1")

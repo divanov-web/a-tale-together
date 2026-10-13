@@ -253,7 +253,7 @@ func (s *Service) act(ctx context.Context, req *request) error {
 func (s *Service) say(ctx context.Context, req *request) error {
 	text := strings.TrimSpace(req.in.Args)
 	if text == "" {
-		return s.reply(ctx, req.in, fmt.Sprintf("Формат: /say <что говорит персонаж> (до %d символов). Реплика одна на раунд, заявку /act не заменяет.", model.SubmissionMaxLen))
+		return s.reply(ctx, req.in, fmt.Sprintf("Формат: /say <что говорит персонаж> (до %d символов). Реплика одна на раунд, заявку /act не заменяет.", model.SpeechMaxLen))
 	}
 	g, c, err := s.actor(ctx, req)
 	if err != nil {

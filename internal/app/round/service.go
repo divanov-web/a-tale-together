@@ -117,6 +117,7 @@ var (
 	ErrNoOpenRound    = errors.New("сейчас нет открытого раунда")
 	ErrEmpty          = errors.New("текст заявки пуст")
 	ErrTooLong        = fmt.Errorf("заявка до %d символов", model.SubmissionMaxLen)
+	ErrSpeechTooLong  = fmt.Errorf("реплика до %d символов", model.SpeechMaxLen)
 	ErrTooFrequent    = errors.New("заменить заявку можно не чаще раза в минуту")
 	ErrDead           = errors.New("персонаж выбыл из игры до возвращения; заявки не принимаются")
 	ErrAlreadyAway    = errors.New("персонаж уже уходит из истории; вернуться — /back")
@@ -422,15 +423,15 @@ func (s *Service) Submit(ctx context.Context, game model.Game, c model.Character
 }
 
 // Say записывает реплику персонажа на открытый раунд (пункт 32, ADR-0027) по правилам заявки: текст до
-// `SubmissionMaxLen`, игра `active`, персонаж не выбыл, одна реплика на раунд. Реплика не заявка: кворум, пропуски и
+// `SpeechMaxLen`, игра `active`, персонаж не выбыл, одна реплика на раунд. Реплика не заявка: кворум, пропуски и
 // пометку `away` не затрагивает; выведенному (`inactive`) — `ErrAbsent`, вернуть его может только заявка.
 func (s *Service) Say(ctx context.Context, game model.Game, c model.Character, text string) (model.Round, model.Speech, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return model.Round{}, model.Speech{}, ErrEmpty
 	}
-	if len([]rune(text)) > model.SubmissionMaxLen {
-		return model.Round{}, model.Speech{}, ErrTooLong
+	if len([]rune(text)) > model.SpeechMaxLen {
+		return model.Round{}, model.Speech{}, ErrSpeechTooLong
 	}
 	if game.Status != model.GameActive {
 		return model.Round{}, model.Speech{}, statusError(game.Status)
@@ -1132,7 +1133,7 @@ func statusError(st model.GameStatus) error {
 
 // wrap добавляет префикс только к неожиданным ошибкам; ошибки сценария возвращаются как есть.
 func wrap(op string, err error) error {
-	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrStarting, ErrFinishing, ErrSetup, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound, ErrAlreadyActed, ErrAlreadySaid, ErrAbsent, ErrNoRound, ErrNotResolved} {
+	for _, ue := range []error{ErrForbidden, ErrAlreadyStarted, ErrStarting, ErrFinishing, ErrSetup, ErrNotActive, ErrPaused, ErrFinished, ErrNoCharacters, ErrNoOpenRound, ErrAlreadyActed, ErrAlreadySaid, ErrAbsent, ErrSpeechTooLong, ErrNoRound, ErrNotResolved} {
 		if errors.Is(err, ue) {
 			return err
 		}

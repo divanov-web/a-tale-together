@@ -359,7 +359,7 @@ var userErrors = []error{
 	game.ErrHasCharacter, game.ErrNoCharacter, game.ErrNicknameTaken, game.ErrChooseGame, game.ErrBadValue, game.ErrGameSetup,
 	round.ErrForbidden, round.ErrAlreadyStarted, round.ErrStarting, round.ErrFinishing, round.ErrSetup, round.ErrNotActive, round.ErrPaused, round.ErrFinished, round.ErrNoCharacters,
 	round.ErrNoOpenRound, round.ErrEmpty, round.ErrTooLong, round.ErrTooFrequent, round.ErrAlreadyActed, round.ErrDead, round.ErrNoRound, round.ErrNotResolved,
-	round.ErrRoundClosed, round.ErrOptionGone, round.ErrNoLocation, round.ErrAlreadyAway, round.ErrNotAway, round.ErrAlreadySaid, round.ErrAbsent,
+	round.ErrRoundClosed, round.ErrOptionGone, round.ErrNoLocation, round.ErrAlreadyAway, round.ErrNotAway, round.ErrAlreadySaid, round.ErrAbsent, round.ErrSpeechTooLong,
 	applm.ErrNoProfile, applm.ErrUnknownProfile, applm.ErrUnknownProvider, applm.ErrProfileExists, applm.ErrBadValue, applm.ErrNoGame, errNotOwner,
 	rules.ErrInvalid, errUnknownUser,
 }
