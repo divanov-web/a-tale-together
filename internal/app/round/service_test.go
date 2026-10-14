@@ -486,6 +486,7 @@ type fakeLLM struct {
 	json    string // ответ интерпретатора
 	narr    string // ответ рассказчика; пусто — ошибка вызова (шаблонная хроника)
 	opening string // ответ завязки; пусто — ошибка вызова (стартовая сцена жанра)
+	setups  string // ответ генерации мира; пусто — ошибка вызова (попытка не удалась)
 	err     error
 	narrErr error
 	calls   []applm.Call
@@ -506,6 +507,12 @@ func (f *fakeLLM) Complete(_ context.Context, call applm.Call, req model.LLMRequ
 			return model.LLMResponse{}, errors.New("opening down")
 		}
 		return model.LLMResponse{JSON: json.RawMessage(f.opening), TokensIn: 60, TokensOut: 30}, nil
+	}
+	if call.Role == model.RoleWorldgen {
+		if f.setups == "" {
+			return model.LLMResponse{}, errors.New("worldgen down")
+		}
+		return model.LLMResponse{JSON: json.RawMessage(f.setups), TokensIn: 70, TokensOut: 35}, nil
 	}
 	if f.err != nil {
 		return model.LLMResponse{}, f.err

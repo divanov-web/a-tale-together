@@ -2,6 +2,7 @@
 // (`make eval-narrator`, пункт 09). Проверяет, что каждое событие упомянуто самой моделью (без дописывания кодом),
 // запрещённые слова и секреты в хронике отсутствуют, нужные никнеймы присутствуют; печатает долю прошедших, токены и время.
 // Флаг `-opening` вместо набора запускает завязку истории (ADR-0018) по миру первого случая: печатает текст и замечания.
+// Флаг `-worldgen` вместо набора запускает нулевой вызов «генерация мира» (ADR-0028) по жанру набора: печатает варианты.
 package main
 
 import (
@@ -79,6 +80,7 @@ func run() error {
 	effort := flag.String("effort", "low", "усилие claude-cli")
 	verbose := flag.Bool("v", false, "печатать хронику")
 	opening := flag.Bool("opening", false, "вместо набора: завязка истории по миру первого случая")
+	worldgen := flag.Bool("worldgen", false, "вместо набора: варианты стартового мира по жанру набора (ADR-0028)")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -106,6 +108,9 @@ func run() error {
 
 	if *opening {
 		return runOpening(svc, set)
+	}
+	if *worldgen {
+		return runWorldgen(svc, set)
 	}
 	var passed, total, calls, tokensIn, tokensOut, patched int
 	var elapsed time.Duration
@@ -228,6 +233,32 @@ func printQuests(quests []narrator.GeneratedQuest, stages []narrator.GeneratedSt
 // runOpening — живой вызов завязки и стартового пакета по миру, первой локации и персонажам первого случая набора;
 // проверка кодом: объём, цифры, никнеймы (замечания печатаются, после дозапроса не считаются ошибкой), пакет: клетка
 // с объектами и четыре карточки соседей.
+// runWorldgen — нулевой вызов по жанру набора: печатает принятые варианты, замечания, токены и время.
+func runWorldgen(svc *narrator.Service, set evalSet) error {
+	p := narrator.WorldgenParams{Genre: "Классическое фэнтези", Tone: set.Tone, Factions: set.Factions, Seed: fmt.Sprintf("eval-%d", time.Now().Unix())}
+	if len(set.Cases) > 0 && set.Cases[0].Params.State != nil && len(set.Cases[0].Params.State.Locations) > 0 {
+		start := set.Cases[0].Params.State.Locations[0]
+		p.Start = narrator.SetupStart{Name: start.Name, Terrain: start.Terrain, Description: start.Description}
+	}
+	started := time.Now()
+	res, err := svc.Worldgen(context.Background(), p)
+	for _, is := range res.Issues {
+		fmt.Printf("замечание: %s\n", is)
+	}
+	if err != nil {
+		return fmt.Errorf("генерация мира: %w", err)
+	}
+	for i, o := range res.Options {
+		fmt.Printf("%d. %s — «%s»\n   %s\n   тон: %s\n   завязка: %s\n", i+1, o.Title, o.World, o.Summary, o.Tone, o.Premise)
+		for _, f := range o.Factions {
+			fmt.Printf("   [%s] %s — %s (%s); цель: %s\n", f.Code, f.Title, f.Description, f.Tone, f.Goal)
+		}
+		fmt.Printf("   старт: %s (%s): %s\n", o.Start.Name, o.Start.Terrain, o.Start.Description)
+	}
+	fmt.Printf("\nвариантов %d, токены вход/выход %d/%d, время %s\n", len(res.Options), res.TokensIn, res.TokensOut, time.Since(started).Round(time.Second))
+	return nil
+}
+
 func runOpening(svc *narrator.Service, set evalSet) error {
 	if len(set.Cases) == 0 || set.Cases[0].Params.State == nil || len(set.Cases[0].Params.State.Locations) == 0 {
 		return fmt.Errorf("в наборе нет случая с состоянием")

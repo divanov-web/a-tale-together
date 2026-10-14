@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"taletogether/internal/app/game"
+	"taletogether/internal/app/round"
 	"taletogether/internal/model"
 )
 
@@ -25,7 +26,7 @@ func (s *Service) startGameSetup(ctx context.Context, user model.User, g model.G
 		return err
 	}
 	if !resume {
-		d = model.Dialog{UserID: user.ID, Kind: model.DialogGameSetup, Step: game.Params[0].Key, GameID: &g.ID}
+		d = model.Dialog{UserID: user.ID, Kind: model.DialogGameSetup, Step: s.nextParam(ctx, g, ""), GameID: &g.ID}
 		if err := s.dialogs.SaveDialog(ctx, d); err != nil {
 			return err
 		}
@@ -53,7 +54,7 @@ func (s *Service) setupStep(ctx context.Context, req *request, d *model.Dialog, 
 			return question{}, false, err
 		}
 	}
-	next := s.nextParam(ctx, d.Step)
+	next := s.nextParam(ctx, g, d.Step)
 	if next == "" {
 		if g, err = s.games.FinishSetup(ctx, g, req.user.ID); err != nil {
 			return question{}, false, err
@@ -69,9 +70,10 @@ func (s *Service) setupStep(ctx context.Context, req *request, d *model.Dialog, 
 	return q, false, err
 }
 
-// nextParam — следующий параметр диалога; продвинутые параметры и жанр при единственном в справочнике пропускаются.
-func (s *Service) nextParam(ctx context.Context, current string) string {
-	found := false
+// nextParam — следующий параметр диалога после current (пусто — первый); продвинутые параметры, жанр при
+// единственном в справочнике и стартовый мир без модели или после неудачной генерации (ADR-0028) пропускаются.
+func (s *Service) nextParam(ctx context.Context, g model.Game, current string) string {
+	found := current == ""
 	for _, p := range game.Params {
 		if found {
 			if p.Advanced {
@@ -82,11 +84,22 @@ func (s *Service) nextParam(ctx context.Context, current string) string {
 					continue
 				}
 			}
+			if p.Key == game.ScenarioParam && !s.scenarioStep(g) {
+				continue
+			}
 			return p.Key
 		}
-		found = p.Key == current
+		found = found || p.Key == current
 	}
 	return ""
+}
+
+// scenarioStep — показывать ли шаг «Стартовый мир»: модель подключена и варианты либо уже есть, либо ещё ожидаются.
+func (s *Service) scenarioStep(g model.Game) bool {
+	if !s.rounds.WorldgenEnabled() {
+		return false
+	}
+	return g.WorldSetups.Pending() || len(g.WorldSetups.List()) > 0
 }
 
 // setupQuestion — вопрос по параметру с текущим значением и кнопками типовых значений (ADR-0015); на каждом шаге
@@ -98,6 +111,9 @@ func (s *Service) setupQuestion(ctx context.Context, g model.Game, key string) (
 			p = it
 		}
 	}
+	if key == game.ScenarioParam {
+		return s.scenarioQuestion(g), nil
+	}
 	current, err := s.paramValue(ctx, g, key)
 	if err != nil {
 		return question{}, err
@@ -108,6 +124,20 @@ func (s *Service) setupQuestion(ctx context.Context, g model.Game, key string) (
 	}
 	answers = append(answers, [2]string{"Оставить как есть", setupSkip})
 	return question{text: fmt.Sprintf("%s (%s).\nСейчас: %s", p.Title, p.Hint, current), kb: answerButtons(key, perRow, answers...)}, nil
+}
+
+// scenarioQuestion — шаг «Стартовый мир» (ADR-0028): варианты с кнопками, когда они уже получены; иначе ожидание
+// с единственной кнопкой «Оставить как есть» — варианты придут отдельным сообщением с кнопками.
+func (s *Service) scenarioQuestion(g model.Game) question {
+	if len(g.WorldSetups.List()) > 0 {
+		text := round.SetupOptionsText(g)
+		if cur := g.Setup(); cur != nil {
+			text += "\nСейчас: " + cur.Title
+		}
+		return question{text: text, kb: round.SetupOptionsKeyboard(g)}
+	}
+	return question{text: "Стартовый мир. Придумываю четыре варианта, это займёт минуту-две: они придут сюда отдельным сообщением с кнопками. " +
+		"Можно подождать его или оставить мир по шаблону жанра и настраивать дальше.", kb: answerButtons(game.ScenarioParam, 1, [2]string{"Оставить как есть", setupSkip})}
 }
 
 // setupTimezones — часовые пояса на кнопках диалога настройки; остальные вводятся текстом.
@@ -148,6 +178,11 @@ func (s *Service) setupAnswers(ctx context.Context, key string) ([][2]string, in
 // paramValue — текущее значение параметра для вопроса.
 func (s *Service) paramValue(ctx context.Context, g model.Game, key string) (string, error) {
 	switch key {
+	case game.ScenarioParam:
+		if cur := g.Setup(); cur != nil {
+			return cur.Title, nil
+		}
+		return "по шаблону жанра", nil
 	case "title":
 		return g.Title, nil
 	case "genre":

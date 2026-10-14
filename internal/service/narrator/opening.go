@@ -14,7 +14,7 @@ import (
 )
 
 // OpeningPromptVersion — версия промпта завязки, пишется в `llm_runs.prompt_version`.
-const OpeningPromptVersion = "narrator/opening-v4"
+const OpeningPromptVersion = "narrator/opening-v5"
 
 // Границы текста завязки в рунах: короче — не завязка, длиннее — не влезает в сообщение; в выжимку для хроник
 // уходит начало до openingDigestRune.
@@ -75,6 +75,7 @@ type OpeningParams struct {
 	Title      string
 	Genre      string
 	Tone       string
+	Premise    string // крючок завязки из выбранного варианта стартового мира (ADR-0028); пусто — модель придумывает сама
 	Mode       model.GameMode
 	Factions   []Faction
 	Start      OpeningStart
@@ -116,6 +117,7 @@ type openingWorld struct {
 	Title    string    `json:"title"`
 	Genre    string    `json:"genre"`
 	Tone     string    `json:"tone"`
+	Premise  string    `json:"premise,omitempty"`
 	Mode     string    `json:"mode"`
 	Factions []Faction `json:"factions"`
 }
@@ -131,7 +133,7 @@ func BuildOpeningInput(p OpeningParams) OpeningInput {
 		neighbors = []NeighborTask{}
 	}
 	in := OpeningInput{
-		World:      openingWorld{Title: p.Title, Genre: p.Genre, Tone: p.Tone, Mode: string(p.Mode), Factions: nonNilFactions(p.Factions)},
+		World:      openingWorld{Title: p.Title, Genre: p.Genre, Tone: p.Tone, Premise: p.Premise, Mode: string(p.Mode), Factions: nonNilFactions(p.Factions)},
 		Start:      start,
 		Characters: []OpeningCharacter{},
 		Generate:   generate{Cells: []CellTask{}, Neighbors: neighbors, Limits: generationLimits(), CharacterModel: modelKeys(p.Def), Quests: questTasks(Tasks{Quests: p.Quests, Goals: p.Goals})},
@@ -151,7 +153,7 @@ func (in OpeningInput) Encode() string {
 
 // OpeningSystemPrompt — системная часть промпта завязки текущей версии.
 func OpeningSystemPrompt() string {
-	b, err := prompts.FS.ReadFile("narrator/opening-v4.md")
+	b, err := prompts.FS.ReadFile("narrator/opening-v5.md")
 	if err != nil {
 		panic("narrator: opening prompt: " + err.Error())
 	}

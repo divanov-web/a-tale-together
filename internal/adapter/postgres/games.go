@@ -14,7 +14,7 @@ import (
 func gameCols(a string) string {
 	return fmt.Sprintf("%[1]sid, %[1]schat_id, %[1]sgenre_id, %[1]sformat, %[1]smode, %[1]stitle, %[1]sstatus, %[1]stimezone, "+
 		"coalesce(to_char(%[1]splay_from, 'HH24:MI'), ''), coalesce(to_char(%[1]splay_to, 'HH24:MI'), ''), %[1]sround_minutes, %[1]ssettings, "+
-		"%[1]srules_version, %[1]sllm_profile_id, %[1]sjoin_code, %[1]screated_by_user_id, %[1]snext_round_at, %[1]sskipped_streak, %[1]sopening_scene, %[1]screated_at, %[1]supdated_at", a)
+		"%[1]srules_version, %[1]sllm_profile_id, %[1]sjoin_code, %[1]screated_by_user_id, %[1]snext_round_at, %[1]sskipped_streak, %[1]sopening_scene, %[1]sworld_setups, %[1]screated_at, %[1]supdated_at", a)
 }
 
 var gameColumns = gameCols("")
@@ -22,7 +22,7 @@ var gameColumns = gameCols("")
 func scanGame(row pgx.Row) (model.Game, error) {
 	var g model.Game
 	err := row.Scan(&g.ID, &g.ChatID, &g.GenreID, &g.Format, &g.Mode, &g.Title, &g.Status, &g.Timezone, &g.PlayFrom, &g.PlayTo,
-		&g.RoundMinutes, &g.Settings, &g.RulesVersion, &g.LLMProfileID, &g.JoinCode, &g.CreatedByUserID, &g.NextRoundAt, &g.SkippedStreak, &g.OpeningScene, &g.CreatedAt, &g.UpdatedAt)
+		&g.RoundMinutes, &g.Settings, &g.RulesVersion, &g.LLMProfileID, &g.JoinCode, &g.CreatedByUserID, &g.NextRoundAt, &g.SkippedStreak, &g.OpeningScene, &g.WorldSetups, &g.CreatedAt, &g.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Game{}, model.ErrNotFound
 	}
@@ -32,26 +32,26 @@ func scanGame(row pgx.Row) (model.Game, error) {
 // CreateGame создаёт игру; нарушение «одна незавершённая игра на чат» возвращает ошибку БД.
 func (s *Store) CreateGame(ctx context.Context, g model.Game) (model.Game, error) {
 	q := `
-INSERT INTO games (chat_id, genre_id, format, mode, title, status, timezone, play_from, play_to, round_minutes, settings, rules_version, join_code, created_by_user_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, '')::time, NULLIF($9, '')::time, $10, $11, $12, $13, $14)
+INSERT INTO games (chat_id, genre_id, format, mode, title, status, timezone, play_from, play_to, round_minutes, settings, rules_version, join_code, created_by_user_id, next_round_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, '')::time, NULLIF($9, '')::time, $10, $11, $12, $13, $14, $15)
 RETURNING ` + gameColumns
 	out, err := scanGame(s.db(ctx).QueryRow(ctx, q, g.ChatID, g.GenreID, g.Format, g.Mode, g.Title, g.Status, g.Timezone, g.PlayFrom, g.PlayTo,
-		g.RoundMinutes, g.Settings, g.RulesVersion, g.JoinCode, g.CreatedByUserID))
+		g.RoundMinutes, g.Settings, g.RulesVersion, g.JoinCode, g.CreatedByUserID, g.NextRoundAt))
 	if err != nil {
 		return model.Game{}, fmt.Errorf("postgres.CreateGame: %w", err)
 	}
 	return out, nil
 }
 
-// UpdateGame сохраняет изменяемые поля игры: жанр, формат, режим, название, статус, окно, раунд, настройки, таймер, счётчик пропусков и завязку.
+// UpdateGame сохраняет изменяемые поля игры: жанр, формат, режим, название, статус, окно, раунд, настройки, таймер, счётчик пропусков, завязку и варианты мира.
 func (s *Store) UpdateGame(ctx context.Context, g model.Game) error {
 	const q = `
 UPDATE games SET genre_id = $2, format = $3, mode = $4, title = $5, status = $6, timezone = $7,
     play_from = NULLIF($8, '')::time, play_to = NULLIF($9, '')::time, round_minutes = $10, settings = $11,
-    rules_version = $12, next_round_at = $13, skipped_streak = $14, opening_scene = $15, updated_at = now()
+    rules_version = $12, next_round_at = $13, skipped_streak = $14, opening_scene = $15, world_setups = $16, updated_at = now()
 WHERE id = $1`
 	if _, err := s.db(ctx).Exec(ctx, q, g.ID, g.GenreID, g.Format, g.Mode, g.Title, g.Status, g.Timezone, g.PlayFrom, g.PlayTo,
-		g.RoundMinutes, g.Settings, g.RulesVersion, g.NextRoundAt, g.SkippedStreak, g.OpeningScene); err != nil {
+		g.RoundMinutes, g.Settings, g.RulesVersion, g.NextRoundAt, g.SkippedStreak, g.OpeningScene, g.WorldSetups); err != nil {
 		return fmt.Errorf("postgres.UpdateGame: %w", err)
 	}
 	return nil

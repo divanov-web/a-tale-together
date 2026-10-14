@@ -49,6 +49,8 @@ type Service struct {
 	system string
 	// opening — системная часть промпта завязки (OpeningSystemPrompt).
 	opening string
+	// worldgen — системная часть промпта генерации мира (WorldgenSystemPrompt, ADR-0028).
+	worldgen string
 	// Retries — дозапросов с замечаниями к ответу; по умолчанию 1.
 	Retries int
 	// MaxInputBytes — бюджет контекста; 0 — MaxInputBytes пакета.
@@ -57,7 +59,7 @@ type Service struct {
 
 // New собирает рассказчика с промптом текущей версии.
 func New(llm LLM, logger *slog.Logger) *Service {
-	return &Service{llm: llm, logger: logger, system: SystemPrompt(), opening: OpeningSystemPrompt(), Retries: 1, MaxInputBytes: MaxInputBytes}
+	return &Service{llm: llm, logger: logger, system: SystemPrompt(), opening: OpeningSystemPrompt(), worldgen: WorldgenSystemPrompt(), Retries: 1, MaxInputBytes: MaxInputBytes}
 }
 
 // SystemPrompt — системная часть промпта текущей версии (стабильный префикс для кэширования).

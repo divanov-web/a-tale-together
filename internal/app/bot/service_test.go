@@ -1591,3 +1591,69 @@ func TestSay_Command(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/pause"), "на паузе")
 	mustContain(t, h.send(alice, private(alice), "/say тихо"), "Игра на паузе")
 }
+
+// TestGame_SetupScenario (ADR-0028): с подключённой моделью первый шаг настройки — «Стартовый мир»; пока варианты
+// придумываются, у шага одна кнопка «Оставить как есть»; тик планировщика делает нулевой вызов и присылает
+// администратору варианты с кнопками; выбор кнопкой переименовывает мир, фракции и стартовую клетку, следующий шаг —
+// название с предложенным значением; `/set scenario -` возвращает шаблон жанра.
+func TestGame_SetupScenario(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.send(owner, private(owner), "/start")
+	mustContain(t, h.send(owner, private(owner), "/llm add local fake haiku sonnet"), "Профиль local создан")
+	mustContain(t, h.send(owner, private(owner), "/llm use local"), "Профиль по умолчанию: local")
+	h.rounds.LLM = h.svc.llm
+	h.llm.JSON = []byte(`{"options":[
+ {"title":"Гуси против молчания","world":"Ольховый Брод","summary":"Городок у реки, пропали гуси.","tone":"Ирония.","premise":"Гуси исчезли ночью.",
+  "factions":[{"code":"good","title":"Гильдия ярмарки","description":"Торговцы.","tone":"деловые","goal":"Спасти ярмарку."},{"code":"evil","title":"Братство тихих","description":"Музыканты.","tone":"скрытные","goal":"Спрятать барда."}],
+  "start":{"name":"Гусиные ряды","terrain":"village","description":"Пустые загоны."}},
+ {"title":"Соль и колокол","world":"Порт Косы","summary":"Корабль сел на мель.","tone":"Тревога.","premise":"Зерно мокнет.",
+  "factions":[{"code":"good","title":"Совет пристани","description":"Купцы.","tone":"резкие","goal":"Спасти груз."},{"code":"evil","title":"Люди маяка","description":"Смотрители.","tone":"упрямые","goal":"Оправдать смотрителя."}],
+  "start":{"name":"Причал у маяка","terrain":"harbor","description":"Мокрые доски."}}]}`)
+	h.clock.advance(time.Minute)
+	h.createGameInSetup()
+	mustContain(t, h.tg.last(private(owner)), "Настройка мира «Песочница»", "Стартовый мир. Придумываю четыре варианта")
+	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 1 || got[0] != "@scenario -" {
+		t.Fatalf("pending keyboard = %v", got)
+	}
+	mustContain(t, h.send(owner, private(owner), "2"), "ещё придумываются", "Повторите ответ")
+
+	h.tick()
+	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
+	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
+	msgs, _ := h.store.ListOutbox(context.Background(), g.ID)
+	if len(msgs) != 1 || msgs[0].TelegramChatID != private(owner) || !strings.Contains(msgs[0].Text, "1. Гуси против молчания — «Ольховый Брод»") || len(msgs[0].Keyboard) != 3 || msgs[0].Keyboard[1][0].Data != "@scenario 2" {
+		t.Fatalf("outbox = %+v", msgs)
+	}
+	// Повторный показ шага уже с вариантами; выбор кнопкой.
+	mustContain(t, h.send(owner, private(owner), "/set"), "Продолжаем настройку", "2. Соль и колокол — «Порт Косы»", "Корабль сел на мель.")
+	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 3 || got[0] != "@scenario 1" || got[2] != "@scenario -" {
+		t.Fatalf("options keyboard = %v", got)
+	}
+	mustContain(t, h.press(owner, private(owner), 70, "@scenario 2"), "Название мира", "Сейчас: Порт Косы")
+	mustContain(t, h.send(owner, private(owner), "-"), "Длительность раунда")
+	for i := 0; i < len(game.Params); i++ {
+		if strings.Contains(h.send(owner, private(owner), setupSkip), "Настройка завершена") {
+			break
+		}
+	}
+	mustContain(t, h.tg.last(private(owner)), "Мир «Порт Косы» — черновик", "Совет пристани (good)", "Люди маяка (evil)")
+	locs, _ := h.store.ListLocations(context.Background(), g.ID)
+	if len(locs) == 0 || locs[0].Name != "Причал у маяка" || locs[0].Terrain != "harbor" || !locs[0].Start {
+		t.Fatalf("start cell = %+v", locs)
+	}
+	g, _ = h.store.GetGame(context.Background(), g.ID)
+	if s := g.Setup(); s == nil || s.Title != "Соль и колокол" {
+		t.Fatalf("chosen setup = %+v", g.WorldSetups)
+	}
+	// Обратно к шаблону жанра и повторный выбор командой.
+	mustContain(t, h.send(owner, private(owner), "/set scenario 5"), "вариантов всего 2")
+	mustContain(t, h.send(owner, private(owner), "/set scenario -"), "Сохранено")
+	mustContain(t, h.send(owner, groupChat, "/status"), "Орден Рассвета (good)", "Гильдия теней (evil)")
+	locs, _ = h.store.ListLocations(context.Background(), g.ID)
+	if locs[0].Name != "Рыночная площадь" {
+		t.Fatalf("start cell after template = %+v", locs[0])
+	}
+	mustContain(t, h.send(owner, private(owner), "/set scenario 1"), "Сохранено")
+	mustContain(t, h.send(owner, groupChat, "/status"), "Мир «Ольховый Брод»", "Гильдия ярмарки (good)")
+}

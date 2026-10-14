@@ -27,7 +27,7 @@ func (s *Store) DueGameIDs(_ context.Context, now time.Time) ([]model.GameID, er
 	}
 	var out []model.GameID
 	for _, g := range s.games {
-		due := g.Status == model.GameActive || g.Status == model.GameStarting || g.Status == model.GameFinishing
+		due := g.Status == model.GameSetup || g.Status == model.GameActive || g.Status == model.GameStarting || g.Status == model.GameFinishing
 		if due && g.NextRoundAt != nil && !g.NextRoundAt.After(now) {
 			out = append(out, g.ID)
 		}

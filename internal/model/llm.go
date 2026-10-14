@@ -23,8 +23,9 @@ type LLMRole string
 const (
 	RoleInterpreter LLMRole = "interpreter"
 	RoleNarrator    LLMRole = "narrator"
-	RoleOpening     LLMRole = "opening" // завязка истории при /begin: модель рассказчика профиля (ADR-0018)
-	RoleTest        LLMRole = "test"    // проверка профиля командой /llm test
+	RoleOpening     LLMRole = "opening"  // завязка истории при /begin: модель рассказчика профиля (ADR-0018)
+	RoleWorldgen    LLMRole = "worldgen" // генерация мира: нулевой вызов при /create, варианты стартового мира (ADR-0028); модель рассказчика
+	RoleTest        LLMRole = "test"     // проверка профиля командой /llm test
 )
 
 // LLMParams — параметры профиля в `llm_profiles.params` (jsonb).
@@ -52,7 +53,7 @@ type LLMProfile struct {
 
 // Model возвращает модель профиля для роли; для проверки берётся модель интерпретатора.
 func (p LLMProfile) Model(role LLMRole) string {
-	if role == RoleNarrator || role == RoleOpening {
+	if role == RoleNarrator || role == RoleOpening || role == RoleWorldgen {
 		return p.ModelNarrator
 	}
 	return p.ModelInterpreter

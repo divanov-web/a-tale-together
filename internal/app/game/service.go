@@ -48,6 +48,7 @@ type Store interface {
 	EnqueueOutbox(ctx context.Context, m model.OutboxMessage) error
 	SetCurrentGame(ctx context.Context, user model.UserID, game *model.GameID) error
 	CreateLocation(ctx context.Context, l model.Location) (model.Location, error)
+	UpdateLocation(ctx context.Context, l model.Location) error
 	ListLocations(ctx context.Context, game model.GameID) ([]model.Location, error)
 }
 
@@ -99,6 +100,7 @@ const DefaultGenre = "fantasy"
 
 // Create создаёт мир в чате: игра `setup` (ADR-0023: до завершения настройки персонажи не создаются) с настройками
 // по умолчанию, сезон 1, фракции из шаблона жанра, автор — администратор игры; все записи в одной транзакции.
+// `next_round_at = now` зовёт тик планировщика сделать нулевой вызов «генерация мира» (ADR-0028).
 func (s *Service) Create(ctx context.Context, chat model.Chat, actor model.User) (model.Game, error) {
 	ok, err := s.rights.CanManage(ctx, chat, actor.ID)
 	if err != nil {
@@ -120,13 +122,14 @@ func (s *Service) Create(ctx context.Context, chat model.Chat, actor model.User)
 	if title == "" {
 		title = "Общая история"
 	}
+	now := s.clock.Now()
 	var game model.Game
 	err = s.store.InTx(ctx, func(ctx context.Context) error {
 		var err error
 		game, err = s.store.CreateGame(ctx, model.Game{
 			ChatID: chat.ID, GenreID: genre.ID, Format: model.FormatNovel, Mode: model.ModeBalanced, Title: title,
 			Status: model.GameSetup, Timezone: "Europe/Moscow", RoundMinutes: 15, Settings: s.Defaults,
-			JoinCode: s.newCode(), CreatedByUserID: actor.ID,
+			JoinCode: s.newCode(), CreatedByUserID: actor.ID, NextRoundAt: &now,
 		})
 		if err != nil {
 			return err
@@ -174,14 +177,9 @@ func (s *Service) createFactions(ctx context.Context, game model.GameID, t model
 // createLocations создаёт стартовую клетку `(0,0)` из шаблона жанра (пункт 27: остальной мир достраивает рассказчик
 // при `/begin` и по ходу игры); стартовой считается помеченная `start`, иначе первая локация шаблона.
 func (s *Service) createLocations(ctx context.Context, game model.GameID, t model.GenreTemplate) error {
-	if len(t.Locations) == 0 {
+	lt, ok := templateStart(t)
+	if !ok {
 		return nil
-	}
-	lt := t.Locations[0]
-	for _, candidate := range t.Locations {
-		if candidate.Start {
-			lt = candidate
-		}
 	}
 	l := model.Location{GameID: game, Name: lt.Name, Description: lt.Description, Difficulty: lt.Difficulty, Terrain: lt.Terrain, Stage: model.StageDetailed, Objects: lt.Objects, Start: true}
 	if _, err := s.store.CreateLocation(ctx, l); err != nil {

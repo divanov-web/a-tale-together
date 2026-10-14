@@ -345,12 +345,17 @@ func (s *Service) startQuests(ctx context.Context, g model.Game, quests []narrat
 }
 
 // startQuestTasks — задания завязки: цель и сюжетный квест каждой фракции.
-func startQuestTasks(factions []model.Faction, t model.GenreTemplate) (quests []narrator.QuestTask, goals []narrator.GoalTask) {
+func startQuestTasks(factions []model.Faction, t model.GenreTemplate, setup *model.WorldSetup) (quests []narrator.QuestTask, goals []narrator.GoalTask) {
 	qs := questState{template: t}
 	for _, f := range factions {
 		minStages, maxStages := model.StageBounds(model.QuestStory)
 		quests = append(quests, narrator.QuestTask{FactionID: f.ID, Faction: string(f.Code), Kind: model.QuestStory, MinStages: minStages, MaxStages: maxStages, Mandatory: true})
 		fallback := qs.templateGoal(f)
+		if setup != nil {
+			if sf, ok := setup.Faction(f.Code); ok && sf.Goal != "" {
+				fallback = sf.Goal // цель из выбранного варианта стартового мира (ADR-0028)
+			}
+		}
 		if fallback == "" {
 			fallback = f.Description
 		}

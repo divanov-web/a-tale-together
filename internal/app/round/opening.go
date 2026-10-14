@@ -14,9 +14,15 @@ import (
 // даёт карточки недостающих соседей, цель и сюжетный квест каждой фракции (пункт 28, ADR-0020) одним вызовом с
 // ролью `opening` через `app/llm.Complete` (модель рассказчика профиля; ответ сохраняется по ключу задания). Без
 // провайдера или при сбое — стартовая сцена и клетка шаблона жанра, соседи «неизведанные земли», цели и квесты из
-// шаблона. Возвращает текст без заголовка; ошибка — только у записи в хранилище.
+// шаблона. Выбранный администратором вариант стартового мира (ADR-0028) даёт тон, крючок завязки `premise` и
+// запасные цели фракций вместо шаблона жанра. Возвращает текст без заголовка; ошибка — только у записи в хранилище.
 func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, genre model.Genre, factions []model.Faction, chars []model.Character, locs []model.Location) (string, error) {
-	fallback := openingTemplate(g, genre.Template.OpeningScene, factions)
+	// Выбранный вариант стартового мира (ADR-0028) заменяет тон и стартовую сцену шаблона и даёт крючок завязки.
+	setup := g.Setup()
+	tone, premise, fallback := genre.Template.Tone, "", openingTemplate(g, genre.Template.OpeningScene, factions)
+	if setup != nil {
+		tone, premise, fallback = setup.Tone, setup.Premise, setup.Premise
+	}
 	var start model.Location
 	for _, l := range locs {
 		if l.Start {
@@ -37,7 +43,7 @@ func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, ge
 			tasks = append(tasks, narrator.NeighborTask{X: x, Y: y, Direction: d, Of: start.ID, OfName: start.Name})
 		}
 	}
-	questTasks, goalTasks := startQuestTasks(factions, genre.Template)
+	questTasks, goalTasks := startQuestTasks(factions, genre.Template, setup)
 	templateQuests := func() (string, error) {
 		quests, _, goals := narrator.TemplateQuests(narrator.Tasks{Quests: questTasks, Goals: goalTasks, StoryTemplate: genre.Template.StoryQuest})
 		if err := s.startQuests(ctx, g, quests, goals); err != nil {
@@ -53,7 +59,7 @@ func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, ge
 	if err != nil {
 		return "", err
 	}
-	p := narrator.OpeningParams{Title: g.Title, Genre: genre.Title, Tone: genre.Template.Tone, Mode: g.Mode, Def: def, Neighbors: tasks,
+	p := narrator.OpeningParams{Title: g.Title, Genre: genre.Title, Tone: tone, Premise: premise, Mode: g.Mode, Def: def, Neighbors: tasks,
 		Start:  narrator.OpeningStart{LocationID: start.ID, Name: start.Name, Description: start.Description, Terrain: start.Terrain, Objects: []string{}},
 		Quests: questTasks, Goals: goalTasks, Template: genre.Template.StoryQuest}
 	for _, o := range start.Objects {

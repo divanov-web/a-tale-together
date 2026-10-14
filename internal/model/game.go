@@ -118,10 +118,19 @@ type Game struct {
 	JoinCode        string
 	CreatedByUserID UserID
 	NextRoundAt     *time.Time
-	SkippedStreak   int    // пропущенных без кворума раундов подряд; обнуляется заявками в раунде, возобновлением и сбросом (B11)
-	OpeningScene    string // завязка истории при /begin: текст рассказчика или стартовая сцена шаблона жанра (ADR-0018); пусто до старта
+	SkippedStreak   int          // пропущенных без кворума раундов подряд; обнуляется заявками в раунде, возобновлением и сбросом (B11)
+	OpeningScene    string       // завязка истории при /begin: текст рассказчика или стартовая сцена шаблона жанра (ADR-0018); пусто до старта
+	WorldSetups     *WorldSetups // варианты стартового мира от генерации мира при /create и выбор администратора (ADR-0028); nil — ещё не генерировались
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+}
+
+// Setup — выбранный администратором вариант стартового мира; nil — мир по шаблону жанра.
+func (g Game) Setup() *WorldSetup {
+	if g.WorldSetups == nil {
+		return nil
+	}
+	return g.WorldSetups.Chosen()
 }
 
 // MemberRole — роль участника игры.
@@ -227,6 +236,78 @@ type GenreTemplate struct {
 	Items          []ItemTemplate     `json:"items"`
 	PartyNames     []string           `json:"party_names,omitempty"` // имена групп по умолчанию (пункт 19); исчерпаны — «Группа N»
 	StoryQuest     *QuestTemplate     `json:"story_quest,omitempty"` // сюжетный квест при сбое модели (пункт 28)
+}
+
+// WorldSetup — вариант стартового мира от нулевого вызова «генерация мира» (ADR-0028): короткие поля, которые до него
+// были прибиты в шаблоне жанра; администратор выбирает один из вариантов первым шагом настройки.
+type WorldSetup struct {
+	Title    string         `json:"title"`    // заголовок кнопки, 2–4 слова
+	World    string         `json:"world"`    // предлагаемое название мира
+	Summary  string         `json:"summary"`  // 1–2 предложения для администратора
+	Tone     string         `json:"tone"`     // тон рассказчика вместо `template.tone`
+	Premise  string         `json:"premise"`  // крючок завязки: событие или угроза; роль `opening` строит на нём начало истории
+	Factions []SetupFaction `json:"factions"` // стартовые фракции по кодам шаблона
+	Start    SetupStart     `json:"start"`    // стартовая клетка `(0,0)`
+}
+
+// SetupFaction — фракция варианта стартового мира.
+type SetupFaction struct {
+	Code        FactionCode `json:"code"`
+	Title       string      `json:"title"`
+	Description string      `json:"description"`
+	Tone        string      `json:"tone"`
+	Goal        string      `json:"goal"` // цель фракции при сбое завязки
+}
+
+// SetupStart — стартовая клетка варианта: имя, местность, описание; объекты придумывает завязка.
+type SetupStart struct {
+	Name        string `json:"name"`
+	Terrain     string `json:"terrain"`
+	Description string `json:"description"`
+}
+
+// WorldSetups — варианты стартового мира игры в `games.world_setups` (jsonb) и выбор администратора.
+type WorldSetups struct {
+	Attempts int          `json:"attempts"`            // попыток генерации; после MaxWorldgenAttempts без вариантов — мир по шаблону
+	Options  []WorldSetup `json:"options"`             // варианты от модели; пусто — ещё не получены или генерация не удалась
+	ChosenNo int          `json:"chosen_no,omitempty"` // номер выбранного варианта с 1; 0 — шаблон жанра
+}
+
+// Нулевой вызов: вариантов стартового мира в ответе и попыток до отказа в пользу шаблона жанра.
+const (
+	WorldSetupOptions   = 4
+	MaxWorldgenAttempts = 3
+)
+
+// Chosen — выбранный вариант; nil — шаблон жанра.
+func (w *WorldSetups) Chosen() *WorldSetup {
+	if w == nil || w.ChosenNo < 1 || w.ChosenNo > len(w.Options) {
+		return nil
+	}
+	return &w.Options[w.ChosenNo-1]
+}
+
+// List — варианты; nil-безопасно.
+func (w *WorldSetups) List() []WorldSetup {
+	if w == nil {
+		return nil
+	}
+	return w.Options
+}
+
+// Pending — варианты ещё не получены и попытки не исчерпаны.
+func (w *WorldSetups) Pending() bool {
+	return w == nil || (len(w.Options) == 0 && w.Attempts < MaxWorldgenAttempts)
+}
+
+// Faction — фракция варианта по коду.
+func (s WorldSetup) Faction(code FactionCode) (SetupFaction, bool) {
+	for _, f := range s.Factions {
+		if f.Code == code {
+			return f, true
+		}
+	}
+	return SetupFaction{}, false
 }
 
 // Genre — запись справочника жанров.

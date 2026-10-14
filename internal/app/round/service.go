@@ -575,7 +575,7 @@ func (s *Service) Info(ctx context.Context, game model.Game) (Info, error) {
 }
 
 // Tick — шаг планировщика: закрыть раунды с истёкшим дедлайном и открыть следующие у игр, чьё `next_round_at` наступило;
-// запустить игры `starting` и завершить `finishing` (ADR-0024).
+// запустить игры `starting` и завершить `finishing` (ADR-0024); у игр `setup` сделать нулевой вызов «генерация мира» (ADR-0028).
 // Каждая игра в своей транзакции под блокировкой строки; ошибка или паника одной игры не останавливает остальные.
 // Откат транзакции закрытия считается неудачной попыткой раунда (ADR-0013): после MaxAttempts раунд получает `failed`,
 // заявки переносятся в следующий.
@@ -616,6 +616,8 @@ func (s *Service) tickGame(ctx context.Context, id model.GameID, now time.Time) 
 			return nil
 		}
 		switch g.Status {
+		case model.GameSetup:
+			return s.worldgen(ctx, &g, now)
 		case model.GameStarting:
 			return s.start(ctx, &g, now)
 		case model.GameFinishing:

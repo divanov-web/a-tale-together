@@ -21,6 +21,7 @@ type Param struct {
 
 // Params — параметры в порядке диалога настройки; Advanced задаются только командой /set.
 var Params = []Param{
+	{Key: ScenarioParam, Title: "Стартовый мир", Hint: "номер варианта от 1 до 4 или «-» — по шаблону жанра"}, // варианты от нулевого вызова (ADR-0028); шаг пропускается без модели и после неудачной генерации
 	{Key: "title", Title: "Название мира", Hint: "текст до 60 символов"},
 	{Key: "genre", Title: "Жанр", Hint: "код жанра из списка"},
 	{Key: "round_minutes", Title: "Длительность раунда", Hint: "минуты от 5 до 60"},
@@ -32,6 +33,12 @@ var Params = []Param{
 	{Key: "faction_good", Title: "Фракция добра", Hint: "имя по сюжету до 40 символов"},
 	{Key: "faction_evil", Title: "Фракция зла", Hint: "имя по сюжету до 40 символов"},
 }
+
+// ScenarioParam — ключ параметра «стартовый мир»: номер варианта из `games.world_setups` (ADR-0028).
+const ScenarioParam = "scenario"
+
+// ErrSetupsPending — варианты стартового мира ещё не получены.
+var ErrSetupsPending = errors.New("варианты стартового мира ещё придумываются: подождите сообщение с кнопками или ответьте «-»")
 
 // Set задаёт параметр игры; право — CanAdmin. Формат и режим на этапе 1 не меняются.
 func (s *Service) Set(ctx context.Context, game model.Game, actor model.UserID, key, value string) (model.Game, error) {
@@ -46,6 +53,9 @@ func (s *Service) Set(ctx context.Context, game model.Game, actor model.UserID, 
 	key = strings.ToLower(strings.TrimSpace(key))
 	if strings.HasPrefix(key, "faction_") {
 		return game, s.setFaction(ctx, game, model.FactionCode(strings.TrimPrefix(key, "faction_")), value)
+	}
+	if key == ScenarioParam {
+		return s.setScenario(ctx, game, value)
 	}
 	if err := s.apply(ctx, &game, key, value); err != nil {
 		return model.Game{}, err
@@ -95,6 +105,11 @@ func (s *Service) apply(ctx context.Context, g *model.Game, key, value string) e
 		}
 		if err != nil {
 			return fmt.Errorf("game.Set: %w", err)
+		}
+		if genre.ID != g.GenreID && g.Status == model.GameSetup {
+			// Варианты стартового мира придуманы под прежний жанр: тик планировщика сгенерирует новые (ADR-0028).
+			now := s.clock.Now()
+			g.WorldSetups, g.NextRoundAt = nil, &now
 		}
 		g.GenreID = genre.ID
 	case "round_minutes":
@@ -159,4 +174,104 @@ func (s *Service) apply(ctx context.Context, g *model.Game, key, value string) e
 func validClock(v string) bool {
 	_, err := time.Parse("15:04", v)
 	return err == nil
+}
+
+// setScenario применяет вариант стартового мира (ADR-0028) до запуска игры: номер варианта — название мира, фракции
+// и стартовая клетка из варианта; «-» или 0 — обратно к шаблону жанра. Название мира, фракции и клетка в одной
+// транзакции; администратор может затем переименовать мир и фракции обычными параметрами.
+func (s *Service) setScenario(ctx context.Context, game model.Game, value string) (model.Game, error) {
+	if game.Status != model.GameSetup && game.Status != model.GameDraft {
+		return model.Game{}, fmt.Errorf("%w: стартовый мир меняется только до запуска игры", ErrBadValue)
+	}
+	n := 0
+	if v := strings.ToLower(value); v != "-" && v != "нет" && v != "0" && v != "" {
+		var err error
+		if n, err = strconv.Atoi(v); err != nil || n < 1 {
+			return model.Game{}, fmt.Errorf("%w: номер варианта от 1 до %d", ErrBadValue, model.WorldSetupOptions)
+		}
+		if game.WorldSetups.Pending() {
+			return model.Game{}, ErrSetupsPending
+		}
+		if n > len(game.WorldSetups.Options) {
+			return model.Game{}, fmt.Errorf("%w: вариантов всего %d", ErrBadValue, len(game.WorldSetups.Options))
+		}
+	}
+	if game.WorldSetups == nil {
+		game.WorldSetups = &model.WorldSetups{}
+	}
+	game.WorldSetups.ChosenNo = n
+	genre, err := s.store.GetGenre(ctx, game.GenreID)
+	if err != nil {
+		return model.Game{}, fmt.Errorf("game.Set: %w", err)
+	}
+	err = s.store.InTx(ctx, func(ctx context.Context) error {
+		factions, err := s.store.ListFactions(ctx, game.ID)
+		if err != nil {
+			return err
+		}
+		locs, err := s.store.ListLocations(ctx, game.ID)
+		if err != nil {
+			return err
+		}
+		setup := game.Setup()
+		for _, f := range factions {
+			if setup != nil {
+				sf, ok := setup.Faction(f.Code)
+				if !ok {
+					continue
+				}
+				f.Title, f.Description, f.Tone = sf.Title, sf.Description, sf.Tone
+			} else {
+				var found bool
+				for _, ft := range genre.Template.Factions {
+					if ft.Code == f.Code {
+						f.Title, f.Description, f.Tone, found = ft.Title, ft.Description, ft.Tone, true
+					}
+				}
+				if !found {
+					continue
+				}
+			}
+			if err := s.store.UpdateFaction(ctx, f); err != nil {
+				return err
+			}
+		}
+		for _, l := range locs {
+			if !l.Start {
+				continue
+			}
+			if setup != nil {
+				l.Name, l.Terrain, l.Description = setup.Start.Name, setup.Start.Terrain, setup.Start.Description
+			} else if lt, ok := templateStart(genre.Template); ok {
+				l.Name, l.Terrain, l.Description = lt.Name, lt.Terrain, lt.Description
+			} else {
+				continue
+			}
+			if err := s.store.UpdateLocation(ctx, l); err != nil {
+				return err
+			}
+		}
+		if setup != nil {
+			game.Title = setup.World
+		}
+		return s.store.UpdateGame(ctx, game)
+	})
+	if err != nil {
+		return model.Game{}, fmt.Errorf("game.Set: scenario: %w", err)
+	}
+	return game, nil
+}
+
+// templateStart — стартовая клетка шаблона жанра: помеченная `start`, иначе первая.
+func templateStart(t model.GenreTemplate) (model.LocationTemplate, bool) {
+	if len(t.Locations) == 0 {
+		return model.LocationTemplate{}, false
+	}
+	lt := t.Locations[0]
+	for _, candidate := range t.Locations {
+		if candidate.Start {
+			lt = candidate
+		}
+	}
+	return lt, true
 }
