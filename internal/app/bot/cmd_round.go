@@ -27,20 +27,13 @@ func confirmKeyboard(command, action string) model.Keyboard {
 	}}
 }
 
-// gameBegin — /begin в группе: без аргумента спрашивает подтверждение кнопками, `/begin yes` принимает запуск
-// кампании: статус `starting`, стартовую сцену и первый раунд делает тик планировщика через outbox (ADR-0024), ответ
-// не ждёт модели; права проверяет сценарий при выполнении, то есть у нажавшего.
+// gameBegin — /begin в группе: принимает запуск кампании без подтверждения (решение руководителя 2026-10-14, B38;
+// `/begin yes` остаётся псевдонимом): статус `starting`, стартовую сцену и первый раунд делает тик планировщика через
+// outbox (ADR-0024), ответ не ждёт модели.
 func (s *Service) gameBegin(ctx context.Context, req *request) error {
 	g, err := s.games.OfChat(ctx, req.chat.ID)
 	if err != nil {
 		return err
-	}
-	switch strings.ToLower(strings.TrimSpace(req.in.Args)) {
-	case confirmYes:
-	case confirmNo:
-		return s.reply(ctx, req.in, "Запуск отменён.")
-	default:
-		return s.replyKeyboard(ctx, req.in, fmt.Sprintf("Начать кампанию «%s»? Бот опубликует стартовую сцену и откроет первый раунд. Подтвердить: кнопкой или /begin yes", g.Title), confirmKeyboard("begin", "Начать"))
 	}
 	g, err = s.rounds.Begin(ctx, g, req.user.ID)
 	if err != nil {

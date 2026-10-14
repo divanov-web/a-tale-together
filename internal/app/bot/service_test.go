@@ -1285,8 +1285,9 @@ func TestButtons_ActOption(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/act #3:1:nothing:0"), "Этот вариант уже недоступен")
 }
 
-// TestButtons_ConfirmBeginFinishPause (ADR-0015): /begin и /finish без аргумента спрашивают подтверждение кнопками;
-// нажатие без прав не снимает кнопки; «Отмена» отменяет; ответ о паузе несёт кнопку «Возобновить».
+// TestButtons_ConfirmBeginFinishPause (ADR-0015): /begin запускает кампанию без подтверждения (B38), /finish без
+// аргумента спрашивает подтверждение кнопками; нажатие без прав не снимает кнопки; «Отмена» отменяет; ответ о паузе
+// несёт кнопку «Возобновить».
 func TestButtons_ConfirmBeginFinishPause(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -1294,23 +1295,14 @@ func TestButtons_ConfirmBeginFinishPause(t *testing.T) {
 	h.send(owner, private(owner), "/cancel")
 	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-")
 
-	mustContain(t, h.send(owner, groupChat, "/begin"), "Начать кампанию «Песочница»?")
-	kb := h.tg.lastKeyboard(groupChat)
-	if got := buttonData(kb); len(got) != 2 || got[0] != "/begin yes" || got[1] != "/begin no" || kb[0][0].Text != "Начать" {
-		t.Fatalf("begin keyboard = %+v", kb)
-	}
-	mustContain(t, h.press(alice, groupChat, 50, "/begin yes"), "Нет прав")
-	if len(h.tg.cleared) != 0 {
-		t.Fatal("keyboard cleared after forbidden press")
-	}
-	mustContain(t, h.press(owner, groupChat, 50, "/begin no"), "Запуск отменён")
-	if !h.clearedLast(50) {
-		t.Fatal("keyboard not cleared after cancel")
-	}
+	mustContain(t, h.send(alice, groupChat, "/begin"), "Нет прав")
 	mustContain(t, h.send(alice, groupChat, "/status"), "черновик")
-	mustContain(t, h.press(owner, groupChat, 51, "/begin yes"), "Запускаю кампанию «Песочница»")
+	mustContain(t, h.send(owner, groupChat, "/begin"), "Запускаю кампанию «Песочница»")
+	if h.tg.lastKeyboard(groupChat) != nil {
+		t.Fatal("begin reply has keyboard")
+	}
 	mustContain(t, h.send(alice, groupChat, "/status"), "запускается", "кампания запускается")
-	mustContain(t, h.press(owner, groupChat, 51, "/begin yes"), "уже запускается")
+	mustContain(t, h.send(owner, groupChat, "/begin yes"), "уже запускается")
 	h.tick()
 	mustContain(t, h.send(alice, groupChat, "/status"), "идёт")
 
