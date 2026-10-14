@@ -6,3 +6,4 @@
 
 | № | Дата | Замечание | Предложение Claude | Где | Статус |
 |---|---|---|---|---|---|
+| B40 | 2026-10-14 | Правило оформления системных сообщений: в списке вида «ключ: значение» ключ выделять жирным. | Правило записано в `.claude/rules/telegram.md`; применить к существующим карточкам и спискам (`/status`, `/character`, `/party`, `/quests`, `/knowledge`, итог создания персонажа, «Разведка: …», «Сейчас: …» в настройке, личный итог раунда) через `model.TextBuilder` (ADR-0029); хронике и «раунд открыт» из outbox нужна колонка `entities` в `messages_outbox` и расширение `Sender`. | `app/bot/templates`, `app/bot/cmd_*.go`, `app/round/texts.go`, `scout.go`, `adapter/telegram`, `app/delivery` | новое |
