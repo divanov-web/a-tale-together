@@ -228,8 +228,8 @@ func TestBegin_StartPackage(t *testing.T) {
 	if west := w.at(t, -1, 0); !west.Hidden || west.DistantView != "гул голосов за углом" || west.Glimpse() != "неизведанная территория (гул голосов за углом)" {
 		t.Fatalf("west card = %+v", west)
 	}
-	if text, err := ScoutText(w.chars[0], w.locations(t)); err != nil || !strings.Contains(text, "• на север: Опушка — Кромка леса.\n• на юг: Южные ворота — Ворота на тракт.\n• на запад: неизведанная территория (гул голосов за углом)\n• на восток: Рынок — Торговые ряды.") {
-		t.Fatalf("scout = %q, %v", text, err)
+	if text, err := ScoutText(w.chars[0], w.locations(t)); err != nil || !strings.Contains(text.Text, "• на север: Опушка — Кромка леса.\n• на юг: Южные ворота — Ворота на тракт.\n• на запад: неизведанная территория (гул голосов за углом)\n• на восток: Рынок — Торговые ряды.") {
+		t.Fatalf("scout = %q, %v", text.Text, err)
 	}
 	// Личное «раунд открыт» предлагает колодец и четыре перехода.
 	var open string

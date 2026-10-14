@@ -92,7 +92,7 @@ func (s *Service) hasCharacter(ctx context.Context, user model.User) (bool, erro
 
 // sendPrivate отправляет ответ в личку с reply-клавиатурой по статусу; сбой расчёта набора только в лог,
 // ответ уходит без смены клавиатуры.
-func (s *Service) sendPrivate(ctx context.Context, chat model.TelegramChatID, text string) error {
+func (s *Service) sendPrivate(ctx context.Context, chat model.TelegramChatID, text model.FormattedText) error {
 	rk, err := s.statusKeyboard(ctx, chat)
 	if err != nil {
 		s.logger.Warn("reply keyboard not computed", slog.Int64("chat_id", int64(chat)), slog.Any("err", err))

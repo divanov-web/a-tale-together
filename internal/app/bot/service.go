@@ -41,12 +41,12 @@ type Telegram interface {
 	ChatAPI
 }
 
-// Messenger — ответы на команды (ADR-0006): текст, текст с кнопками, снятие кнопок после нажатия (ADR-0015)
-// и reply-клавиатура лички (ADR-0021).
+// Messenger — ответы на команды (ADR-0006): текст с разметкой (ADR-0029), текст с кнопками, снятие кнопок после
+// нажатия (ADR-0015) и reply-клавиатура лички (ADR-0021).
 type Messenger interface {
-	SendText(ctx context.Context, chat model.TelegramChatID, text string) error
-	SendReplyKeyboard(ctx context.Context, chat model.TelegramChatID, text string, rk model.ReplyKeyboard) error
-	SendKeyboard(ctx context.Context, chat model.TelegramChatID, text string, kb model.Keyboard) error
+	SendText(ctx context.Context, chat model.TelegramChatID, text model.FormattedText) error
+	SendReplyKeyboard(ctx context.Context, chat model.TelegramChatID, text model.FormattedText, rk model.ReplyKeyboard) error
+	SendKeyboard(ctx context.Context, chat model.TelegramChatID, text model.FormattedText, kb model.Keyboard) error
 	ClearKeyboard(ctx context.Context, chat model.TelegramChatID, messageID int64) error
 }
 
@@ -299,9 +299,17 @@ func (s *Service) reply(ctx context.Context, in model.Incoming, text string) err
 	return s.replyKeyboard(ctx, in, text, nil)
 }
 
+// replyFormatted отправляет ответ с разметкой (ADR-0029) в тот же чат без кнопок.
+func (s *Service) replyFormatted(ctx context.Context, in model.Incoming, text model.FormattedText) error {
+	if err := s.send(ctx, in.ChatID, in.UpdateID, text, nil); err != nil {
+		return fmt.Errorf("bot.reply: %w", err)
+	}
+	return nil
+}
+
 // replyKeyboard отправляет ответ в тот же чат с кнопками под ним (nil — без кнопок).
 func (s *Service) replyKeyboard(ctx context.Context, in model.Incoming, text string, kb model.Keyboard) error {
-	if err := s.send(ctx, in.ChatID, in.UpdateID, text, kb); err != nil {
+	if err := s.send(ctx, in.ChatID, in.UpdateID, model.Plain(text), kb); err != nil {
 		return fmt.Errorf("bot.reply: %w", err)
 	}
 	return nil
@@ -314,16 +322,17 @@ func (s *Service) replyPrivate(ctx context.Context, user model.User, text string
 
 // replyPrivateKeyboard отправляет сообщение с кнопками пользователю в личку.
 func (s *Service) replyPrivateKeyboard(ctx context.Context, user model.User, text string, kb model.Keyboard) error {
-	if err := s.send(ctx, user.PrivateChat(), 0, text, kb); err != nil {
+	if err := s.send(ctx, user.PrivateChat(), 0, model.Plain(text), kb); err != nil {
 		return fmt.Errorf("bot.replyPrivate: %w", err)
 	}
 	return nil
 }
 
-// send отправляет текст с кнопками или без и пишет исходящее в журнал чата. Ответ в личку без inline-кнопок несёт
-// reply-клавиатуру по статусу пользователя (B29, ADR-0021): у одного сообщения Telegram только одна клавиатура.
-func (s *Service) send(ctx context.Context, chat model.TelegramChatID, updateID int64, text string, kb model.Keyboard) error {
-	rec := model.ChatLogRecord{Kind: model.ChatLogOut, Chat: chat, UpdateID: updateID, Text: text}
+// send отправляет текст (с разметкой, ADR-0029) с кнопками или без и пишет исходящее в журнал чата. Ответ в личку
+// без inline-кнопок несёт reply-клавиатуру по статусу пользователя (B29, ADR-0021): у одного сообщения Telegram
+// только одна клавиатура.
+func (s *Service) send(ctx context.Context, chat model.TelegramChatID, updateID int64, text model.FormattedText, kb model.Keyboard) error {
+	rec := model.ChatLogRecord{Kind: model.ChatLogOut, Chat: chat, UpdateID: updateID, Text: text.Text}
 	var err error
 	switch {
 	case len(kb) > 0:

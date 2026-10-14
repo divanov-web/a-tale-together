@@ -3,6 +3,7 @@ package telegram
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -88,5 +89,24 @@ func TestReplyMarkup(t *testing.T) {
 	}
 	if r, ok := replyMarkup(model.ReplyKeyboard{}).(*models.ReplyKeyboardRemove); !ok || !r.RemoveKeyboard {
 		t.Fatalf("remove markup = %+v", r)
+	}
+}
+
+// TestEntities (ADR-0029): смещения из рун переводятся в единицы UTF-16 (эмодзи — две), отрезок за границами
+// текста пропускается, без разметки — nil.
+func TestEntities(t *testing.T) {
+	t.Parallel()
+	text := model.FormattedText{Text: "😀 на север: Лес", Entities: []model.TextEntity{
+		{Kind: model.EntityBold, Offset: 2, Length: 8},
+		{Kind: model.EntityBold, Offset: 12, Length: 3},
+		{Kind: model.EntityBold, Offset: 14, Length: 5},
+	}}
+	got := entities(text)
+	want := []models.MessageEntity{{Type: models.MessageEntityTypeBold, Offset: 3, Length: 8}, {Type: models.MessageEntityTypeBold, Offset: 13, Length: 3}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("entities = %+v, want %+v", got, want)
+	}
+	if got := entities(model.Plain("текст")); got != nil {
+		t.Fatalf("plain entities = %+v", got)
 	}
 }

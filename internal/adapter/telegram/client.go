@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"unicode/utf16"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -73,35 +74,43 @@ func (c *Client) Run(ctx context.Context, h Handler) error {
 	return nil
 }
 
-// SendText отправляет обычное текстовое сообщение (ответы на команды, ADR-0006). Длинные игровые тексты делит сценарий при постановке в outbox (ADR-0011).
-func (c *Client) SendText(ctx context.Context, chat model.TelegramChatID, text string) error {
-	if _, err := c.Send(ctx, chat, text, nil); err != nil {
+// SendText отправляет текстовое сообщение (ответы на команды, ADR-0006), разметка — entities (ADR-0029). Длинные
+// игровые тексты делит сценарий при постановке в outbox (ADR-0011).
+func (c *Client) SendText(ctx context.Context, chat model.TelegramChatID, text model.FormattedText) error {
+	if _, err := c.SendFormatted(ctx, chat, text, nil); err != nil {
 		return fmt.Errorf("telegram.SendText: %w", err)
 	}
 	return nil
 }
 
 // SendKeyboard отправляет текст с inline-кнопками под ним (ADR-0015); пустая клавиатура — обычное сообщение.
-func (c *Client) SendKeyboard(ctx context.Context, chat model.TelegramChatID, text string, kb model.Keyboard) error {
-	if _, err := c.Send(ctx, chat, text, kb); err != nil {
+func (c *Client) SendKeyboard(ctx context.Context, chat model.TelegramChatID, text model.FormattedText, kb model.Keyboard) error {
+	if _, err := c.SendFormatted(ctx, chat, text, kb); err != nil {
 		return fmt.Errorf("telegram.SendKeyboard: %w", err)
 	}
 	return nil
 }
 
 // SendReplyKeyboard отправляет текст и ставит в личке постоянную клавиатуру под полем ввода или снимает её (ADR-0021).
-func (c *Client) SendReplyKeyboard(ctx context.Context, chat model.TelegramChatID, text string, rk model.ReplyKeyboard) error {
-	if _, err := c.bot.SendMessage(ctx, &bot.SendMessageParams{ChatID: int64(chat), Text: text, ReplyMarkup: replyMarkup(rk)}); err != nil {
+func (c *Client) SendReplyKeyboard(ctx context.Context, chat model.TelegramChatID, text model.FormattedText, rk model.ReplyKeyboard) error {
+	params := &bot.SendMessageParams{ChatID: int64(chat), Text: text.Text, Entities: entities(text), ReplyMarkup: replyMarkup(rk)}
+	if _, err := c.bot.SendMessage(ctx, params); err != nil {
 		return fmt.Errorf("telegram.SendReplyKeyboard: chat %d: %w", chat, classify(err))
 	}
 	return nil
 }
 
-// Send отправляет текст с кнопками (nil — без них) и возвращает идентификатор сообщения Telegram; используется воркером outbox.
-// Ошибки классифицируются для повторов (ADR-0013): окончательный отказ Telegram → `model.ErrSendRejected`,
-// 429 → `model.RetryAfterError`, остальное (сеть, 5xx, таймаут) — временная ошибка.
+// Send отправляет простой текст с кнопками (nil — без них) и возвращает идентификатор сообщения Telegram; используется
+// воркером outbox.
 func (c *Client) Send(ctx context.Context, chat model.TelegramChatID, text string, kb model.Keyboard) (int64, error) {
-	params := &bot.SendMessageParams{ChatID: int64(chat), Text: text}
+	return c.SendFormatted(ctx, chat, model.Plain(text), kb)
+}
+
+// SendFormatted отправляет текст с разметкой (ADR-0029) и кнопками (nil — без них) и возвращает идентификатор
+// сообщения Telegram. Ошибки классифицируются для повторов (ADR-0013): окончательный отказ Telegram →
+// `model.ErrSendRejected`, 429 → `model.RetryAfterError`, остальное (сеть, 5xx, таймаут) — временная ошибка.
+func (c *Client) SendFormatted(ctx context.Context, chat model.TelegramChatID, text model.FormattedText, kb model.Keyboard) (int64, error) {
+	params := &bot.SendMessageParams{ChatID: int64(chat), Text: text.Text, Entities: entities(text)}
 	if len(kb) > 0 {
 		params.ReplyMarkup = markup(kb)
 	}
@@ -110,6 +119,34 @@ func (c *Client) Send(ctx context.Context, chat model.TelegramChatID, text strin
 		return 0, fmt.Errorf("telegram.Send: chat %d: %w", chat, classify(err))
 	}
 	return int64(m.ID), nil
+}
+
+// entities переводит разметку модели в entities Telegram: смещения и длины из рун в единицы UTF-16 (ADR-0029).
+// Отрезок за границами текста пропускается, текст уходит без него.
+func entities(text model.FormattedText) []models.MessageEntity {
+	if len(text.Entities) == 0 {
+		return nil
+	}
+	pos := make([]int, 0, len(text.Text)+1) // позиция каждой руны в UTF-16 и позиция конца
+	u := 0
+	for _, r := range text.Text {
+		pos = append(pos, u)
+		if utf16.RuneLen(r) == 2 {
+			u += 2
+		} else {
+			u++
+		}
+	}
+	pos = append(pos, u)
+	var out []models.MessageEntity
+	for _, e := range text.Entities {
+		if e.Offset < 0 || e.Length <= 0 || e.Offset+e.Length >= len(pos) {
+			continue
+		}
+		start, end := pos[e.Offset], pos[e.Offset+e.Length]
+		out = append(out, models.MessageEntity{Type: models.MessageEntityType(e.Kind), Offset: start, Length: end - start})
+	}
+	return out
 }
 
 // ClearKeyboard снимает кнопки с отправленного сообщения после нажатия (ADR-0015). Отказ Telegram (кнопок уже нет,

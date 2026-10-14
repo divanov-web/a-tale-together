@@ -7,7 +7,8 @@ import (
 )
 
 // scout — /scout: что в соседних клетках (B36, ADR-0025); в личке — текущая игра пользователя, в группе — игра чата;
-// клетка персонажа отправителя. Переходов среди «Вариантов» нет, куда идти — отсюда, заявкой текстом.
+// клетка персонажа отправителя, направления жирным (ADR-0029). Переходов среди «Вариантов» нет, куда идти — отсюда,
+// заявкой текстом.
 func (s *Service) scout(ctx context.Context, req *request) error {
 	g, c, err := s.actor(ctx, req)
 	if err != nil {
@@ -21,5 +22,5 @@ func (s *Service) scout(ctx context.Context, req *request) error {
 	if err != nil {
 		return err
 	}
-	return s.reply(ctx, req.in, text)
+	return s.replyFormatted(ctx, req.in, text)
 }

@@ -24,6 +24,7 @@ import (
 type fakeTelegram struct {
 	sent      map[model.TelegramChatID][]string
 	keyboards map[model.TelegramChatID][]model.Keyboard      // клавиатура каждого отправленного сообщения; nil — без кнопок
+	entities  map[model.TelegramChatID][][]model.TextEntity  // разметка каждого отправленного сообщения (ADR-0029); nil — без неё
 	cleared   []int64                                        // сообщения, с которых сняты кнопки (ADR-0015)
 	replies   map[model.TelegramChatID][]model.ReplyKeyboard // reply-клавиатуры сообщений в личку (ADR-0021)
 	admins    map[model.TelegramUserID]bool
@@ -39,12 +40,16 @@ type memberScope struct {
 	user model.TelegramUserID
 }
 
-func (f *fakeTelegram) SendText(_ context.Context, chat model.TelegramChatID, text string) error {
+func (f *fakeTelegram) SendText(_ context.Context, chat model.TelegramChatID, text model.FormattedText) error {
 	return f.SendKeyboard(context.Background(), chat, text, nil)
 }
 
-func (f *fakeTelegram) SendKeyboard(_ context.Context, chat model.TelegramChatID, text string, kb model.Keyboard) error {
-	f.sent[chat] = append(f.sent[chat], text)
+func (f *fakeTelegram) SendKeyboard(_ context.Context, chat model.TelegramChatID, text model.FormattedText, kb model.Keyboard) error {
+	f.sent[chat] = append(f.sent[chat], text.Text)
+	if f.entities == nil {
+		f.entities = map[model.TelegramChatID][][]model.TextEntity{}
+	}
+	f.entities[chat] = append(f.entities[chat], text.Entities)
 	if f.keyboards == nil {
 		f.keyboards = map[model.TelegramChatID][]model.Keyboard{}
 	}
@@ -52,7 +57,7 @@ func (f *fakeTelegram) SendKeyboard(_ context.Context, chat model.TelegramChatID
 	return nil
 }
 
-func (f *fakeTelegram) SendReplyKeyboard(_ context.Context, chat model.TelegramChatID, text string, rk model.ReplyKeyboard) error {
+func (f *fakeTelegram) SendReplyKeyboard(_ context.Context, chat model.TelegramChatID, text model.FormattedText, rk model.ReplyKeyboard) error {
 	if f.replies == nil {
 		f.replies = map[model.TelegramChatID][]model.ReplyKeyboard{}
 	}
@@ -1476,7 +1481,7 @@ func TestCharacter_WelcomeByGameStatus(t *testing.T) {
 	}
 }
 
-// TestScout_Card (B36, ADR-0025): `/scout` в личке и группе показывает клетку персонажа и четыре направления; направление
+// TestScout_Card (B36, ADR-0025): `/scout` в личке и группе показывает клетку персонажа и четыре направления жирным (B39); направление
 // без клетки — «неизведанная территория», после старта шаблонные соседи видимы с карточкой; без персонажа — отказ.
 func TestScout_Card(t *testing.T) {
 	t.Parallel()
@@ -1492,6 +1497,13 @@ func TestScout_Card(t *testing.T) {
 	mustContain(t, after, "Разведка: Рыночная площадь (0, 0)", "• на север: Зал Серой башни\n", "• на юг: Неизведанные земли — Что там, отсюда не разглядеть.")
 	if strings.Contains(after, "идти на") {
 		t.Fatalf("scout offers buttons text: %q", after)
+	}
+	// Разметка доходит до Telegram и в личке (с reply-клавиатурой), и в группе: четыре жирных направления.
+	for _, chat := range []model.TelegramChatID{private(alice), groupChat} {
+		ents := h.tg.entities[chat][len(h.tg.entities[chat])-1]
+		if len(ents) != 4 || ents[0] != (model.TextEntity{Kind: model.EntityBold, Offset: 37, Length: 8}) {
+			t.Fatalf("entities %d = %+v", chat, ents)
+		}
 	}
 	mustContain(t, h.send(owner, groupChat, "/scout"), "Персонажа ещё нет")
 }
