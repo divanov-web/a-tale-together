@@ -21,7 +21,7 @@ type Param struct {
 
 // Params — параметры в порядке диалога настройки; Advanced задаются только командой /set.
 var Params = []Param{
-	{Key: ScenarioParam, Title: "Стартовый мир", Hint: "номер варианта от 1 до 4 или «-» — по шаблону жанра"}, // варианты от нулевого вызова (ADR-0028); шаг пропускается без модели и после неудачной генерации
+	{Key: ScenarioParam, Title: "Стартовый мир", Hint: "номер варианта от 1 до 4"}, // варианты от нулевого вызова (ADR-0028); выбор обязателен; шаг пропускается без модели и после неудачной генерации
 	{Key: "title", Title: "Название мира", Hint: "текст до 60 символов"},
 	{Key: "genre", Title: "Жанр", Hint: "код жанра из списка"},
 	{Key: "round_minutes", Title: "Длительность раунда", Hint: "минуты от 5 до 60"},
@@ -38,7 +38,7 @@ var Params = []Param{
 const ScenarioParam = "scenario"
 
 // ErrSetupsPending — варианты стартового мира ещё не получены.
-var ErrSetupsPending = errors.New("варианты стартового мира ещё придумываются: подождите сообщение с кнопками или ответьте «-»")
+var ErrSetupsPending = errors.New("варианты стартового мира ещё придумываются: подождите сообщение с кнопками")
 
 // Set задаёт параметр игры; право — CanAdmin. Формат и режим на этапе 1 не меняются.
 func (s *Service) Set(ctx context.Context, game model.Game, actor model.UserID, key, value string) (model.Game, error) {
@@ -176,34 +176,25 @@ func validClock(v string) bool {
 	return err == nil
 }
 
-// setScenario применяет вариант стартового мира (ADR-0028) до запуска игры: номер варианта — название мира, фракции
-// и стартовая клетка из варианта; «-» или 0 — обратно к шаблону жанра. Название мира, фракции и клетка в одной
-// транзакции; администратор может затем переименовать мир и фракции обычными параметрами.
+// setScenario применяет вариант стартового мира (ADR-0028) до запуска игры: название мира, фракции и стартовая
+// клетка из варианта в одной транзакции; администратор может затем переименовать мир и фракции обычными
+// параметрами. Выбор обязателен: «-» и возврат к шаблону жанра не принимаются (решение руководителя 2026-10-14).
 func (s *Service) setScenario(ctx context.Context, game model.Game, value string) (model.Game, error) {
 	if game.Status != model.GameSetup && game.Status != model.GameDraft {
 		return model.Game{}, fmt.Errorf("%w: стартовый мир меняется только до запуска игры", ErrBadValue)
 	}
-	n := 0
-	if v := strings.ToLower(value); v != "-" && v != "нет" && v != "0" && v != "" {
-		var err error
-		if n, err = strconv.Atoi(v); err != nil || n < 1 {
-			return model.Game{}, fmt.Errorf("%w: номер варианта от 1 до %d", ErrBadValue, model.WorldSetupOptions)
-		}
-		if game.WorldSetups.Pending() {
-			return model.Game{}, ErrSetupsPending
-		}
-		if n > len(game.WorldSetups.Options) {
-			return model.Game{}, fmt.Errorf("%w: вариантов всего %d", ErrBadValue, len(game.WorldSetups.Options))
-		}
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || n < 1 {
+		return model.Game{}, fmt.Errorf("%w: выберите номер варианта от 1 до %d", ErrBadValue, model.WorldSetupOptions)
 	}
-	if game.WorldSetups == nil {
-		game.WorldSetups = &model.WorldSetups{}
+	if game.WorldSetups.Pending() {
+		return model.Game{}, ErrSetupsPending
+	}
+	if n > len(game.WorldSetups.Options) {
+		return model.Game{}, fmt.Errorf("%w: вариантов всего %d", ErrBadValue, len(game.WorldSetups.Options))
 	}
 	game.WorldSetups.ChosenNo = n
-	genre, err := s.store.GetGenre(ctx, game.GenreID)
-	if err != nil {
-		return model.Game{}, fmt.Errorf("game.Set: %w", err)
-	}
+	setup := game.Setup()
 	err = s.store.InTx(ctx, func(ctx context.Context) error {
 		factions, err := s.store.ListFactions(ctx, game.ID)
 		if err != nil {
@@ -213,25 +204,12 @@ func (s *Service) setScenario(ctx context.Context, game model.Game, value string
 		if err != nil {
 			return err
 		}
-		setup := game.Setup()
 		for _, f := range factions {
-			if setup != nil {
-				sf, ok := setup.Faction(f.Code)
-				if !ok {
-					continue
-				}
-				f.Title, f.Description, f.Tone = sf.Title, sf.Description, sf.Tone
-			} else {
-				var found bool
-				for _, ft := range genre.Template.Factions {
-					if ft.Code == f.Code {
-						f.Title, f.Description, f.Tone, found = ft.Title, ft.Description, ft.Tone, true
-					}
-				}
-				if !found {
-					continue
-				}
+			sf, ok := setup.Faction(f.Code)
+			if !ok {
+				continue
 			}
+			f.Title, f.Description, f.Tone = sf.Title, sf.Description, sf.Tone
 			if err := s.store.UpdateFaction(ctx, f); err != nil {
 				return err
 			}
@@ -240,20 +218,12 @@ func (s *Service) setScenario(ctx context.Context, game model.Game, value string
 			if !l.Start {
 				continue
 			}
-			if setup != nil {
-				l.Name, l.Terrain, l.Description = setup.Start.Name, setup.Start.Terrain, setup.Start.Description
-			} else if lt, ok := templateStart(genre.Template); ok {
-				l.Name, l.Terrain, l.Description = lt.Name, lt.Terrain, lt.Description
-			} else {
-				continue
-			}
+			l.Name, l.Terrain, l.Description = setup.Start.Name, setup.Start.Terrain, setup.Start.Description
 			if err := s.store.UpdateLocation(ctx, l); err != nil {
 				return err
 			}
 		}
-		if setup != nil {
-			game.Title = setup.World
-		}
+		game.Title = setup.World
 		return s.store.UpdateGame(ctx, game)
 	})
 	if err != nil {

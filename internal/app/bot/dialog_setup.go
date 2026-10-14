@@ -49,6 +49,16 @@ func (s *Service) setupStep(ctx context.Context, req *request, d *model.Dialog, 
 		return question{}, false, err
 	}
 	answer = strings.TrimSpace(answer)
+	if d.Step == game.ScenarioParam {
+		// Стартовый мир выбирается обязательно (ADR-0028): «-» не пропускает шаг; шаг отпадает сам, только если
+		// варианты не придуманы после всех попыток — тогда мир по шаблону жанра.
+		switch {
+		case !s.scenarioStep(g):
+			answer = setupSkip
+		case answer == setupSkip:
+			return question{}, false, fmt.Errorf("%w: выберите один из вариантов", game.ErrBadValue)
+		}
+	}
 	if answer != setupSkip {
 		if g, err = s.games.Set(ctx, g, req.user.ID, d.Step, answer); err != nil {
 			return question{}, false, err
@@ -127,7 +137,7 @@ func (s *Service) setupQuestion(ctx context.Context, g model.Game, key string) (
 }
 
 // scenarioQuestion — шаг «Стартовый мир» (ADR-0028): варианты с кнопками, когда они уже получены; иначе ожидание
-// с единственной кнопкой «Оставить как есть» — варианты придут отдельным сообщением с кнопками.
+// без кнопок — варианты придут отдельным сообщением с кнопками, и выбрать один из них обязательно.
 func (s *Service) scenarioQuestion(g model.Game) question {
 	if len(g.WorldSetups.List()) > 0 {
 		text := round.SetupOptionsText(g)
@@ -137,7 +147,7 @@ func (s *Service) scenarioQuestion(g model.Game) question {
 		return question{text: text, kb: round.SetupOptionsKeyboard(g)}
 	}
 	return question{text: "Стартовый мир. Придумываю четыре варианта, это займёт минуту-две: они придут сюда отдельным сообщением с кнопками. " +
-		"Можно подождать его или оставить мир по шаблону жанра и настраивать дальше.", kb: answerButtons(game.ScenarioParam, 1, [2]string{"Оставить как есть", setupSkip})}
+		"Дождитесь его и выберите один из вариантов — без этого настройка не продолжится."}
 }
 
 // setupTimezones — часовые пояса на кнопках диалога настройки; остальные вводятся текстом.
@@ -182,7 +192,7 @@ func (s *Service) paramValue(ctx context.Context, g model.Game, key string) (str
 		if cur := g.Setup(); cur != nil {
 			return cur.Title, nil
 		}
-		return "по шаблону жанра", nil
+		return "не выбран", nil
 	case "title":
 		return g.Title, nil
 	case "genre":

@@ -1593,9 +1593,9 @@ func TestSay_Command(t *testing.T) {
 }
 
 // TestGame_SetupScenario (ADR-0028): с подключённой моделью первый шаг настройки — «Стартовый мир»; пока варианты
-// придумываются, у шага одна кнопка «Оставить как есть»; тик планировщика делает нулевой вызов и присылает
-// администратору варианты с кнопками; выбор кнопкой переименовывает мир, фракции и стартовую клетку, следующий шаг —
-// название с предложенным значением; `/set scenario -` возвращает шаблон жанра.
+// придумываются, у шага нет кнопок и «-» не пропускает его; тик планировщика делает нулевой вызов и присылает
+// администратору варианты с кнопками без «Оставить как есть»; выбор кнопкой переименовывает мир, фракции и стартовую
+// клетку, следующий шаг — название с предложенным значением; `/set scenario` принимает только номер варианта.
 func TestGame_SetupScenario(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -1612,24 +1612,26 @@ func TestGame_SetupScenario(t *testing.T) {
   "start":{"name":"Причал у маяка","terrain":"harbor","description":"Мокрые доски."}}]}`)
 	h.clock.advance(time.Minute)
 	h.createGameInSetup()
-	mustContain(t, h.tg.last(private(owner)), "Настройка мира «Песочница»", "Стартовый мир. Придумываю четыре варианта")
-	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 1 || got[0] != "@scenario -" {
-		t.Fatalf("pending keyboard = %v", got)
+	mustContain(t, h.tg.last(private(owner)), "Настройка мира «Песочница»", "Стартовый мир. Придумываю четыре варианта", "выберите один из вариантов")
+	if kb := h.tg.lastKeyboard(private(owner)); kb != nil {
+		t.Fatalf("pending keyboard = %v", kb)
 	}
 	mustContain(t, h.send(owner, private(owner), "2"), "ещё придумываются", "Повторите ответ")
+	mustContain(t, h.send(owner, private(owner), "-"), "выберите один из вариантов", "Повторите ответ")
 
 	h.tick()
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
 	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
 	msgs, _ := h.store.ListOutbox(context.Background(), g.ID)
-	if len(msgs) != 1 || msgs[0].TelegramChatID != private(owner) || !strings.Contains(msgs[0].Text, "1. Гуси против молчания — «Ольховый Брод»") || len(msgs[0].Keyboard) != 3 || msgs[0].Keyboard[1][0].Data != "@scenario 2" {
+	if len(msgs) != 1 || msgs[0].TelegramChatID != private(owner) || !strings.Contains(msgs[0].Text, "1. Гуси против молчания — «Ольховый Брод»") || strings.Contains(msgs[0].Text, "Оставить как есть") || len(msgs[0].Keyboard) != 2 || msgs[0].Keyboard[1][0].Data != "@scenario 2" {
 		t.Fatalf("outbox = %+v", msgs)
 	}
 	// Повторный показ шага уже с вариантами; выбор кнопкой.
 	mustContain(t, h.send(owner, private(owner), "/set"), "Продолжаем настройку", "2. Соль и колокол — «Порт Косы»", "Корабль сел на мель.")
-	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 3 || got[0] != "@scenario 1" || got[2] != "@scenario -" {
+	if got := buttonData(h.tg.lastKeyboard(private(owner))); len(got) != 2 || got[0] != "@scenario 1" || got[1] != "@scenario 2" {
 		t.Fatalf("options keyboard = %v", got)
 	}
+	mustContain(t, h.send(owner, private(owner), "-"), "выберите один из вариантов")
 	mustContain(t, h.press(owner, private(owner), 70, "@scenario 2"), "Название мира", "Сейчас: Порт Косы")
 	mustContain(t, h.send(owner, private(owner), "-"), "Длительность раунда")
 	for i := 0; i < len(game.Params); i++ {
@@ -1646,14 +1648,9 @@ func TestGame_SetupScenario(t *testing.T) {
 	if s := g.Setup(); s == nil || s.Title != "Соль и колокол" {
 		t.Fatalf("chosen setup = %+v", g.WorldSetups)
 	}
-	// Обратно к шаблону жанра и повторный выбор командой.
+	// Повторный выбор командой; «-» и номер вне списка не принимаются.
 	mustContain(t, h.send(owner, private(owner), "/set scenario 5"), "вариантов всего 2")
-	mustContain(t, h.send(owner, private(owner), "/set scenario -"), "Сохранено")
-	mustContain(t, h.send(owner, groupChat, "/status"), "Орден Рассвета (good)", "Гильдия теней (evil)")
-	locs, _ = h.store.ListLocations(context.Background(), g.ID)
-	if locs[0].Name != "Рыночная площадь" {
-		t.Fatalf("start cell after template = %+v", locs[0])
-	}
+	mustContain(t, h.send(owner, private(owner), "/set scenario -"), "выберите номер варианта")
 	mustContain(t, h.send(owner, private(owner), "/set scenario 1"), "Сохранено")
 	mustContain(t, h.send(owner, groupChat, "/status"), "Мир «Ольховый Брод»", "Гильдия ярмарки (good)")
 }

@@ -62,7 +62,7 @@ func TestWorldgen_Tick(t *testing.T) {
 		t.Fatalf("outbox = %+v", msgs)
 	}
 	kb := msgs[0].Keyboard
-	if len(kb) != 3 || kb[0][0].Data != "@scenario 1" || kb[0][0].Text != "1. Гуси против молчания" || kb[1][0].Data != "@scenario 2" || kb[2][0].Data != "@scenario -" {
+	if len(kb) != 2 || kb[0][0].Data != "@scenario 1" || kb[0][0].Text != "1. Гуси против молчания" || kb[1][0].Data != "@scenario 2" {
 		t.Fatalf("keyboard = %+v", kb)
 	}
 	w.tick(t, time.Minute)

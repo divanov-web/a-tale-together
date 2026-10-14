@@ -121,11 +121,12 @@ func SetupOptionsText(g model.Game) string {
 			fmt.Fprintf(&b, "\n%d. %s — «%s»\n%s\n", i+1, o.Title, o.World, o.Summary)
 		}
 	}
-	b.WriteString("\nВыберите вариант кнопкой или командой /set scenario <номер>; «Оставить как есть» — мир по шаблону жанра.")
+	b.WriteString("\nВыберите вариант кнопкой или командой /set scenario <номер>.")
 	return b.String()
 }
 
-// SetupOptionsKeyboard — кнопка на каждый вариант с ответом шага `scenario` и «Оставить как есть» (ADR-0015).
+// SetupOptionsKeyboard — кнопка на каждый вариант с ответом шага `scenario` (ADR-0015); кнопки «Оставить как есть»
+// нет: администратор обязан выбрать из сгенерированных (решение руководителя 2026-10-14).
 func SetupOptionsKeyboard(g model.Game) model.Keyboard {
 	var kb model.Keyboard
 	if g.WorldSetups != nil {
@@ -133,7 +134,7 @@ func SetupOptionsKeyboard(g model.Game) model.Keyboard {
 			kb = append(kb, []model.Button{{Text: fmt.Sprintf("%d. %s", i+1, o.Title), Data: model.CallbackAnswer(ScenarioStep, fmt.Sprint(i+1))}})
 		}
 	}
-	return append(kb, []model.Button{{Text: "Оставить как есть", Data: model.CallbackAnswer(ScenarioStep, "-")}})
+	return kb
 }
 
 func worldgenFailedText(g model.Game) string {
