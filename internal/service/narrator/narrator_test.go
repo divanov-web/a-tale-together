@@ -91,7 +91,7 @@ func (f *fakeLLM) Complete(_ context.Context, req model.LLMRequest) (model.LLMRe
 	if len(f.responses) > 1 {
 		f.responses = f.responses[1:]
 	}
-	return model.LLMResponse{JSON: json.RawMessage(out), TokensIn: 100, TokensOut: 30}, nil
+	return model.LLMResponse{JSON: json.RawMessage(out), Usage: model.LLMUsage{Input: 100, Output: 30}}, nil
 }
 
 func newService(f *fakeLLM) *Service {

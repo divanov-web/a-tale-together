@@ -88,7 +88,7 @@ func (w *worldLLM) Complete(_ context.Context, call applm.Call, req model.LLMReq
 		if w.opening == "" {
 			return model.LLMResponse{}, errors.New("opening down")
 		}
-		return model.LLMResponse{JSON: json.RawMessage(w.opening), TokensIn: 10, TokensOut: 5}, nil
+		return model.LLMResponse{JSON: json.RawMessage(w.opening), Usage: model.LLMUsage{Input: 10, Output: 5}}, nil
 	case model.RoleInterpreter:
 		return model.LLMResponse{}, errors.New("interpreter down")
 	}
@@ -136,7 +136,7 @@ func (w *worldLLM) Complete(_ context.Context, call applm.Call, req model.LLMReq
 		}
 	}
 	raw, _ := json.Marshal(map[string]any{"chronicle": "Ветер.", "scenes": scenes, "world": map[string]any{"cells": cells, "neighbors": neighbors, "quests": quests, "stages": stages, "goals": goals}})
-	return model.LLMResponse{JSON: raw, TokensIn: 100, TokensOut: 50}, nil
+	return model.LLMResponse{JSON: raw, Usage: model.LLMUsage{Input: 100, Output: 50}}, nil
 }
 
 // startPackageJSON — ответ завязки: стартовая клетка с объектом, четыре карточки соседей, цель и сюжетный квест

@@ -195,6 +195,7 @@ type OpeningResult struct {
 	Issues    []string            // замечания к ответам модели (для лога и eval)
 	TokensIn  int
 	TokensOut int
+	CostUSD   float64 // цена вызовов по таблице тарифов (ADR-0032)
 }
 
 // Opening придумывает завязку и стартовый пакет одним вызовом; при замечаниях к тексту (объём, цифры вне
@@ -286,8 +287,9 @@ type openingNeighbor struct {
 func (s *Service) openingCall(ctx context.Context, input string, p OpeningParams, res *OpeningResult) (openingResponse, []string, error) {
 	resp, err := s.llm.Complete(ctx, model.LLMRequest{Role: model.RoleOpening, System: s.opening, Input: input, JSONSchema: OpeningSchema})
 	res.Calls++
-	res.TokensIn += resp.TokensIn
-	res.TokensOut += resp.TokensOut
+	res.TokensIn += resp.Usage.TotalIn()
+	res.TokensOut += resp.Usage.Output
+	res.CostUSD += resp.CostUSD
 	if err != nil {
 		return openingResponse{}, nil, fmt.Errorf("narrator: opening: %w", err)
 	}

@@ -56,7 +56,11 @@ type ChatLogCall struct {
 	System        string  `json:"system"`
 	Input         string  `json:"input"`
 	Output        string  `json:"output,omitempty"`
-	TokensIn      int     `json:"tokens_in"`
+	TokensIn      int     `json:"tokens_in"` // все входные токены (вход без кэша + запись + чтение кэша)
+	TokensCache   int     `json:"tokens_cache_write,omitempty"`
+	TokensRead    int     `json:"tokens_cache_read,omitempty"`
 	TokensOut     int     `json:"tokens_out"`
+	CostUSD       float64 `json:"cost_usd"`                    // по таблице `llm_prices` (ADR-0032)
+	CostProvider  float64 `json:"cost_provider_usd,omitempty"` // оценка провайдера
 	DurationMS    int64   `json:"duration_ms"`
 }

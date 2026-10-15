@@ -46,6 +46,7 @@ type Store struct {
 	resolvedRounds []resolvedKey
 	llmProfiles    map[model.LLMProfileID]model.LLMProfile
 	llmRuns        []model.LLMRun
+	LLMPrices      []model.LLMPrice // тарифы моделей (ADR-0032); пусто — все модели неизвестны, цена 0
 	settings       map[string]string
 	nextID         int64
 	txDepth        int

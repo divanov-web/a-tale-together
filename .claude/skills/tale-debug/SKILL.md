@@ -13,7 +13,7 @@ argument-hint: "[chat <id> | round <номер> | update <id>]"
 1. Локализовать: чат, день, раунд или `update_id` из слов руководителя (`/status` в группе показывает раунд; `/me` — ID игрока).
 2. Цепочка раунда в группе: `grep '"round_no":N' <файл>`; ожидается `opened → submission… → frozen → interpreted → narrated → resolved → published → metrics`. Обрыв — шаг сбоя; `"error"` в записи — причина; `skipped` с `reason` — не было кворума; `attempt_failed` — откат транзакции (следующий тик повторит; стек паники в `logs/bot.log`), `failed` — три попытки исчерпаны, заявки перенесены. Быстрый срез в Telegram: dev `/round N` (попытки, причина, метрики, итоги заявок).
 3. Заявки против намерений: `frozen.data.submissions` и `interpreted.data.intents`; `fallback` в `interpreted` — модель недоступна, разбор кодом.
-4. Вход и выход модели: записи `"kind":"llm"` раунда (`llm.input`, `llm.output`, `error`); две записи одной роли — дозапрос; `narrated.data.issues` — замечания проверки хроники, `patched` — дописано кодом.
+4. Вход и выход модели: записи `"kind":"llm"` раунда (`llm.input`, `llm.output`, `error`; токены по видам и `llm.cost_usd` / `cost_provider_usd` — ADR-0032, цена раунда в `metrics.cost_usd`); две записи одной роли — дозапрос; `narrated.data.issues` — замечания проверки хроники, `patched` — дописано кодом.
 5. Доставка: записи `"kind":"out"` раунда с `outbox_id`, `part`, `attempt`, `telegram_message_id` или `error`.
 6. Команда игрока: `grep '"update_id":N'` в личке — входящее, ответ и `error` сценария.
 7. Воспроизвести тестом на фейках (`rules/go-tests.md`), затем править код или промпт; сценарий спорного хода — `docs/game/scenarios.md`.

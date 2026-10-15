@@ -51,6 +51,7 @@ users ──< chats (owner_user_id)
 | `genres` | справочник жанров с шаблонами | `code`, `name`, `character_model_id` → `character_models`, `template jsonb` (тон, стартовая сцена, архетипы, имена фракций по умолчанию, стартовая клетка), `enabled` | `code` |
 | `character_models` | модель персонажа ([модели](../game/models/README.md)) | `code`, `rules_version`, `definition jsonb` (attributes[], skills[], archetypes[], стартовые очки, формула HP) | `code` |
 | `app_settings` | глобальные настройки бота (миграция `00009`) | `key`, `value` (в т.ч. `default_llm_profile`), `updated_at` | `key` |
+| `llm_prices` | тарифы моделей (миграция `00036`, [ADR-0032](../decisions/0032-llm-cost-accounting.md); обновляются миграциями данных) | `model` (полное имя или префикс датированных снимков), `input_usd`, `cache_write_usd` (пятиминутный кэш), `cache_read_usd`, `output_usd` — USD за 1M токенов, `source`, `priced_at`, `updated_at` | `model` |
 
 ## Таблицы игры
 
@@ -78,7 +79,7 @@ users ──< chats (owner_user_id)
 | `quests` | квесты фракций (миграция `00024`, пункт 28, [ADR-0020](../decisions/0020-quests.md), [модель](../game/models/quest.md)) | `game_id`, `faction_id`, `kind` (story/side), `status` (active/done), `title`, `summary`, `created_round_id` (nullable: завязка), `done_round_id` | у фракции активных story ≤ `settings.max_story_quests` (2), side ≤ `max_side_quests` (1) — проверяет код |
 | `quest_stages` | этапы квеста (миграция `00024`) | `game_id`, `quest_id`, `stage_no`, `key`, `title`, `summary`, `distance` (клеток от предыдущего этапа), `condition jsonb` (`{kind, object, state, fact}`; вид из каталога `object_state` / `fact` / `visited`, конкретика после привязки), `reward jsonb` (`{fact}`), `location_id` (nullable до привязки), `status` (pending/bound/done), `done_round_id` | `(quest_id, stage_no)`, `(quest_id, key)` |
 | `faction_goals` | цели фракций, строка на версию (миграция `00024`) | `game_id`, `faction_id`, `version`, `text`, `stage`, `quest_id` (сюжетный квест, по закрытию которого цель пересмотрена; nullable), `round_id` | `(faction_id, version)` |
-| `llm_runs` | прогоны LLM (миграция `00009`; ответ, взятый из `generation_jobs`, прогона не создаёт) | `game_id` (nullable: `/llm test` вне игры), `round_id` (nullable), `profile_id`, `provider`, `role` (interpreter/narrator/opening/test), `model`, `prompt_version`, `tokens_in`, `tokens_out`, `cost_usd`, `subscription bool`, `duration_ms`, `error`, `request_id` | |
+| `llm_runs` | прогоны LLM (миграция `00009`, учёт по видам токенов `00036`, ADR-0032; ответ, взятый из `generation_jobs`, прогона не создаёт) | `game_id` (nullable: `/llm test` вне игры), `round_id` (nullable), `profile_id`, `provider`, `role` (interpreter/narrator/opening/worldgen/test), `model`, `prompt_version`, `tokens_in` (все входные: без кэша + запись + чтение), `tokens_cache_write`, `tokens_cache_read`, `tokens_out`, `cost_usd` (по `llm_prices`; 0 у неизвестной модели), `cost_provider_usd` (оценка провайдера, у `claude -p` — `total_cost_usd`), `subscription bool`, `duration_ms`, `error`, `request_id`, `created_at` | `game_id`; `created_at` |
 
 ## Таблицы поздних этапов
 

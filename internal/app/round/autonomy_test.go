@@ -43,7 +43,7 @@ func (o *oracleLLM) Complete(ctx context.Context, call applm.Call, req model.LLM
 		if o.narratorDown[r.RoundNo] {
 			return model.LLMResponse{}, errors.New("narrator down")
 		}
-		return model.LLMResponse{JSON: json.RawMessage(fmt.Sprintf(`{"chronicle":"Раунд %d прошёл.","scenes":[]}`, r.RoundNo)), TokensIn: 100, TokensOut: 20}, nil
+		return model.LLMResponse{JSON: json.RawMessage(fmt.Sprintf(`{"chronicle":"Раунд %d прошёл.","scenes":[]}`, r.RoundNo)), Usage: model.LLMUsage{Input: 100, Output: 20}}, nil
 	}
 	if o.interpDown[r.RoundNo] {
 		return model.LLMResponse{}, errors.New("interpreter down")
@@ -63,7 +63,7 @@ func (o *oracleLLM) Complete(ctx context.Context, call applm.Call, req model.LLM
 		intents = append(intents, in)
 	}
 	raw, _ := json.Marshal(map[string]any{"intents": intents})
-	return model.LLMResponse{JSON: raw, TokensIn: 200, TokensOut: 50}, nil
+	return model.LLMResponse{JSON: raw, Usage: model.LLMUsage{Input: 200, Output: 50}}, nil
 }
 
 // flakySender — Telegram с временными сбоями: каждая четвёртая попытка падает, десятая просит подождать.

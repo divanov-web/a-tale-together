@@ -228,20 +228,27 @@ ON CONFLICT DO NOTHING`
 	return nil
 }
 
-// cachedResponse — ответ модели в `generation_jobs.response`.
+// cachedResponse — ответ модели в `generation_jobs.response`. Цена не хранится: повторное использование ответа
+// бесплатно (ADR-0032); `tokens_in`/`tokens_out` — итоги для строк до разбивки по видам.
 type cachedResponse struct {
 	Text       string          `json:"text,omitempty"`
 	JSON       json.RawMessage `json:"json,omitempty"`
 	Model      string          `json:"model,omitempty"`
 	TokensIn   int             `json:"tokens_in"`
 	TokensOut  int             `json:"tokens_out"`
+	Usage      *model.LLMUsage `json:"usage,omitempty"`
 	DurationMS int64           `json:"duration_ms,omitempty"`
 }
 
 func cached(r model.LLMResponse) cachedResponse {
-	return cachedResponse{Text: r.Text, JSON: r.JSON, Model: r.Model, TokensIn: r.TokensIn, TokensOut: r.TokensOut, DurationMS: r.Duration.Milliseconds()}
+	u := r.Usage
+	return cachedResponse{Text: r.Text, JSON: r.JSON, Model: r.Model, TokensIn: u.TotalIn(), TokensOut: u.Output, Usage: &u, DurationMS: r.Duration.Milliseconds()}
 }
 
 func (c cachedResponse) response() model.LLMResponse {
-	return model.LLMResponse{Text: c.Text, JSON: c.JSON, Model: c.Model, TokensIn: c.TokensIn, TokensOut: c.TokensOut, Duration: time.Duration(c.DurationMS) * time.Millisecond}
+	usage := model.LLMUsage{Input: c.TokensIn, Output: c.TokensOut}
+	if c.Usage != nil {
+		usage = *c.Usage
+	}
+	return model.LLMResponse{Text: c.Text, JSON: c.JSON, Model: c.Model, Usage: usage, Duration: time.Duration(c.DurationMS) * time.Millisecond}
 }

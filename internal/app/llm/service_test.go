@@ -27,6 +27,8 @@ func newService(t *testing.T) (*Service, *fake.Store, *llmfake.Client) {
 	t.Helper()
 	c := &clock{t: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)}
 	store := fake.New(c.Now)
+	// Тариф фейковой модели рассказчика: $2 вход, $10 выход за 1M токенов → 10 входных и 5 выходных = $0.00007.
+	store.LLMPrices = []model.LLMPrice{{Model: "fake-sonnet", InputUSD: 2, CacheWriteUSD: 2.5, CacheReadUSD: 0.1, OutputUSD: 10}}
 	client := llmfake.New()
 	svc := New(store, map[string]Client{model.ProviderFake: client, model.ProviderClaudeCLI: llmfake.New()}, c, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	return svc, store, client
@@ -105,11 +107,16 @@ func TestResolve_GameThenDefaultThenError(t *testing.T) {
 	if len(runs) != 1 || runs[0].GameID == nil || *runs[0].GameID != g.ID || runs[0].Role != model.RoleNarrator || runs[0].PromptVersion != "v1" || runs[0].TokensIn != 10 || runs[0].Error != "" {
 		t.Fatalf("runs = %+v", runs)
 	}
+	// Цена по таблице тарифов (ADR-0032): в ответе, в записи и в журнале; оценка провайдера у фейка 0.
+	const wantCost = (10*2 + 5*10) / 1e6
+	if resp.CostUSD != wantCost || runs[0].CostUSD != wantCost || runs[0].CostProviderUSD != 0 || runs[0].TokensOut != 5 {
+		t.Fatalf("cost: resp %v, run %+v", resp.CostUSD, runs[0])
+	}
 	if len(journal.recs) != 1 {
 		t.Fatalf("journal = %+v", journal.recs)
 	}
 	if rec := journal.recs[0]; rec.Kind != model.ChatLogLLM || rec.Chat != -100 || rec.GameID != g.ID || rec.LLM == nil || rec.LLM.Role != model.RoleNarrator ||
-		rec.LLM.PromptVersion != "v1" || rec.LLM.Profile != "local" || rec.LLM.System != "s" || rec.LLM.Input != "i" || rec.LLM.Output != `{"action":"идти"}` || rec.LLM.TokensIn != 10 || rec.Error != "" {
+		rec.LLM.PromptVersion != "v1" || rec.LLM.Profile != "local" || rec.LLM.System != "s" || rec.LLM.Input != "i" || rec.LLM.Output != `{"action":"идти"}` || rec.LLM.TokensIn != 10 || rec.LLM.CostUSD != wantCost || rec.Error != "" {
 		t.Fatalf("journal record = %+v (llm %+v)", rec, rec.LLM)
 	}
 	// Ошибка провайдера тоже записана; вызов без игры в журнал не попадает.
@@ -121,8 +128,20 @@ func TestResolve_GameThenDefaultThenError(t *testing.T) {
 		t.Fatalf("journal after call without game = %+v", journal.recs)
 	}
 	runs, _ = store.ListLLMRuns(ctx, 10)
-	if len(runs) != 2 || runs[0].Error != "cli down" || runs[0].GameID != nil || runs[0].Model != "haiku" {
+	if len(runs) != 2 || runs[0].Error != "cli down" || runs[0].GameID != nil || runs[0].Model != "haiku" || runs[0].CostUSD != 0 {
 		t.Fatalf("failed run = %+v", runs[0])
+	}
+	// Модель без тарифа (интерпретатор fake-haiku): цена 0, вызов записан.
+	client.Err = nil
+	if _, err := svc.Complete(ctx, Call{Game: &g, Role: model.RoleInterpreter, PromptVersion: "v1"}, model.LLMRequest{Input: "i"}); err != nil {
+		t.Fatal(err)
+	}
+	runs, _ = store.ListLLMRuns(ctx, 10)
+	if runs[0].Model != "fake-haiku" || runs[0].CostUSD != 0 || runs[0].TokensIn != 10 {
+		t.Fatalf("unpriced run = %+v", runs[0])
+	}
+	if prices, err := svc.Prices(ctx); err != nil || len(prices) != 1 || prices[0].Model != "fake-sonnet" {
+		t.Fatalf("prices = %+v, %v", prices, err)
 	}
 	client.Err = nil
 	p, resp, err := svc.Test(ctx, "local")

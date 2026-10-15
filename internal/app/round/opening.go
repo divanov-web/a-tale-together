@@ -95,8 +95,8 @@ func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, ge
 	}
 	s.logger.Info("opening narrated", slog.Int64("game_id", int64(g.ID)), slog.Int("calls", res.Calls), slog.Int("issues", len(res.Issues)),
 		slog.Bool("start_from_model", res.Start != nil), slog.Int("neighbors", len(res.Neighbors)), slog.Int("quests", len(res.Quests)), slog.Int("goals", len(res.Goals)),
-		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
-	s.journal(ctx, g, chat.TelegramChatID, model.Round{}, "opening", map[string]any{"calls": res.Calls, "issues": res.Issues, "text": res.Text, "start": res.Start, "neighbors": res.Neighbors, "lair": res.Lair, "quests": res.Quests, "goals": res.Goals})
+		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut), slog.Float64("cost_usd", res.CostUSD))
+	s.journal(ctx, g, chat.TelegramChatID, model.Round{}, "opening", map[string]any{"calls": res.Calls, "issues": res.Issues, "cost_usd": res.CostUSD, "text": res.Text, "start": res.Start, "neighbors": res.Neighbors, "lair": res.Lair, "quests": res.Quests, "goals": res.Goals})
 	if err := s.startQuests(ctx, g, res.Quests, res.Goals); err != nil {
 		return "", err
 	}

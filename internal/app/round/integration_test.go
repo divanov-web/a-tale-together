@@ -145,7 +145,7 @@ func (s *shutdownLLM) Complete(ctx context.Context, call applm.Call, req model.L
 		return model.LLMResponse{}, ctx.Err()
 	}
 	if call.Role == model.RoleNarrator {
-		return model.LLMResponse{JSON: json.RawMessage(`{"chronicle":"Тихо.","scenes":[]}`), TokensIn: 10, TokensOut: 5}, nil
+		return model.LLMResponse{JSON: json.RawMessage(`{"chronicle":"Тихо.","scenes":[]}`), Usage: model.LLMUsage{Input: 10, Output: 5}}, nil
 	}
 	return model.LLMResponse{}, errors.New("interpreter down") // разбор кодом
 }

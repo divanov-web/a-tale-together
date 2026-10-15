@@ -38,7 +38,7 @@ func TestOpening_Valid(t *testing.T) {
 	var got model.LLMRequest
 	svc := New(Func(func(_ context.Context, req model.LLMRequest) (model.LLMResponse, error) {
 		got = req
-		return model.LLMResponse{JSON: []byte(openingJSON(goodOpening)), TokensIn: 7, TokensOut: 3}, nil
+		return model.LLMResponse{JSON: []byte(openingJSON(goodOpening)), Usage: model.LLMUsage{Input: 7, Output: 3}}, nil
 	}), slog.Default())
 	res, err := svc.Opening(context.Background(), openingParams())
 	if err != nil || res.Calls != 1 || res.Text != strings.TrimSpace(goodOpening) || res.TokensIn != 7 {

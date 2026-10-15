@@ -80,12 +80,13 @@ func (s *Store) SetGameLLMProfile(ctx context.Context, game model.GameID, profil
 	return nil
 }
 
-// CreateLLMRun записывает вызов модели.
+// CreateLLMRun записывает вызов модели: токены по видам, оценка по таблице и оценка провайдера (ADR-0032).
 func (s *Store) CreateLLMRun(ctx context.Context, r model.LLMRun) (model.LLMRun, error) {
-	const q = `INSERT INTO llm_runs (game_id, round_id, profile_id, provider, role, model, prompt_version, tokens_in, tokens_out, cost_usd, subscription, duration_ms, error, request_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id, created_at`
-	err := s.db(ctx).QueryRow(ctx, q, r.GameID, r.RoundID, r.ProfileID, r.Provider, r.Role, r.Model, r.PromptVersion, r.TokensIn, r.TokensOut,
-		r.CostUSD, r.Subscription, r.DurationMS, r.Error, r.RequestID).Scan(&r.ID, &r.CreatedAt)
+	const q = `INSERT INTO llm_runs (game_id, round_id, profile_id, provider, role, model, prompt_version, tokens_in, tokens_cache_write, tokens_cache_read, tokens_out,
+	cost_usd, cost_provider_usd, subscription, duration_ms, error, request_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id, created_at`
+	err := s.db(ctx).QueryRow(ctx, q, r.GameID, r.RoundID, r.ProfileID, r.Provider, r.Role, r.Model, r.PromptVersion, r.TokensIn, r.TokensCacheWrite, r.TokensCacheRead, r.TokensOut,
+		r.CostUSD, r.CostProviderUSD, r.Subscription, r.DurationMS, r.Error, r.RequestID).Scan(&r.ID, &r.CreatedAt)
 	if err != nil {
 		return model.LLMRun{}, fmt.Errorf("postgres.CreateLLMRun: %w", err)
 	}
@@ -94,7 +95,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING i
 
 // ListLLMRuns возвращает последние вызовы (диагностика и тесты).
 func (s *Store) ListLLMRuns(ctx context.Context, limit int) ([]model.LLMRun, error) {
-	const q = `SELECT id, game_id, round_id, profile_id, provider, role, model, prompt_version, tokens_in, tokens_out, cost_usd, subscription, duration_ms, error, request_id, created_at
+	const q = `SELECT id, game_id, round_id, profile_id, provider, role, model, prompt_version, tokens_in, tokens_cache_write, tokens_cache_read, tokens_out,
+	cost_usd, cost_provider_usd, subscription, duration_ms, error, request_id, created_at
 FROM llm_runs ORDER BY id DESC LIMIT $1`
 	rows, err := s.db(ctx).Query(ctx, q, limit)
 	if err != nil {
@@ -104,11 +106,30 @@ FROM llm_runs ORDER BY id DESC LIMIT $1`
 	var out []model.LLMRun
 	for rows.Next() {
 		var r model.LLMRun
-		if err := rows.Scan(&r.ID, &r.GameID, &r.RoundID, &r.ProfileID, &r.Provider, &r.Role, &r.Model, &r.PromptVersion, &r.TokensIn, &r.TokensOut,
-			&r.CostUSD, &r.Subscription, &r.DurationMS, &r.Error, &r.RequestID, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.GameID, &r.RoundID, &r.ProfileID, &r.Provider, &r.Role, &r.Model, &r.PromptVersion, &r.TokensIn, &r.TokensCacheWrite, &r.TokensCacheRead, &r.TokensOut,
+			&r.CostUSD, &r.CostProviderUSD, &r.Subscription, &r.DurationMS, &r.Error, &r.RequestID, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("postgres.ListLLMRuns: scan: %w", err)
 		}
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ListLLMPrices возвращает тарифы моделей `llm_prices` по имени (ADR-0032); обновляются миграцией.
+func (s *Store) ListLLMPrices(ctx context.Context) ([]model.LLMPrice, error) {
+	const q = `SELECT model, input_usd, cache_write_usd, cache_read_usd, output_usd, source, priced_at, updated_at FROM llm_prices ORDER BY model`
+	rows, err := s.db(ctx).Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.ListLLMPrices: %w", err)
+	}
+	defer rows.Close()
+	var out []model.LLMPrice
+	for rows.Next() {
+		var p model.LLMPrice
+		if err := rows.Scan(&p.Model, &p.InputUSD, &p.CacheWriteUSD, &p.CacheReadUSD, &p.OutputUSD, &p.Source, &p.PricedAt, &p.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("postgres.ListLLMPrices: scan: %w", err)
+		}
+		out = append(out, p)
 	}
 	return out, rows.Err()
 }

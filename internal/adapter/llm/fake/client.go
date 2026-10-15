@@ -38,5 +38,5 @@ func (c *Client) Complete(_ context.Context, req model.LLMRequest) (model.LLMRes
 	if text == "" {
 		text = string(out)
 	}
-	return model.LLMResponse{Text: text, JSON: out, Model: "fake-" + req.Model, TokensIn: 10, TokensOut: 5, Duration: time.Millisecond, RequestID: "fake"}, nil
+	return model.LLMResponse{Text: text, JSON: out, Model: "fake-" + req.Model, Usage: model.LLMUsage{Input: 10, Output: 5}, Duration: time.Millisecond, RequestID: "fake"}, nil
 }

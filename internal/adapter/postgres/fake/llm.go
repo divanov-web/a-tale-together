@@ -90,3 +90,12 @@ func (s *Store) ListLLMRuns(_ context.Context, limit int) ([]model.LLMRun, error
 	}
 	return out, nil
 }
+
+// ListLLMPrices — см. postgres.Store; тарифы задаются полем `LLMPrices` при настройке теста.
+func (s *Store) ListLLMPrices(_ context.Context) ([]model.LLMPrice, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]model.LLMPrice, len(s.LLMPrices))
+	copy(out, s.LLMPrices)
+	return out, nil
+}

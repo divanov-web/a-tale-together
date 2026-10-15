@@ -113,15 +113,14 @@ func (c *Client) Complete(ctx context.Context, req model.LLMRequest) (model.LLMR
 		return model.LLMResponse{}, fmt.Errorf("%w: %s", ErrCLI, truncate(firstNonEmpty(out.Result, out.Subtype), 300))
 	}
 	resp := model.LLMResponse{
-		Text:         out.Result,
-		JSON:         out.StructuredOutput,
-		Model:        modelName(out.ModelUsage, req.Model),
-		TokensIn:     out.Usage.InputTokens + out.Usage.CacheCreationTokens + out.Usage.CacheReadTokens,
-		TokensOut:    out.Usage.OutputTokens,
-		CostUSD:      out.TotalCostUSD,
-		Subscription: true,
-		RequestID:    out.SessionID,
-		Duration:     elapsed,
+		Text:            out.Result,
+		JSON:            out.StructuredOutput,
+		Model:           modelName(out.ModelUsage, req.Model),
+		Usage:           model.LLMUsage{Input: out.Usage.InputTokens, CacheWrite: out.Usage.CacheCreationTokens, CacheRead: out.Usage.CacheReadTokens, Output: out.Usage.OutputTokens},
+		ProviderCostUSD: out.TotalCostUSD,
+		Subscription:    true,
+		RequestID:       out.SessionID,
+		Duration:        elapsed,
 	}
 	if len(req.JSONSchema) > 0 && (len(resp.JSON) == 0 || string(resp.JSON) == "null") {
 		return resp, fmt.Errorf("%w: пустой structured_output", ErrCLI)

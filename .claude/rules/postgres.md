@@ -12,7 +12,7 @@ paths:
 - Файл миграции `NNNNN_<что>.sql` с `-- +goose Up` / `-- +goose Down`. После коммита миграция неизменяема; исправление — новая миграция.
 - Новая миграция сразу применяется к `tale` и `tale_test`; изменение `settings` или семантики колонок → проверить строки уже идущих игр (миграцией, dev-значения — `UPDATE` руками) и перезапустить бота (шаг 5 цикла задачи).
 - Имена: snake_case; таблицы во множественном числе; PK `id`; FK `<сущность>_id`; время `timestamptz`; `created_at`, `updated_at`. Тип PK по ADR-0005.
-- Каждая игровая таблица содержит `game_id` с индексом; запрос без `game_id` к игровой таблице — дефект. Без `game_id` только таблицы уровня бота (`users`, `chats`, `chat_moderators`, `telegram_updates`, `llm_profiles`, `app_settings`).
+- Каждая игровая таблица содержит `game_id` с индексом; запрос без `game_id` к игровой таблице — дефект. Без `game_id` только таблицы уровня бота (`users`, `chats`, `chat_moderators`, `telegram_updates`, `llm_profiles`, `llm_prices`, `app_settings`).
 - Связи внутри БД по `id`; идентификаторы Telegram только в `users.telegram_id`, `chats.telegram_chat_id`, `messages_outbox.telegram_chat_id` (ADR-0007).
 - Идемпотентность: уникальные ключи на внешние события (`telegram_update_id`, `(game_id, round_no)`, `(round_id, character_id)` для заявок); `INSERT ... ON CONFLICT DO NOTHING`.
 - Разрешение раунда — одна транзакция, outbox и события пакета мира и квестов пишутся в ней же; воркеры берут работу через `SELECT ... FOR UPDATE SKIP LOCKED`.

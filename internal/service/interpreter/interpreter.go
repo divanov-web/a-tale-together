@@ -61,6 +61,7 @@ type Result struct {
 	Invalid   int // заявок, получивших безопасное толкование
 	TokensIn  int
 	TokensOut int
+	CostUSD   float64 // цена вызовов по таблице тарифов (ADR-0032)
 }
 
 // Interpret разбирает все заявки снимка одним вызовом; при ошибках валидации — один повтор с их перечнем,
@@ -113,8 +114,9 @@ func (s *Service) Interpret(ctx context.Context, snap model.RoundSnapshot, def m
 func (s *Service) call(ctx context.Context, v *validator, input string, res *Result) (map[model.SubmissionID]model.Intent, []issue, error) {
 	resp, err := s.llm.Complete(ctx, model.LLMRequest{Role: model.RoleInterpreter, System: s.system, Input: input, JSONSchema: Schema})
 	res.Calls++
-	res.TokensIn += resp.TokensIn
-	res.TokensOut += resp.TokensOut
+	res.TokensIn += resp.Usage.TotalIn()
+	res.TokensOut += resp.Usage.Output
+	res.CostUSD += resp.CostUSD
 	if err != nil {
 		return nil, nil, fmt.Errorf("interpreter: %w", err)
 	}

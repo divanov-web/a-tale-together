@@ -45,34 +45,35 @@ type Round struct {
 // RoundMetrics — измерения разрешения раунда (docs/architecture/round-pipeline.md, «Измеряется»): длительность шагов,
 // вызовы и токены модели, запасные пути, статусы заявок. Хранятся в `rounds.metrics`, пишутся в лог и журнал чата.
 type RoundMetrics struct {
-	Attempt             int   `json:"attempt"`      // номер успешной попытки (1 — с первого раза)
-	FreezeMS            int64 `json:"freeze_ms"`    // снимок и статусы персонажей
-	InterpretMS         int64 `json:"interpret_ms"` // вызов интерпретатора или разбор кодом
-	EngineMS            int64 `json:"engine_ms"`    // движок, события, свёртка, запись состояния
-	NarrateMS           int64 `json:"narrate_ms"`   // вызов рассказчика или шаблон
-	PublishMS           int64 `json:"publish_ms"`   // постановка в outbox
-	TotalMS             int64 `json:"total_ms"`     // от дедлайна до публикации в этой попытке
-	LLMCalls            int   `json:"llm_calls"`    // вызовов модели (с дозапросами)
-	TokensIn            int   `json:"tokens_in"`
-	TokensOut           int   `json:"tokens_out"`
-	InterpreterFallback bool  `json:"interpreter_fallback"` // заявки разобраны кодом
-	NarratorFallback    bool  `json:"narrator_fallback"`    // хроника шаблонная
-	Submissions         int   `json:"submissions"`
-	Resolved            int   `json:"resolved"`
-	Rejected            int   `json:"rejected"`
-	Ambiguous           int   `json:"ambiguous"` // безопасных толкований
-	Safe                int   `json:"safe"`      // заявок с безопасным толкованием интерпретатора
-	Events              int   `json:"events"`
-	Patched             int   `json:"patched"` // событий, дописанных кодом в хронику
-	Issues              int   `json:"issues"`  // замечаний к ответам рассказчика
-	ChronicleParts      int   `json:"chronicle_parts"`
-	Notices             int   `json:"notices"`
-	LLMReused           int   `json:"llm_reused,omitempty"`      // ответов модели взято из сохранённых по ключу задания (ADR-0019)
-	WorldCells          int   `json:"world_cells,omitempty"`     // клеток и карточек в пакете мира (пункт 27)
-	WorldTemplated      int   `json:"world_templated,omitempty"` // из них закрыто шаблоном
-	QuestsIssued        int   `json:"quests_issued,omitempty"`   // квестов выдано фракциям (пункт 28)
-	StagesPlaced        int   `json:"stages_placed,omitempty"`   // этапов привязано к клеткам
-	StagesDone          int   `json:"stages_done,omitempty"`     // этапов закрыто
+	Attempt             int     `json:"attempt"`      // номер успешной попытки (1 — с первого раза)
+	FreezeMS            int64   `json:"freeze_ms"`    // снимок и статусы персонажей
+	InterpretMS         int64   `json:"interpret_ms"` // вызов интерпретатора или разбор кодом
+	EngineMS            int64   `json:"engine_ms"`    // движок, события, свёртка, запись состояния
+	NarrateMS           int64   `json:"narrate_ms"`   // вызов рассказчика или шаблон
+	PublishMS           int64   `json:"publish_ms"`   // постановка в outbox
+	TotalMS             int64   `json:"total_ms"`     // от дедлайна до публикации в этой попытке
+	LLMCalls            int     `json:"llm_calls"`    // вызовов модели (с дозапросами)
+	TokensIn            int     `json:"tokens_in"`
+	TokensOut           int     `json:"tokens_out"`
+	CostUSD             float64 `json:"cost_usd"`             // цена вызовов раунда по `llm_prices` (ADR-0032)
+	InterpreterFallback bool    `json:"interpreter_fallback"` // заявки разобраны кодом
+	NarratorFallback    bool    `json:"narrator_fallback"`    // хроника шаблонная
+	Submissions         int     `json:"submissions"`
+	Resolved            int     `json:"resolved"`
+	Rejected            int     `json:"rejected"`
+	Ambiguous           int     `json:"ambiguous"` // безопасных толкований
+	Safe                int     `json:"safe"`      // заявок с безопасным толкованием интерпретатора
+	Events              int     `json:"events"`
+	Patched             int     `json:"patched"` // событий, дописанных кодом в хронику
+	Issues              int     `json:"issues"`  // замечаний к ответам рассказчика
+	ChronicleParts      int     `json:"chronicle_parts"`
+	Notices             int     `json:"notices"`
+	LLMReused           int     `json:"llm_reused,omitempty"`      // ответов модели взято из сохранённых по ключу задания (ADR-0019)
+	WorldCells          int     `json:"world_cells,omitempty"`     // клеток и карточек в пакете мира (пункт 27)
+	WorldTemplated      int     `json:"world_templated,omitempty"` // из них закрыто шаблоном
+	QuestsIssued        int     `json:"quests_issued,omitempty"`   // квестов выдано фракциям (пункт 28)
+	StagesPlaced        int     `json:"stages_placed,omitempty"`   // этапов привязано к клеткам
+	StagesDone          int     `json:"stages_done,omitempty"`     // этапов закрыто
 }
 
 // RoundSnapshot — состояние на дедлайн: персонажи, локации и заявки; воспроизведение движка по снимку и seed.

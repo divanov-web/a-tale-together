@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"taletogether/assets/prompts"
+	"taletogether/cmd/internal/evalcost"
 	"taletogether/internal/adapter/llm/claudecli"
 	"taletogether/internal/config"
 	"taletogether/internal/model"
@@ -103,11 +104,18 @@ func run() error {
 			return err
 		}
 	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	prices := evalcost.Load(context.Background(), cfg.DatabaseURL, logger)
 	client := claudecli.New(claudecli.Settings{Path: cfg.LLM.ClaudeCLIPath, Workdir: cfg.LLM.ClaudeCLIWorkdir})
 	svc := narrator.New(narrator.Func(func(ctx context.Context, req model.LLMRequest) (model.LLMResponse, error) {
 		req.Model, req.Effort = *modelName, *effort
-		return client.Complete(ctx, req)
-	}), slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
+		resp, err := client.Complete(ctx, req)
+		evalcost.Price(prices, &resp)
+		if *verbose && err == nil {
+			evalcost.Print(resp)
+		}
+		return resp, err
+	}), logger)
 
 	if *opening {
 		return runOpening(svc, set)
@@ -116,6 +124,7 @@ func run() error {
 		return runWorldgen(svc, set)
 	}
 	var passed, total, calls, tokensIn, tokensOut, patched int
+	var cost float64
 	var elapsed time.Duration
 	for _, c := range set.Cases {
 		if *only != "" && c.Name != *only {
@@ -127,7 +136,7 @@ func run() error {
 		started := time.Now()
 		res, err := svc.Narrate(context.Background(), p)
 		elapsed += time.Since(started)
-		calls, tokensIn, tokensOut, patched = calls+res.Calls, tokensIn+res.TokensIn, tokensOut+res.TokensOut, patched+res.Patched
+		calls, tokensIn, tokensOut, patched, cost = calls+res.Calls, tokensIn+res.TokensIn, tokensOut+res.TokensOut, patched+res.Patched, cost+res.CostUSD
 		if err != nil {
 			fmt.Printf("FAIL %-22s ошибка вызова: %v\n", c.Name, err)
 			continue
@@ -159,8 +168,8 @@ func run() error {
 	if total == 0 {
 		return fmt.Errorf("случаев нет")
 	}
-	fmt.Printf("\nитого: %d/%d (%.0f %%), вызовов %d, дописано кодом %d, токены вход/выход %d/%d, время %s, модель %s/%s\n",
-		passed, total, float64(passed)*100/float64(total), calls, patched, tokensIn, tokensOut, elapsed.Round(time.Second), *modelName, *effort)
+	fmt.Printf("\nитого: %d/%d (%.0f %%), вызовов %d, дописано кодом %d, токены вход/выход %d/%d, цена $%.4f, время %s, модель %s/%s\n",
+		passed, total, float64(passed)*100/float64(total), calls, patched, tokensIn, tokensOut, cost, elapsed.Round(time.Second), *modelName, *effort)
 	if passed*10 < total*9 {
 		return fmt.Errorf("порог 90 %% не достигнут")
 	}
@@ -266,7 +275,7 @@ func runWorldgen(svc *narrator.Service, set evalSet) error {
 		}
 		fmt.Printf("   старт: %s (%s): %s\n", o.Start.Name, o.Start.Terrain, o.Start.Description)
 	}
-	fmt.Printf("\nвариантов %d, токены вход/выход %d/%d, время %s\n", len(res.Options), res.TokensIn, res.TokensOut, time.Since(started).Round(time.Second))
+	fmt.Printf("\nвариантов %d, токены вход/выход %d/%d, цена $%.4f, время %s\n", len(res.Options), res.TokensIn, res.TokensOut, res.CostUSD, time.Since(started).Round(time.Second))
 	return nil
 }
 
@@ -321,6 +330,6 @@ func runOpening(svc *narrator.Service, set evalSet) error {
 	for _, is := range res.Issues {
 		fmt.Printf("замечание: %s\n", is)
 	}
-	fmt.Printf("\nвызовов %d, токены вход/выход %d/%d, время %s\n", res.Calls, res.TokensIn, res.TokensOut, time.Since(started).Round(time.Second))
+	fmt.Printf("\nвызовов %d, токены вход/выход %d/%d, цена $%.4f, время %s\n", res.Calls, res.TokensIn, res.TokensOut, res.CostUSD, time.Since(started).Round(time.Second))
 	return nil
 }

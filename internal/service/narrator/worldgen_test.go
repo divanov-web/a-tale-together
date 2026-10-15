@@ -31,7 +31,7 @@ func TestWorldgen_Valid(t *testing.T) {
 		setupJSON("Наследство без ключа", "Усадьба Трёх Ив"), setupJSON("Ярмарка на костях", "Старый Мост"), setupJSON("Лишний", "Лишний мир")}
 	svc := New(Func(func(_ context.Context, req model.LLMRequest) (model.LLMResponse, error) {
 		got = req
-		return model.LLMResponse{JSON: []byte(`{"options":[` + strings.Join(options, ",") + `]}`), TokensIn: 9, TokensOut: 4}, nil
+		return model.LLMResponse{JSON: []byte(`{"options":[` + strings.Join(options, ",") + `]}`), Usage: model.LLMUsage{Input: 9, Output: 4}}, nil
 	}), slog.Default())
 	res, err := svc.Worldgen(context.Background(), worldgenParams())
 	if err != nil || len(res.Options) != 4 || res.TokensIn != 9 {

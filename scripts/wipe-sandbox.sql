@@ -1,6 +1,6 @@
 -- Вайп песочницы: удаляет все игры и связанные с ними данные, оставляет справочники.
 -- Запуск: make wipe (останавливает бота, выполняет этот файл, чистит logs/, запускает бота).
--- Сохраняются: users, chats, chat_moderators, app_settings, llm_profiles, genres, character_models, goose_db_version.
+-- Сохраняются: users, chats, chat_moderators, app_settings, llm_profiles, llm_prices, genres, character_models, goose_db_version.
 -- Новая таблица с колонкой game_id → добавить DELETE ниже (проверка в конце файла упадёт, если забыть).
 BEGIN;
 

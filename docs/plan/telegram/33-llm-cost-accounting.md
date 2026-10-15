@@ -1,38 +1,30 @@
 # 33. Токены и цена каждого вызова LLM
 
-- Статус: план
+- Статус: готово (2026-10-15, [ADR-0032](../../decisions/0032-llm-cost-accounting.md), миграция `00036`)
 - Этап концепта: 2
 - Зависит от: 06 (`llm_runs`), 09а (журнал), 10 (метрики раунда)
 
 ## Цель
-Каждый запрос к модели — в боте и в консольных оценочных наборах — оставляет в логе число токенов по видам и примерную цену в долларах, посчитанную ботом по собственной таблице цен моделей. Таблица хранится в репозитории заранее и обновляется по команде руководителя; раунд и игра получают сумму.
+Каждый запрос к модели — в боте и в консольных оценочных наборах — оставляет в учёте число токенов по видам и цену в долларах, посчитанную ботом по собственной таблице тарифов. Таблица живёт в БД рядом с профилями и учётом вызовов (решение руководителя 2026-10-15: тарифы в БД, использовать существующие таблицы), обновляется миграцией данных по команде руководителя; раунд и игра получают сумму. Расходы фильтруются по модели, роли (интерпретатор, рассказчик, в будущем художник и другие), датам и игре — всё это колонки `llm_runs`.
 
 ## Критерий готовности
-Строка `llm call` в `logs/bot.log`, запись `llm` в журнале чата и строка `llm_runs` содержат токены (вход, запись кэша, чтение кэша, выход) и `cost_usd` по таблице цен; `make eval-interpreter` и `make eval-narrator` печатают токены и цену по каждому вызову (`-v`) и итого; метрики раунда и карточка `/round` показывают цену раунда; `/llm prices` показывает таблицу и дату её обновления; неизвестная модель даёт цену 0 и предупреждение в логе; оценка CLI (`total_cost_usd`) сохраняется рядом для сверки.
-
-## Что уже есть (проверено 2026-10-12)
-| Есть | Где | Чего не хватает |
-|---|---|---|
-| Запись каждого вызова: `tokens_in` (вход + запись кэша + чтение кэша одним числом), `tokens_out`, `cost_usd`, `subscription`, длительность | `llm_runs` (миграция `00009`), `app/llm.Service.completeWith` | разбивка токенов по видам; цена — только оценка `claude -p` (`total_cost_usd`), своей таблицы нет; адаптеры API (`anthropic`, `openai`, отложены до T1) оценку не дадут |
-| Строка лога `llm call`: профиль, провайдер, модель, роль, токены вход/выход, длительность | `app/llm` → `logs/bot.log` | цены в строке нет |
-| Запись `llm` журнала чата: токены вход/выход | `model.ChatLogCall`, `logs/chats` | цены нет |
-| Метрики раунда: вызовы, токены вход/выход по шагам | `model.RoundMetrics`, лог `round metrics`, `/round` | цены нет (пункт 10 отложил её на отчёт пункта 13) |
-| `/llm test`: модель, токены, оценка стоимости CLI | `app/bot/cmd_llm.go` | только оценка CLI |
-| Консоль: `cmd/eval-interpreter`, `cmd/eval-narrator` печатают токены итого | `cmd/eval-*` | вызовы идут мимо `app/llm` — ни `llm_runs`, ни цены; по вызову не печатают |
+Строка `llm call` в `logs/bot.log`, запись `llm` в журнале чата и строка `llm_runs` содержат токены по видам (все входные, запись кэша, чтение кэша, выход), `cost_usd` по таблице `llm_prices` и `cost_provider_usd`; `make eval-interpreter` и `make eval-narrator` печатают токены и цену по каждому вызову (`-v`) и итого; метрики раунда и карточка `/round` показывают цену раунда; неизвестная модель даёт цену 0 и предупреждение в логе; оценка провайдера сохраняется рядом для сверки. Команды бота не добавляются (решение руководителя 2026-10-15).
 
 ## Шаги
 | № | Шаг | Слой / пакеты | Артефакты | Статус |
 |---|---|---|---|---|
-| 1 | Таблица цен в репозитории: `assets/llm/prices.json` (`embed`): модель → USD за 1M токенов входа, записи кэша, чтения кэша, выхода; дата и источник (страница цен Anthropic, OpenAI); псевдонимы CLI (`haiku`, `sonnet`, `opus`) → полное имя. Обновление по команде руководителя: Claude сверяет с официальными страницами (скилл `/claude-api`), правит файл, бот перезапускается; процедура в `providers.md`. ADR: файл в репозитории, не таблица в БД (цены — часть сборки, история в git) | `assets/llm`, `docs/decisions` | ADR-0020, `prices.json` | план |
-| 2 | Расчёт: `model.LLMUsage` (input, cache_write, cache_read, output) в `LLMResponse`; адаптер `claudecli` заполняет из `usage`; пакет `service/llmcost`: `Estimate(model, usage) (usd, known bool)` по таблице, без БД — пригоден для консоли; оценка провайдера отдельно (`ProviderCostUSD`) | `model`, `adapter/llm/claudecli`, `service/llmcost` | тесты расчёта, неизвестная модель | план |
-| 3 | Учёт в боте: `llm_runs` получает `tokens_cache_write`, `tokens_cache_read`, `cost_provider_usd`; `cost_usd` — по таблице; строка `llm call` и запись журнала `llm` — токены по видам, `cost_usd`, `cost_provider_usd`; неизвестная модель — `warn` раз на модель | `app/llm`, `adapter/postgres`, `adapter/chatlog`, миграция `00024` | тесты сервиса и хранилища | план |
-| 4 | Раунд: `RoundMetrics.CostUSD` суммой по шагам, в логе `round metrics`, в `rounds.metrics` и карточке `/round`; завязка `/begin` — в своём логе | `app/round` | тесты метрик | план |
-| 5 | Консоль: `cmd/eval-*` считают через `llmcost`, печатают по вызову (`-v`: модель, токены по видам, цена) и итого (цена набора); `/llm test` показывает обе оценки | `cmd/eval-interpreter`, `cmd/eval-narrator`, `app/bot/cmd_llm.go` | ручной прогон | план |
-| 6 | `/llm prices` владельцу: таблица цен, дата, источник; команда вне меню, как `/llm` | `app/bot/cmd_llm.go` | тест команды | план |
-| 7 | Документы: `providers.md` («Учёт», процедура обновления цен), `data-model.md`, `go_commands.md` (вывод eval), `telegram-commands.md`, `guide/commands.md`, readme пакетов; `/tale-debug` — поле цены в журнале | docs, guide, `.claude/skills/tale-debug` | | план |
+| 1 | Таблица тарифов `llm_prices` в БД: модель (полное имя или префикс датированных снимков) → USD за 1M токенов входа, записи кэша (5 мин), чтения кэша, выхода; источник и дата сверки. Сид миграцией с тарифами Anthropic на 2026-10-15 (Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1, Opus 5, Opus 4.8, Sonnet 5), обновление — миграцией данных после сверки через `/claude-api`; процедура в `providers.md`. ADR: таблица в БД против файла в репозитории, без истории тарифов | `migrations/00036`, `docs/decisions` | ADR-0032, `llm_prices` | готово |
+| 2 | Расчёт: `model.LLMUsage` (input, cache_write, cache_read, output) в `LLMResponse.Usage`; адаптер `claudecli` заполняет из `usage`, `total_cost_usd` → `ProviderCostUSD`; `model.LLMPrice.Cost`, `LLMPriceTable.Estimate(model, usage)` — точное имя, затем самый длинный префикс; без БД — пригоден для консоли | `model`, `adapter/llm/claudecli`, `adapter/llm/fake` | `model/llm_test.go`, тест адаптера | готово |
+| 3 | Учёт в боте: `llm_runs` получает `tokens_cache_write`, `tokens_cache_read`, `cost_provider_usd`; `cost_usd` — по таблице (кэш тарифов в `app/llm` вместе с профилями); строка `llm call` и запись журнала `llm` — токены по видам, обе оценки; неизвестная модель — `warn` раз на модель; ответ из `generation_jobs` бесплатен | `app/llm`, `adapter/postgres`, `adapter/postgres/fake`, `adapter/chatlog` | тесты сервиса и хранилища | готово |
+| 4 | Раунд: `RoundMetrics.CostUSD` суммой по шагам, в логе `round metrics`, `rounds.metrics` и карточке `/round`; завязка и генерация мира — `cost_usd` в своих строках лога и журнале | `service/interpreter`, `service/narrator` (`Result.CostUSD`), `app/round`, `app/bot` | тесты метрик (существующие) | готово |
+| 5 | Консоль: `cmd/eval-*` берут тарифы из БД через `cmd/internal/evalcost`, печатают по вызову (`-v`: модель, токены по видам, обе оценки) и итого (цена набора); `/llm test` показывает токены по видам и обе оценки | `cmd/eval-interpreter`, `cmd/eval-narrator`, `cmd/internal/evalcost`, `app/bot/cmd_llm.go` | `make eval-interpreter EVAL_ARGS="-v -case <имя>"` | готово |
+| 6 | Документы: `providers.md` («Учёт»: колонки, тарифы, обновление, примеры SQL отчётов), `data-model.md`, `chat-logs.md`, `layers.md`, `telegram-commands.md`, readme пакетов, `rules/llm.md`, `rules/postgres.md`, `/tale-debug` | docs, `.claude` | | готово |
 
 ## Проверка
-`make eval-interpreter EVAL_ARGS="-v -case <имя>"` — у каждого вызова токены по видам и цена, итог набора; в песочнице раунд → `make logs` показывает `llm call … cost_usd=…`, `/round` — цену раунда; `SELECT model, tokens_in, tokens_cache_read, cost_usd, cost_provider_usd FROM llm_runs ORDER BY id DESC LIMIT 5` — обе оценки близки; `/llm prices`; `make test`, `make test-integration`.
+`make test`, `make test-integration` (таблица тарифов из миграции находит датированный снимок); `make migrate` на `tale` и `tale_test`; `make restart` → `make logs` без `409 Conflict`; `SELECT id, role, model, tokens_in, tokens_cache_write, tokens_cache_read, tokens_out, cost_usd, cost_provider_usd FROM llm_runs ORDER BY id DESC LIMIT 5` — у новых строк обе оценки близки; `make eval-interpreter EVAL_ARGS="-v -case <имя>"` — токены по видам и цена у каждого вызова, итог набора.
 
-## Открытые вопросы
-Нет вопросов концепта. Технические решения в ADR-0020 (шаг 1): файл против таблицы в БД; при подписке реальная плата 0 — цена остаётся оценкой расхода окна подписки (как сейчас в `providers.md`). Отчёт стоимости по игре и профилю остаётся в пункте 13 и опирается на `llm_runs` этого пункта.
+## Решения
+- Тарифы в БД (`llm_prices`), не в файле репозитория; история — в миграциях; без `valid_from` ([ADR-0032](../../decisions/0032-llm-cost-accounting.md)).
+- `tokens_in` остаётся суммой всех входных токенов (совместимость со старыми строками и метриками); разбивка — отдельными колонками.
+- Прежние строки `llm_runs`: оценка провайдера скопирована в `cost_provider_usd`, `cost_usd` не пересчитана (нет разбивки по видам).
+- При подписке реальная плата 0 — цена остаётся оценкой расхода окна подписки (как в `providers.md`). Отчёт стоимости по игре и профилю остаётся в пункте 13 и опирается на `llm_runs`.

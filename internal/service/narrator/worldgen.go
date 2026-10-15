@@ -170,6 +170,7 @@ type WorldgenResult struct {
 	Issues    []string // отброшенные варианты и обрезанные поля (для журнала и eval)
 	TokensIn  int
 	TokensOut int
+	CostUSD   float64 // цена вызова по таблице тарифов (ADR-0032)
 }
 
 type rawSetup struct {
@@ -198,7 +199,7 @@ func (s *Service) Worldgen(ctx context.Context, p WorldgenParams) (WorldgenResul
 	}
 	input := BuildWorldgenInput(p).Encode()
 	resp, err := s.llm.Complete(ctx, model.LLMRequest{Role: model.RoleWorldgen, System: s.worldgen, Input: input, JSONSchema: WorldgenSchema})
-	res := WorldgenResult{TokensIn: resp.TokensIn, TokensOut: resp.TokensOut}
+	res := WorldgenResult{TokensIn: resp.Usage.TotalIn(), TokensOut: resp.Usage.Output, CostUSD: resp.CostUSD}
 	if err != nil {
 		return res, fmt.Errorf("narrator: worldgen: %w", err)
 	}

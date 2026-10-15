@@ -31,6 +31,7 @@ type Store interface {
 	GetChat(ctx context.Context, id model.ChatID) (model.Chat, error)
 	SetGameLLMProfile(ctx context.Context, game model.GameID, profile *model.LLMProfileID) error
 	CreateLLMRun(ctx context.Context, r model.LLMRun) (model.LLMRun, error)
+	ListLLMPrices(ctx context.Context) ([]model.LLMPrice, error)
 }
 
 // Clock — источник времени.
@@ -64,6 +65,8 @@ type Service struct {
 	profiles    map[string]model.LLMProfile // кэш по имени; nil — не загружен
 	byID        map[model.LLMProfileID]model.LLMProfile
 	defaultName string
+	prices      model.LLMPriceTable // тарифы `llm_prices` (ADR-0032), читаются вместе с профилями
+	unpriced    map[string]bool     // модели без тарифа, о которых уже предупредили
 	// Journal — журнал чатов; nil — выключен. Вызовы вне игры (проверка профиля) в журнал не попадают.
 	Journal Journal
 }
@@ -99,8 +102,16 @@ func (s *Service) load(ctx context.Context) error {
 	if err != nil && !errors.Is(err, model.ErrNotFound) {
 		return fmt.Errorf("llm: default profile: %w", err)
 	}
+	prices, err := s.store.ListLLMPrices(ctx)
+	if err != nil {
+		return fmt.Errorf("llm: prices: %w", err)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.prices = model.NewLLMPriceTable(prices)
+	if s.unpriced == nil {
+		s.unpriced = map[string]bool{}
+	}
 	s.profiles = make(map[string]model.LLMProfile, len(list))
 	s.byID = make(map[model.LLMProfileID]model.LLMProfile, len(list))
 	for _, p := range list {
@@ -278,13 +289,15 @@ func (s *Service) completeWith(ctx context.Context, p model.LLMProfile, call Cal
 	if resp.Duration == 0 {
 		resp.Duration = s.clock.Now().Sub(started)
 	}
+	if resp.Model == "" {
+		resp.Model = req.Model
+	}
+	resp.CostUSD = s.price(resp, callErr)
 	run := model.LLMRun{
 		ProfileID: p.ID, Provider: p.Provider, Role: call.Role, Model: resp.Model, PromptVersion: call.PromptVersion,
-		TokensIn: resp.TokensIn, TokensOut: resp.TokensOut, CostUSD: resp.CostUSD, Subscription: resp.Subscription,
+		TokensIn: resp.Usage.TotalIn(), TokensCacheWrite: resp.Usage.CacheWrite, TokensCacheRead: resp.Usage.CacheRead, TokensOut: resp.Usage.Output,
+		CostUSD: resp.CostUSD, CostProviderUSD: resp.ProviderCostUSD, Subscription: resp.Subscription,
 		DurationMS: resp.Duration.Milliseconds(), RequestID: resp.RequestID, RoundID: call.Round,
-	}
-	if run.Model == "" {
-		run.Model = req.Model
 	}
 	if call.Game != nil {
 		run.GameID = &call.Game.ID
@@ -297,8 +310,9 @@ func (s *Service) completeWith(ctx context.Context, p model.LLMProfile, call Cal
 	}
 	s.journal(ctx, p, call, req, resp, run, callErr)
 	attrs := []any{slog.String("profile", p.Name), slog.String("provider", p.Provider), slog.String("model", run.Model),
-		slog.String("role", string(call.Role)), slog.Int("tokens_in", run.TokensIn), slog.Int("tokens_out", run.TokensOut),
-		slog.Int64("duration_ms", run.DurationMS)}
+		slog.String("role", string(call.Role)), slog.Int("tokens_in", run.TokensIn), slog.Int("tokens_cache_write", run.TokensCacheWrite),
+		slog.Int("tokens_cache_read", run.TokensCacheRead), slog.Int("tokens_out", run.TokensOut),
+		slog.Float64("cost_usd", run.CostUSD), slog.Float64("cost_provider_usd", run.CostProviderUSD), slog.Int64("duration_ms", run.DurationMS)}
 	if call.Game != nil {
 		attrs = append(attrs, slog.Int64("game_id", int64(call.Game.ID)))
 	}
@@ -308,6 +322,32 @@ func (s *Service) completeWith(ctx context.Context, p model.LLMProfile, call Cal
 	}
 	s.logger.Info("llm call", attrs...)
 	return resp, nil
+}
+
+// price — цена вызова по таблице тарифов (ADR-0032); неизвестная модель даёт 0 и одно предупреждение на модель.
+// При ошибке вызова токенов нет, тариф не ищется.
+func (s *Service) price(resp model.LLMResponse, callErr error) float64 {
+	if callErr != nil && resp.Usage == (model.LLMUsage{}) {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cost, ok := s.prices.Estimate(resp.Model, resp.Usage)
+	if !ok && !s.unpriced[resp.Model] {
+		s.unpriced[resp.Model] = true
+		s.logger.Warn("llm price unknown: cost_usd = 0", slog.String("model", resp.Model), slog.Int("known_models", len(s.prices.Prices())))
+	}
+	return cost
+}
+
+// Prices — тарифы моделей из кэша (для команд владельца и отчётов).
+func (s *Service) Prices(ctx context.Context) ([]model.LLMPrice, error) {
+	if err := s.load(ctx); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.prices.Prices(), nil
 }
 
 // journal пишет вход и выход вызова в журнал группы игры; без игры или журнала ничего не делает.
@@ -326,7 +366,8 @@ func (s *Service) journal(ctx context.Context, p model.LLMProfile, call Call, re
 	}
 	rec := model.ChatLogRecord{TS: s.clock.Now(), Kind: model.ChatLogLLM, Chat: chat.TelegramChatID, GameID: call.Game.ID, LLM: &model.ChatLogCall{
 		Role: call.Role, PromptVersion: call.PromptVersion, Profile: p.Name, Provider: p.Provider, Model: run.Model,
-		System: req.System, Input: req.Input, Output: output, TokensIn: run.TokensIn, TokensOut: run.TokensOut, DurationMS: run.DurationMS,
+		System: req.System, Input: req.Input, Output: output, TokensIn: run.TokensIn, TokensCache: run.TokensCacheWrite, TokensRead: run.TokensCacheRead, TokensOut: run.TokensOut,
+		CostUSD: run.CostUSD, CostProvider: run.CostProviderUSD, DurationMS: run.DurationMS,
 	}}
 	if call.Round != nil {
 		rec.RoundID = *call.Round

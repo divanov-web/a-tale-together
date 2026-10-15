@@ -138,6 +138,7 @@ func (s *Service) llmTest(ctx context.Context, req *request, args string) error 
 	if resp.Subscription {
 		payment = "подписка"
 	}
-	return s.reply(ctx, req.in, fmt.Sprintf("Профиль %s (%s): ок\nМодель: %s; токены %d/%d; оценка $%.4f (%s); %d мс\nОтвет по схеме: %s",
-		p.Name, p.Provider, resp.Model, resp.TokensIn, resp.TokensOut, resp.CostUSD, payment, resp.Duration.Milliseconds(), string(resp.JSON)))
+	u := resp.Usage
+	return s.reply(ctx, req.in, fmt.Sprintf("Профиль %s (%s): ок\nМодель: %s; токены вход %d (кэш: запись %d, чтение %d), выход %d; цена по таблице $%.4f, оценка провайдера $%.4f (%s); %d мс\nОтвет по схеме: %s",
+		p.Name, p.Provider, resp.Model, u.TotalIn(), u.CacheWrite, u.CacheRead, u.Output, resp.CostUSD, resp.ProviderCostUSD, payment, resp.Duration.Milliseconds(), string(resp.JSON)))
 }

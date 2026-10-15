@@ -90,8 +90,8 @@ func (s *Service) worldgen(ctx context.Context, g *model.Game, now time.Time) er
 	ws.Options = res.Options
 	g.WorldSetups, g.NextRoundAt = ws, nil
 	s.logger.Info("worldgen done", slog.Int64("game_id", int64(g.ID)), slog.Int("options", len(res.Options)), slog.Int("attempt", ws.Attempts),
-		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
-	s.journal(ctx, *g, chat.TelegramChatID, model.Round{}, "worldgen", map[string]any{"attempt": ws.Attempts, "options": res.Options, "issues": res.Issues})
+		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut), slog.Float64("cost_usd", res.CostUSD))
+	s.journal(ctx, *g, chat.TelegramChatID, model.Round{}, "worldgen", map[string]any{"attempt": ws.Attempts, "options": res.Options, "issues": res.Issues, "cost_usd": res.CostUSD})
 	if err := s.store.UpdateGame(ctx, *g); err != nil {
 		return err
 	}

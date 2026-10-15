@@ -131,8 +131,8 @@ func roundCard(g model.Game, d round.Detail, now time.Time) string {
 	fmt.Fprintf(&b, "\nЗаявок: %d; реплик: %d; итогов: %d; событий: %d", len(d.Submissions), len(d.Speeches), len(d.Results), d.Events)
 	if m := r.Metrics; m != nil {
 		fmt.Fprintf(&b, "\nМетрики (попытка %d): всего %d мс — заморозка %d, интерпретатор %d, движок %d, рассказчик %d, публикация %d", m.Attempt, m.TotalMS, m.FreezeMS, m.InterpretMS, m.EngineMS, m.NarrateMS, m.PublishMS)
-		fmt.Fprintf(&b, "\nLLM: вызовов %d, токены %d/%d; запасной разбор: %s; шаблонная хроника: %s; безопасных толкований %d, дописано событий %d, замечаний %d",
-			m.LLMCalls, m.TokensIn, m.TokensOut, yesNo(m.InterpreterFallback), yesNo(m.NarratorFallback), m.Safe, m.Patched, m.Issues)
+		fmt.Fprintf(&b, "\nLLM: вызовов %d, токены %d/%d, цена $%.4f; запасной разбор: %s; шаблонная хроника: %s; безопасных толкований %d, дописано событий %d, замечаний %d",
+			m.LLMCalls, m.TokensIn, m.TokensOut, m.CostUSD, yesNo(m.InterpreterFallback), yesNo(m.NarratorFallback), m.Safe, m.Patched, m.Issues)
 		fmt.Fprintf(&b, "\nИтоги: resolved %d, rejected %d, ambiguous %d; хроника частей %d, уведомлений %d", m.Resolved, m.Rejected, m.Ambiguous, m.ChronicleParts, m.Notices)
 	}
 	results := map[model.SubmissionID]model.ActionResult{}

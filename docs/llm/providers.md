@@ -12,8 +12,8 @@ type Client interface {
 
 // model.LLMRequest: Role (interpreter | narrator | test), Model, System (стабильная часть), Input (переменная часть,
 // текст игрока только здесь), JSONSchema (непустая → ответ по схеме), MaxOutput, Temperature, Effort, MaxBudgetUSD, Timeout.
-// model.LLMResponse: Text, JSON, Model, TokensIn, TokensOut, CostUSD (оценка; при подписке реальная плата 0),
-// Subscription, RequestID, Duration.
+// model.LLMResponse: Text, JSON, Model, Usage (токены по видам: Input, CacheWrite, CacheRead, Output), CostUSD (по таблице
+// llm_prices, заполняет app/llm), ProviderCostUSD (оценка провайдера; при подписке реальная плата 0), Subscription, RequestID, Duration.
 ```
 
 Типы в `internal/model/llm.go`; интерфейс у потребителя (`app/llm`, позже `service/interpreter` и `service/narrator` берут `app/llm.Complete`) и расширяется только через ADR. Вызов через `app/llm.Complete(ctx, Call{Game, Round, Role, PromptVersion}, req)`: модель и параметры подставляются из профиля, вызов записывается в `llm_runs` даже при ошибке.
@@ -45,7 +45,7 @@ claude -p --output-format json --json-schema '<схема>' \
 - `--tools ""` запрещает инструменты; `--system-prompt` заменяет системный промпт Claude Code целиком; `--no-session-persistence` не пишет сессию на диск.
 - Изоляция контекста (проверено): без дополнительных флагов в контекст попадают глобальный `~/.claude/CLAUDE.md` и инструкции MCP-серверов пользователя (около 5 000 токенов). `--setting-sources ""` отключает файлы настроек, `--strict-mcp-config --mcp-config '{"mcpServers":{}}'` — MCP, `--exclude-dynamic-system-prompt-sections` — блоки окружения; вместе остаётся около 1 200 токенов и модель подтверждает отсутствие CLAUDE.md, памяти и MCP. Рабочая папка `CLAUDE_CLI_WORKDIR` всё равно пустая и создаётся ботом при старте.
 - `--bare` с подпиской не работает (проверено: `is_error: true`, 0 токенов; нужен `ANTHROPIC_API_KEY`), поэтому не используется.
-- Стоимость: `total_cost_usd` — оценка по тарифам API; при подписке реальная плата 0, но лимиты окна подписки расходуются. В `llm_runs` пишется оценка и `subscription = true`.
+- Стоимость: `total_cost_usd` — оценка CLI по тарифам API, пишется в `llm_runs.cost_provider_usd` для сверки; `cost_usd` бот считает сам по `llm_prices` (ADR-0032). При подписке реальная плата 0, но лимиты окна подписки расходуются — `subscription = true`.
 - Ограничения: один процесс на вызов, параллелизм из настроек клиента (2), таймаут 120 с; пустой `structured_output` при заданной схеме — ошибка вызова (повтор решает потребитель).
 
 Наблюдения (шаг 7 пункта 06): одиночный вызов haiku с небольшим промптом — 3–6 с, ~1 100 входных и 100–450 выходных токенов, оценка $0.0003–0.0012; 6 вызовов по 2 параллельно — 16 с без ошибок и ограничений окна. Нагрузка 20 вызовов за раунд проверяется в пункте 10.
@@ -77,4 +77,31 @@ claude -p --output-format json --json-schema '<схема>' \
 
 ## Учёт
 
-Каждый вызов → `llm_runs` с `profile_id`, `provider`, ролью, моделью, версией промпта, токенами (вход = `input + cache_creation + cache_read`), `cost_usd`, признаком подписки, длительностью, ошибкой, `game_id` (NULL для `/llm test`), `round_id`. Отчёт стоимости по игре и профилю — пункт плана 13.
+Каждый вызов → `llm_runs` ([ADR-0032](../decisions/0032-llm-cost-accounting.md)): `profile_id`, `provider`, роль, модель, версия промпта, токены по видам (`tokens_in` = все входные: без кэша + `tokens_cache_write` + `tokens_cache_read`; `tokens_out`), `cost_usd` по таблице тарифов, `cost_provider_usd` (оценка провайдера), признак подписки, длительность, ошибка, `game_id` (NULL для `/llm test`), `round_id`, `created_at`. Та же разбивка и обе оценки — в строке `llm call` в `bot.log` и записи `llm` журнала чата; сумма по раунду — `rounds.metrics.cost_usd`, строка `round metrics`, карточка `/round`; завязка и генерация мира — `cost_usd` в своих строках лога. Ответ, взятый из `generation_jobs`, бесплатен. Отчёт стоимости по игре и профилю — пункт плана 13.
+
+### Тарифы `llm_prices`
+
+| Колонка | Смысл |
+|---|---|
+| `model` | полное имя модели (`claude-opus-5-5`) или префикс датированных снимков: поиск — точное имя, затем самый длинный префикс до дефиса |
+| `input_usd`, `cache_write_usd`, `cache_read_usd`, `output_usd` | USD за 1M токенов: вход без кэша, запись кэша (пятиминутный тариф), чтение кэша, выход |
+| `source`, `priced_at` | страница цен провайдера и дата сверки |
+
+Стартовые тарифы (миграция `00036`, сверено 2026-10-15 со страницей цен Anthropic): Opus 5.5, Sonnet 5.5, Haiku 5.5 (до 100K токенов запроса), Fable 5.1, Opus 5, Opus 4.8, Sonnet 5. Неизвестная модель → `cost_usd = 0` и предупреждение `llm price unknown` в логе (одно на модель). Бот кэширует тарифы вместе с профилями и перечитывает после `/llm use`, `reset`, `add` и перезапуска.
+
+Обновление по команде руководителя: Claude сверяет цены с официальными страницами (скилл `/claude-api`, `platform.claude.com/docs/en/about-claude/pricing`), пишет миграцию данных (`UPDATE` / `INSERT` в `llm_prices` с новой `priced_at`), `make migrate` на `tale` и `tale_test`, `make restart`. Старые строки `llm_runs` не пересчитываются: цена фиксируется в момент вызова; при необходимости пересчёт по токенам по видам.
+
+Примеры отчётов (фильтры по модели, роли, датам, игре):
+
+```sql
+-- расход по ролям и моделям за период
+SELECT role, model, count(*) AS calls, sum(tokens_in) AS tokens_in, sum(tokens_out) AS tokens_out,
+       round(sum(cost_usd), 4) AS cost_usd, round(sum(cost_provider_usd), 4) AS provider_usd
+FROM llm_runs WHERE created_at >= '2026-10-01' AND created_at < '2026-11-01' GROUP BY 1, 2 ORDER BY cost_usd DESC;
+-- расход игры по раундам
+SELECT round_id, role, round(sum(cost_usd), 4) FROM llm_runs WHERE game_id = 1 GROUP BY 1, 2 ORDER BY 1, 2;
+-- последние вызовы с обеими оценками
+SELECT id, role, model, tokens_in, tokens_cache_write, tokens_cache_read, tokens_out, cost_usd, cost_provider_usd FROM llm_runs ORDER BY id DESC LIMIT 5;
+```
+
+Консоль: `make eval-interpreter` и `make eval-narrator` берут тарифы из `DATABASE_URL` (без базы — предупреждение, цена 0), при `-v` печатают по каждому вызову модель, токены по видам и обе оценки, в итоге — цену набора; в `llm_runs` эти вызовы не пишутся.

@@ -500,24 +500,24 @@ func (f *fakeLLM) Complete(_ context.Context, call applm.Call, req model.LLMRequ
 		if f.narrErr != nil || f.narr == "" {
 			return model.LLMResponse{}, errors.New("narrator down")
 		}
-		return model.LLMResponse{JSON: json.RawMessage(f.narr), TokensIn: 80, TokensOut: 40}, nil
+		return model.LLMResponse{JSON: json.RawMessage(f.narr), Usage: model.LLMUsage{Input: 80, Output: 40}}, nil
 	}
 	if call.Role == model.RoleOpening {
 		if f.opening == "" {
 			return model.LLMResponse{}, errors.New("opening down")
 		}
-		return model.LLMResponse{JSON: json.RawMessage(f.opening), TokensIn: 60, TokensOut: 30}, nil
+		return model.LLMResponse{JSON: json.RawMessage(f.opening), Usage: model.LLMUsage{Input: 60, Output: 30}}, nil
 	}
 	if call.Role == model.RoleWorldgen {
 		if f.setups == "" {
 			return model.LLMResponse{}, errors.New("worldgen down")
 		}
-		return model.LLMResponse{JSON: json.RawMessage(f.setups), TokensIn: 70, TokensOut: 35}, nil
+		return model.LLMResponse{JSON: json.RawMessage(f.setups), Usage: model.LLMUsage{Input: 70, Output: 35}}, nil
 	}
 	if f.err != nil {
 		return model.LLMResponse{}, f.err
 	}
-	return model.LLMResponse{JSON: json.RawMessage(f.json), TokensIn: 50, TokensOut: 10}, nil
+	return model.LLMResponse{JSON: json.RawMessage(f.json), Usage: model.LLMUsage{Input: 50, Output: 10}}, nil
 }
 
 func (f *fakeLLM) byRole(role model.LLMRole) []applm.Call {

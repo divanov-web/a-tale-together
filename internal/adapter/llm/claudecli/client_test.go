@@ -32,8 +32,8 @@ func TestComplete_ParsesStructuredOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	if string(resp.JSON) != `{"echo":"hello"}` || resp.Model != "claude-haiku-5-5" || resp.TokensIn != 5139 || resp.TokensOut != 322 ||
-		resp.CostUSD != 0.0011886 || !resp.Subscription || resp.RequestID != "sess-1" || resp.Duration <= 0 {
+	if string(resp.JSON) != `{"echo":"hello"}` || resp.Model != "claude-haiku-5-5" || resp.Usage != (model.LLMUsage{Input: 2, CacheWrite: 5137, Output: 322}) || resp.Usage.TotalIn() != 5139 ||
+		resp.ProviderCostUSD != 0.0011886 || resp.CostUSD != 0 || !resp.Subscription || resp.RequestID != "sess-1" || resp.Duration <= 0 {
 		t.Fatalf("response = %+v", resp)
 	}
 	args := strings.Join(c.args(model.LLMRequest{System: "s", JSONSchema: json.RawMessage(`{}`), Model: "haiku", Effort: "low", MaxBudgetUSD: 0.5}), " ")
@@ -93,7 +93,7 @@ func TestComplete_Live(t *testing.T) {
 	if err != nil {
 		t.Fatalf("live call: %v", err)
 	}
-	t.Logf("model=%s tokens=%d/%d cost=%.5f duration=%s json=%s", resp.Model, resp.TokensIn, resp.TokensOut, resp.CostUSD, resp.Duration, resp.JSON)
+	t.Logf("model=%s tokens=%+v cost=%.5f duration=%s json=%s", resp.Model, resp.Usage, resp.ProviderCostUSD, resp.Duration, resp.JSON)
 	if len(resp.JSON) == 0 || !resp.Subscription || resp.Model == "" {
 		t.Fatalf("response = %+v", resp)
 	}

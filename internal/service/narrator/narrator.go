@@ -80,6 +80,7 @@ type Result struct {
 	Issues    []string     // замечания к ответам модели (для лога и eval)
 	TokensIn  int
 	TokensOut int
+	CostUSD   float64 // цена вызовов по таблице тарифов (ADR-0032)
 }
 
 // Narrate пишет хронику раунда одним вызовом; при пропущенных событиях, раскрытых секретах, числах в режиме
@@ -133,8 +134,9 @@ func (s *Service) Narrate(ctx context.Context, p Params) (Result, error) {
 func (s *Service) call(ctx context.Context, v *validator, input string, res *Result) (checked, error) {
 	resp, err := s.llm.Complete(ctx, model.LLMRequest{Role: model.RoleNarrator, System: s.system, Input: input, JSONSchema: Schema})
 	res.Calls++
-	res.TokensIn += resp.TokensIn
-	res.TokensOut += resp.TokensOut
+	res.TokensIn += resp.Usage.TotalIn()
+	res.TokensOut += resp.Usage.Output
+	res.CostUSD += resp.CostUSD
 	if err != nil {
 		return checked{}, fmt.Errorf("narrator: %w", err)
 	}

@@ -1021,7 +1021,7 @@ func TestLLM_OwnerCommands(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/llm"), "(id 4): профиль local")
 	mustContain(t, h.send(owner, private(owner), "/llm use local 99"), "Игра не найдена")
 	mustContain(t, h.send(owner, private(owner), "/llm reset 4"), "профиль по умолчанию")
-	mustContain(t, h.send(owner, private(owner), "/llm test"), "Профиль local (fake): ок", "Модель: fake-haiku", "токены 10/5", "Ответ по схеме: {\"ok\":true}")
+	mustContain(t, h.send(owner, private(owner), "/llm test"), "Профиль local (fake): ок", "Модель: fake-haiku", "токены вход 10 (кэш: запись 0, чтение 0), выход 5; цена по таблице $0.0000", "Ответ по схеме: {\"ok\":true}")
 	mustContain(t, h.send(owner, private(owner), "/llm test missing"), "не найден")
 	h.llm.Err = errors.New("cli down")
 	mustContain(t, h.send(owner, private(owner), "/llm test"), "ошибка вызова — cli down")

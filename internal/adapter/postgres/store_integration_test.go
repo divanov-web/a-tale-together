@@ -522,7 +522,7 @@ func TestGameFlow(t *testing.T) {
 		t.Fatal("game profile not reset")
 	}
 	run, err := s.CreateLLMRun(ctx, model.LLMRun{GameID: &game.ID, RoundID: &r2.ID, ProfileID: created2.ID, Provider: "anthropic-api", Role: model.RoleInterpreter, Model: "claude-haiku-5-5",
-		PromptVersion: "v1", TokensIn: 100, TokensOut: 20, CostUSD: 0.001234, Subscription: false, DurationMS: 1500, RequestID: "req-1"})
+		PromptVersion: "v1", TokensIn: 100, TokensCacheWrite: 30, TokensCacheRead: 50, TokensOut: 20, CostUSD: 0.001234, CostProviderUSD: 0.0015, Subscription: false, DurationMS: 1500, RequestID: "req-1"})
 	if err != nil || run.ID == 0 {
 		t.Fatalf("CreateLLMRun = %+v, %v", run, err)
 	}
@@ -530,8 +530,17 @@ func TestGameFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	runs, err := s.ListLLMRuns(ctx, 10)
-	if err != nil || len(runs) != 2 || runs[0].Error != "boom" || runs[0].GameID != nil || runs[1].CostUSD != 0.001234 || runs[1].RoundID == nil || *runs[1].RoundID != r2.ID {
+	if err != nil || len(runs) != 2 || runs[0].Error != "boom" || runs[0].GameID != nil || runs[1].CostUSD != 0.001234 || runs[1].CostProviderUSD != 0.0015 ||
+		runs[1].Usage() != (model.LLMUsage{Input: 20, CacheWrite: 30, CacheRead: 50, Output: 20}) || runs[1].RoundID == nil || *runs[1].RoundID != r2.ID {
 		t.Fatalf("ListLLMRuns = %+v, %v", runs, err)
+	}
+	// Тарифы из миграции 00036: таблица цен находит модель и датированный снимок.
+	prices, err := s.ListLLMPrices(ctx)
+	if err != nil || len(prices) < 3 {
+		t.Fatalf("ListLLMPrices = %+v, %v", prices, err)
+	}
+	if p, ok := model.NewLLMPriceTable(prices).Find("claude-sonnet-5-5-20260901"); !ok || p.Model != "claude-sonnet-5-5" || p.InputUSD != 2 || p.Source == "" || p.PricedAt.IsZero() {
+		t.Fatalf("price = %+v, %v", p, ok)
 	}
 
 	// Пункт 07: локации, события, итоги заявок, состояние персонажа.
@@ -617,10 +626,10 @@ func TestGameFlow(t *testing.T) {
 	if cs, _ := s.ListCharacters(ctx, game.ID, season.ID); len(cs) == 0 || len(cs[0].Knowledge) != 1 || cs[0].Knowledge[0] != "Факт." {
 		t.Fatalf("knowledge = %+v", cs)
 	}
-	if err := s.SaveGenerationJob(ctx, model.GenerationJob{GameID: game.ID, RoundID: &rid, Role: model.RoleNarrator, InputHash: "abc", Response: model.LLMResponse{JSON: json.RawMessage(`{"x":1}`), TokensIn: 5}}); err != nil {
+	if err := s.SaveGenerationJob(ctx, model.GenerationJob{GameID: game.ID, RoundID: &rid, Role: model.RoleNarrator, InputHash: "abc", Response: model.LLMResponse{JSON: json.RawMessage(`{"x":1}`), Usage: model.LLMUsage{Input: 5}}}); err != nil {
 		t.Fatal(err)
 	}
-	if job, err := s.GetGenerationJob(ctx, game.ID, &rid, model.RoleNarrator, "abc"); err != nil || !strings.Contains(strings.ReplaceAll(string(job.Response.JSON), " ", ""), `{"x":1}`) || job.Response.TokensIn != 5 {
+	if job, err := s.GetGenerationJob(ctx, game.ID, &rid, model.RoleNarrator, "abc"); err != nil || !strings.Contains(strings.ReplaceAll(string(job.Response.JSON), " ", ""), `{"x":1}`) || job.Response.Usage.TotalIn() != 5 {
 		t.Fatalf("GetGenerationJob = %+v, %v", job, err)
 	}
 	if _, err := s.GetGenerationJob(ctx, game.ID, nil, model.RoleNarrator, "abc"); !errors.Is(err, model.ErrNotFound) {

@@ -165,7 +165,7 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 	s.logger.Info("round resolved", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("events", len(result.Events)), slog.Int("results", len(result.Results)))
 	s.logger.Info("round metrics", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Int("attempt", m.Attempt),
 		slog.Int64("total_ms", m.TotalMS), slog.Int64("interpret_ms", m.InterpretMS), slog.Int64("engine_ms", m.EngineMS), slog.Int64("narrate_ms", m.NarrateMS),
-		slog.Int("llm_calls", m.LLMCalls), slog.Int("tokens_in", m.TokensIn), slog.Int("tokens_out", m.TokensOut),
+		slog.Int("llm_calls", m.LLMCalls), slog.Int("tokens_in", m.TokensIn), slog.Int("tokens_out", m.TokensOut), slog.Float64("cost_usd", m.CostUSD),
 		slog.Bool("interpreter_fallback", m.InterpreterFallback), slog.Bool("narrator_fallback", m.NarratorFallback),
 		slog.Int("submissions", m.Submissions), slog.Int("resolved", m.Resolved), slog.Int("rejected", m.Rejected), slog.Int("ambiguous", m.Ambiguous), slog.Int("safe", m.Safe),
 		slog.Int("events", m.Events), slog.Int("patched", m.Patched), slog.Int("issues", m.Issues))
@@ -207,9 +207,10 @@ func (s *Service) interpret(ctx context.Context, g model.Game, chat model.Chat, 
 	}
 	s.logger.Info("round interpreted", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)),
 		slog.Int("submissions", len(snap.Submissions)), slog.Int("calls", res.Calls), slog.Int("safe", res.Invalid),
-		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
-	s.journal(ctx, g, chat.TelegramChatID, r, "interpreted", map[string]any{"calls": res.Calls, "safe": res.Invalid, "intents": res.Intents})
+		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut), slog.Float64("cost_usd", res.CostUSD))
+	s.journal(ctx, g, chat.TelegramChatID, r, "interpreted", map[string]any{"calls": res.Calls, "safe": res.Invalid, "cost_usd": res.CostUSD, "intents": res.Intents})
 	m.LLMCalls, m.TokensIn, m.TokensOut, m.Safe = m.LLMCalls+res.Calls, m.TokensIn+res.TokensIn, m.TokensOut+res.TokensOut, res.Invalid
+	m.CostUSD += res.CostUSD
 	return res.Intents
 }
 
@@ -284,9 +285,10 @@ func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r 
 		slog.Int("scenes", len(res.Narration.Scenes)), slog.Int("calls", res.Calls), slog.Int("patched", res.Patched), slog.Int("issues", len(res.Issues)),
 		slog.Int("cells", len(res.World.Cells)), slog.Int("neighbors", len(res.World.Neighbors)), slog.Int("templated", res.World.Templated()),
 		slog.Int("quests", len(res.World.Quests)), slog.Int("stages", len(res.World.Stages)), slog.Int("goals", len(res.World.Goals)),
-		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
-	s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"calls": res.Calls, "patched": res.Patched, "issues": res.Issues, "narration": res.Narration, "world": res.World})
+		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut), slog.Float64("cost_usd", res.CostUSD))
+	s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"calls": res.Calls, "patched": res.Patched, "issues": res.Issues, "cost_usd": res.CostUSD, "narration": res.Narration, "world": res.World})
 	m.LLMCalls, m.TokensIn, m.TokensOut, m.Patched, m.Issues = m.LLMCalls+res.Calls, m.TokensIn+res.TokensIn, m.TokensOut+res.TokensOut, res.Patched, len(res.Issues)
+	m.CostUSD += res.CostUSD
 	return &res.Narration, res.World
 }
 
