@@ -39,3 +39,19 @@ func TestCases_Parse(t *testing.T) {
 		}
 	}
 }
+
+// TestCheck_GoalsForbidden: ожидание `goals_forbidden` ловит срок в тексте или стадии цели без учёта регистра (B43);
+// цель без срока проходит.
+func TestCheck_GoalsForbidden(t *testing.T) {
+	t.Parallel()
+	c := evalCase{World: &caseWorld{Goals: 1, GoalsForbidden: []string{"снег", "за три"}}}
+	res := narrator.Result{World: narrator.WorldPackage{Goals: []narrator.GeneratedGoal{{FactionID: 2, Text: "Вывезти груз до первого Снега.", Stage: "ждут, за три ночи"}}}}
+	problems := check(c, res)
+	if len(problems) != 2 || !strings.Contains(problems[0], "«снег»") || !strings.Contains(problems[1], "«за три»") {
+		t.Fatalf("problems = %v", problems)
+	}
+	res.World.Goals[0] = narrator.GeneratedGoal{FactionID: 2, Text: "Вывезти груз из города тайно от Ордена.", Stage: "ищут проводника"}
+	if problems := check(c, res); len(problems) != 0 {
+		t.Fatalf("problems = %v", problems)
+	}
+}

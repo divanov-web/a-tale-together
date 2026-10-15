@@ -3826,6 +3826,231 @@
     "печать",
     "шпион"
    ]
+  },
+  {
+   "name": "goal_timeless",
+   "comment": "B43: пересмотр цели Гильдии после закрытого квеста, в текущей формулировке срок и счётчик («до первого снега», «за три ночи», стадия «осталось две ночи»). Ожидание: новая цель и стадия без срока, дедлайна и отсчёта — только чего сторона добивается и где она сейчас; остальные задания пусты.",
+   "params": {
+    "mode": "balanced",
+    "round_no": 3,
+    "state": {
+     "schema_version": 4,
+     "mode": "balanced",
+     "locations": [
+      {
+       "id": 1,
+       "name": "Зал башни",
+       "description": "Пыльный зал с каменной статуей рыцаря.",
+       "difficulty": 0,
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true,
+       "visited": true,
+       "objects": [
+        {
+         "key": "statue",
+         "title": "статуя рыцаря",
+         "description": "каменный рыцарь"
+        }
+       ]
+      },
+      {
+       "id": 3,
+       "name": "Опушка",
+       "description": "Кромка леса за рвом; за деревьями виден дым.",
+       "difficulty": 0,
+       "x": 0,
+       "y": 1,
+       "stage": "card",
+       "terrain": "forest",
+       "visited": true,
+       "discovered_by": [
+        1
+       ],
+       "objects": []
+      }
+     ],
+     "characters": [
+      {
+       "id": 13,
+       "nickname": "Маг",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "faction_id": 1,
+       "party_id": 1,
+       "location_id": 3,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 2,
+        "wits": 4,
+        "will": 4
+       },
+       "skills": {
+        "awareness": 3
+       }
+      },
+      {
+       "id": 14,
+       "nickname": "Паладин",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "faction_id": 1,
+       "party_id": 1,
+       "location_id": 3,
+       "conditions": [],
+       "attributes": {
+        "strength": 4,
+        "agility": 3,
+        "wits": 2,
+        "will": 3
+       },
+       "skills": {
+        "melee": 2
+       }
+      }
+     ],
+     "parties": [
+      {
+       "id": 1,
+       "name": "Ночной дозор"
+      }
+     ]
+    },
+    "events": [
+     {
+      "seq": 301,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 1,
+      "character_id": 13
+     },
+     {
+      "seq": 302,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 3,
+      "character_id": 13
+     },
+     {
+      "seq": 303,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 14,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 1,
+      "character_id": 14
+     },
+     {
+      "seq": 304,
+      "type": "character_moved",
+      "payload": {
+       "character_id": 14,
+       "from": 1,
+       "to": 3,
+       "from_name": "Зал башни",
+       "to_name": "Опушка",
+       "x": 0,
+       "y": 1
+      },
+      "visibility": "location",
+      "location_id": 3,
+      "character_id": 14
+     }
+    ],
+    "bios": {
+     "13": {
+      "public": "молчаливый маг",
+      "secret": ""
+     },
+     "14": {
+      "public": "паладин Ордена",
+      "secret": ""
+     }
+    },
+    "previous": [
+     {
+      "chronicle": "Башня молчала всю ночь; к утру за рвом потянуло дымом."
+     }
+    ],
+    "tasks": {
+     "cells": [],
+     "neighbors": [],
+     "quests": [],
+     "stages": [],
+     "goals": [
+      {
+       "faction": "evil",
+       "current": "Вывезти тёмный груз из города до первого снега, за три ночи, пока Орден не перекрыл ворота.",
+       "current_stage": "осталось две ночи",
+       "closed_quest": "Тёмный груз"
+      }
+     ]
+    },
+    "quests": []
+   },
+   "required": [
+    "Маг",
+    "Паладин"
+   ],
+   "forbidden": [
+    "лидер",
+    "модель",
+    "движок",
+    "координат",
+    "квест",
+    "этап"
+   ],
+   "no_digits": true,
+   "world": {
+    "cells": 0,
+    "neighbors": 0,
+    "min_objects": 0,
+    "quests": 0,
+    "stages": 0,
+    "goals": 1,
+    "goals_forbidden": [
+     "снег",
+     "ночи",
+     "ночей",
+     "за три",
+     "до зимы",
+     "к рассвету",
+     "дня",
+     "дней",
+     "срок",
+     "успеть",
+     "осталось"
+    ]
+   }
   }
  ]
 }

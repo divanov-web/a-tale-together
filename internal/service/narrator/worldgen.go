@@ -13,7 +13,7 @@ import (
 )
 
 // WorldgenPromptVersion — версия промпта генерации мира, пишется в `llm_runs.prompt_version`.
-const WorldgenPromptVersion = "narrator/worldgen-v1"
+const WorldgenPromptVersion = "narrator/worldgen-v2"
 
 // Лимиты варианта стартового мира (ADR-0028): заголовок кнопки и название мира короткие, остальное — пара предложений.
 const (
@@ -157,7 +157,7 @@ func (in WorldgenInput) Encode() string {
 
 // WorldgenSystemPrompt — системная часть промпта генерации мира текущей версии.
 func WorldgenSystemPrompt() string {
-	b, err := prompts.FS.ReadFile("narrator/worldgen-v1.md")
+	b, err := prompts.FS.ReadFile("narrator/worldgen-v2.md")
 	if err != nil {
 		panic("narrator: worldgen prompt: " + err.Error())
 	}

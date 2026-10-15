@@ -43,14 +43,16 @@ type evalCase struct {
 }
 
 // caseWorld — ожидания к пакету мира: число клеток и карточек от модели, минимум объектов в клетке, без шаблонов;
-// пункт 28: число квестов, размещённых этапов и целей по заданиям.
+// пункт 28: число квестов, размещённых этапов и целей по заданиям; B43: подстроки, которых нет в тексте и стадии целей
+// (срок, дедлайн, счётчик времени).
 type caseWorld struct {
-	Cells      int `json:"cells"`
-	Neighbors  int `json:"neighbors"`
-	MinObjects int `json:"min_objects"`
-	Quests     int `json:"quests"`
-	Stages     int `json:"stages"`
-	Goals      int `json:"goals"`
+	Cells          int      `json:"cells"`
+	Neighbors      int      `json:"neighbors"`
+	MinObjects     int      `json:"min_objects"`
+	Quests         int      `json:"quests"`
+	Stages         int      `json:"stages"`
+	Goals          int      `json:"goals"`
+	GoalsForbidden []string `json:"goals_forbidden"` // подстроки, которых нет в целях (без учёта регистра)
 }
 
 type caseParams struct {
@@ -209,6 +211,14 @@ func check(c evalCase, res narrator.Result) []string {
 		for _, st := range res.World.Stages {
 			if st.Condition.Kind == model.ConditionVisited && st.Stage.Condition.Kind != model.ConditionVisited {
 				out = append(out, fmt.Sprintf("этап «%s»: условие заменено на visited (недостижимо)", st.Stage.Title))
+			}
+		}
+		for _, g := range res.World.Goals {
+			goal := strings.ToLower(g.Text + "\n" + g.Stage)
+			for _, s := range w.GoalsForbidden {
+				if strings.Contains(goal, strings.ToLower(s)) {
+					out = append(out, fmt.Sprintf("цель фракции %d: есть «%s»", g.FactionID, s))
+				}
 			}
 		}
 	}

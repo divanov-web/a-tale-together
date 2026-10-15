@@ -14,7 +14,7 @@ import (
 )
 
 // OpeningPromptVersion — версия промпта завязки, пишется в `llm_runs.prompt_version`.
-const OpeningPromptVersion = "narrator/opening-v6"
+const OpeningPromptVersion = "narrator/opening-v7"
 
 // Границы текста завязки в рунах: короче — не завязка, длиннее — не влезает в сообщение; в выжимку для хроник
 // уходит начало до openingDigestRune.
@@ -176,7 +176,7 @@ func (in OpeningInput) Encode() string {
 
 // OpeningSystemPrompt — системная часть промпта завязки текущей версии.
 func OpeningSystemPrompt() string {
-	b, err := prompts.FS.ReadFile("narrator/opening-v6.md")
+	b, err := prompts.FS.ReadFile("narrator/opening-v7.md")
 	if err != nil {
 		panic("narrator: opening prompt: " + err.Error())
 	}
