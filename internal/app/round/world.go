@@ -143,8 +143,10 @@ func (s *Service) planTasks(ctx context.Context, g model.Game, state *model.Roun
 
 // startPackage применяет стартовый пакет завязки (ADR-0019): клетка от модели заменяет описание и объекты
 // стартовой клетки шаблона, карточки соседей создаются по направлениям; без ответа модели — соседи по шаблону.
-// Событий нет: игра ещё без раундов, стартовый мир — нулевой снимок.
-func (s *Service) startPackage(ctx context.Context, g model.Game, start model.Location, res narrator.OpeningResult, tasks []narrator.NeighborTask) error {
+// Логово сил зла (ADR-0031) по заданию — всегда скрытая карточка по координатам фракции: от модели или шаблон
+// «Логово»; клетка с такими координатами уже есть (повторный старт) — обновляется. Событий нет: игра ещё без
+// раундов, стартовый мир — нулевой снимок.
+func (s *Service) startPackage(ctx context.Context, g model.Game, start model.Location, res narrator.OpeningResult, tasks []narrator.NeighborTask, lair *narrator.LairTask, locs []model.Location) error {
 	if res.Start != nil {
 		loc := start
 		loc.Name, loc.Description, loc.Difficulty = res.Start.Name, res.Start.Description, res.Start.Difficulty
@@ -167,7 +169,23 @@ func (s *Service) startPackage(ctx context.Context, g model.Game, start model.Lo
 			return err
 		}
 	}
-	return nil
+	if lair == nil {
+		return nil
+	}
+	card := res.Lair
+	if card == nil {
+		t := narrator.TemplateLair(*lair)
+		card = &t
+	}
+	loc := model.Location{GameID: g.ID, Name: card.Name, Description: card.Card, X: card.X, Y: card.Y, Stage: model.StageCard, Terrain: card.Terrain, Hidden: true, DistantView: card.DistantView}
+	for _, l := range locs {
+		if l.X == card.X && l.Y == card.Y {
+			loc.ID, loc.Start, loc.CreatedAt = l.ID, l.Start, l.CreatedAt
+			return s.store.UpdateLocation(ctx, loc)
+		}
+	}
+	_, err := s.store.CreateLocation(ctx, loc)
+	return err
 }
 
 // complete — вызов модели с сохранением ответа по ключу задания (ADR-0019): хэш системной части, входа и схемы

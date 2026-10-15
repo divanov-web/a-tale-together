@@ -128,3 +128,42 @@ func TestBuildInput_OpeningFirst(t *testing.T) {
 		t.Fatalf("previous without opening = %q", in.World.Previous)
 	}
 }
+
+// TestOpening_Lair (S22, ADR-0031): задание `generate.lair` уходит во вход; карточка логова принимается всегда скрытой с
+// видом издалека; без имени — шаблон «Логово»; без задания поле ответа игнорируется.
+func TestOpening_Lair(t *testing.T) {
+	t.Parallel()
+	withLair := func(lair string) string {
+		return `{"text":"` + goodOpening + `",` + goodStart + `,"lair":` + lair + `}`
+	}
+	p := openingParams()
+	p.Lair = &LairTask{X: 3, Y: -3, Bearing: "недалеко на юго-востоке", Faction: "evil", Title: "Гильдия"}
+	var got model.LLMRequest
+	svc := New(Func(func(_ context.Context, req model.LLMRequest) (model.LLMResponse, error) {
+		got = req
+		return model.LLMResponse{JSON: []byte(withLair(`{"name":"Чёрная мельница","terrain":"Ruins","card":"Мельница без крыльев на голом холме.","distant_view":"крыло мельницы над холмами"}`))}, nil
+	}), slog.Default())
+	res, err := svc.Opening(context.Background(), p)
+	if err != nil || len(res.Issues) != 0 {
+		t.Fatalf("res = %+v, %v", res, err)
+	}
+	if !strings.Contains(got.Input, `"lair":{"x":3,"y":-3,"bearing":"недалеко на юго-востоке","faction":"evil","title":"Гильдия"}`) {
+		t.Fatalf("input without lair task: %s", got.Input)
+	}
+	if l := res.Lair; l == nil || l.X != 3 || l.Y != -3 || l.Name != "Чёрная мельница" || l.Terrain != "ruins" || !l.Hidden || l.DistantView != "крыло мельницы над холмами" || l.Template {
+		t.Fatalf("lair = %+v", res.Lair)
+	}
+	// Без имени — шаблон с замечанием.
+	empty := New(Func(func(context.Context, model.LLMRequest) (model.LLMResponse, error) {
+		return model.LLMResponse{JSON: []byte(withLair(`{"name":"","terrain":"","card":"","distant_view":""}`))}, nil
+	}), slog.Default())
+	res, err = empty.Opening(context.Background(), p)
+	if err != nil || res.Lair == nil || !res.Lair.Template || res.Lair.Name != model.TemplateLairName || !res.Lair.Hidden || res.Lair.DistantView != "" || len(res.Issues) != 1 {
+		t.Fatalf("template lair = %+v, issues %v, %v", res.Lair, res.Issues, err)
+	}
+	// Без задания логова нет, даже если модель что-то вернула.
+	res, err = svc.Opening(context.Background(), openingParams())
+	if err != nil || res.Lair != nil {
+		t.Fatalf("lair without task = %+v, %v", res.Lair, err)
+	}
+}

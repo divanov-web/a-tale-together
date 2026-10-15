@@ -636,7 +636,7 @@ func (s *Store) UpdateFaction(_ context.Context, f model.Faction) error {
 	if !ok || ex.GameID != f.GameID {
 		return model.ErrNotFound
 	}
-	ex.Title, ex.Description, ex.Tone = f.Title, f.Description, f.Tone
+	ex.Title, ex.Description, ex.Tone, ex.Lair = f.Title, f.Description, f.Tone, f.Lair
 	s.facts[f.ID] = ex
 	return nil
 }

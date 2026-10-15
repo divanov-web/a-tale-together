@@ -154,7 +154,8 @@ const startPackageJSON = `{"text":"Над площадью туман, Элис,
               {"key":"lodge","title":"Добраться до сторожки","summary":"Дойти до сторожки.","distance":1,"condition":"visited","reward":""},
               {"key":"cargo","title":"Забрать груз","summary":"Сундук должен быть открыт.","distance":1,"condition":"object_state","reward":"Груз у Гильдии."}]}}],
  "start":{"location_id":%d,"name":"Площадь у колодца","description":"Сердце города; у колодца толпа.","difficulty":0,"objects":[{"key":"well","title":"колодец","description":"","state":"","hidden":false,"approaches":[{"action":"explore","title":"заглянуть в колодец","attribute":"wits","skill":"awareness","difficulty":5,"on_success":{"state":null,"reveal":null,"fact":"На дне блестит кольцо."},"on_fail":null}]}]},
- "neighbors":[{"direction":"north","name":"Опушка","terrain":"forest","card":"Кромка леса.","visible":true,"distant_view":""},{"direction":"south","name":"Южные ворота","terrain":"town","card":"Ворота на тракт.","visible":true,"distant_view":""},{"direction":"west","name":"Переулки","terrain":"town","card":"Тесные дворы.","visible":false,"distant_view":"гул голосов за углом"},{"direction":"east","name":"Рынок","terrain":"town","card":"Торговые ряды.","visible":true,"distant_view":""}]}`
+ "neighbors":[{"direction":"north","name":"Опушка","terrain":"forest","card":"Кромка леса.","visible":true,"distant_view":""},{"direction":"south","name":"Южные ворота","terrain":"town","card":"Ворота на тракт.","visible":true,"distant_view":""},{"direction":"west","name":"Переулки","terrain":"town","card":"Тесные дворы.","visible":false,"distant_view":"гул голосов за углом"},{"direction":"east","name":"Рынок","terrain":"town","card":"Торговые ряды.","visible":true,"distant_view":""}],
+ "lair":{"name":"Чёрная мельница","terrain":"ruins","card":"Мельница без крыльев на голом холме.","distant_view":"крыло мельницы над холмами"}}`
 
 // startWorld — мир только со стартовой клеткой (как после `/create`): остальное достраивают завязка и рассказчик.
 func startWorld(t *testing.T) *world {
@@ -185,6 +186,35 @@ func (w *world) locations(t *testing.T) []model.Location {
 		t.Fatal(err)
 	}
 	return locs
+}
+
+// lair даёт силам зла клетку логова (ADR-0031), как это делает `game.Create`.
+func (w *world) lair(t *testing.T, at model.Coord) {
+	t.Helper()
+	ctx := context.Background()
+	factions, err := w.store.ListFactions(ctx, w.game.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range factions {
+		if f.Code == model.FactionEvil {
+			f.Lair = &at
+			if err := w.store.UpdateFaction(ctx, f); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// has — есть ли клетка с координатами.
+func (w *world) has(t *testing.T, x, y int) bool {
+	t.Helper()
+	for _, l := range w.locations(t) {
+		if l.X == x && l.Y == y {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *world) at(t *testing.T, x, y int) model.Location {
@@ -231,6 +261,10 @@ func TestBegin_StartPackage(t *testing.T) {
 	if text, err := ScoutText(w.chars[0], w.locations(t)); err != nil || !strings.Contains(text.Text, "• на север: Опушка — Кромка леса.\n• на юг: Южные ворота — Ворота на тракт.\n• на запад: неизведанная территория (гул голосов за углом)\n• на восток: Рынок — Торговые ряды.") {
 		t.Fatalf("scout = %q, %v", text.Text, err)
 	}
+	// S22 (ADR-0031): без логова у фракций карточка логова из ответа игнорируется и задания во входе нет.
+	if strings.Contains(llm.inputs[0], `"lair"`) {
+		t.Fatalf("lair task without faction lair: %s", llm.inputs[0])
+	}
 	// Личное «раунд открыт» предлагает колодец и четыре перехода.
 	var open string
 	for _, m := range w.outbox(t) {
@@ -251,6 +285,56 @@ func TestBegin_StartPackage(t *testing.T) {
 	}
 	if n := down.at(t, 0, -1); n.Name != model.TemplateCardName || n.Stage != model.StageCard || n.Terrain != model.TemplateCardTerrain {
 		t.Fatalf("template card = %+v", n)
+	}
+}
+
+// TestBegin_Lair (S22, ADR-0031): у Гильдии логово `(3,-3)` — завязка получает задание `generate.lair` с направлением от
+// площади, после `/begin` в игре шесть клеток: логово в стадии `card`, скрытое, с видом издалека от модели; при сбое
+// модели — шаблон «Логово» без вида; повторный старт после сброса мира создаёт логово заново; рассказчик раунда
+// получает логово как фон.
+func TestBegin_Lair(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	w := startWorld(t)
+	w.lair(t, model.Coord{X: 3, Y: -3})
+	start := w.locations(t)[0]
+	llm := &worldLLM{opening: fmt.Sprintf(startPackageJSON, start.ID)}
+	w.svc.LLM = llm
+	w.begin(t)
+	if !strings.Contains(llm.inputs[0], `"lair":{"x":3,"y":-3,"bearing":"недалеко на юго-востоке","faction":"evil","title":"Гильдия"}`) {
+		t.Fatalf("opening input without lair task: %s", llm.inputs[0])
+	}
+	if locs := w.locations(t); len(locs) != 6 {
+		t.Fatalf("cells after begin = %d", len(locs))
+	}
+	lair := w.at(t, 3, -3)
+	if lair.Name != "Чёрная мельница" || lair.Stage != model.StageCard || !lair.Hidden || lair.DistantView != "крыло мельницы над холмами" || lair.Terrain != "ruins" || lair.VisitedAt != nil || lair.Glimpse() != "неизведанная территория (крыло мельницы над холмами)" {
+		t.Fatalf("lair = %+v", lair)
+	}
+	// Первый раунд: рассказчик получает логово фоном — фракция и вид издалека, без имени; у сцены направление.
+	for _, c := range w.chars {
+		if _, _, err := w.svc.Submit(ctx, w.game, c, "осмотреться"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.tick(t, 10*time.Minute)
+	last := llm.inputs[len(llm.inputs)-1]
+	if !strings.Contains(last, `"lair":{"faction":"Гильдия","distant_view":"крыло мельницы над холмами"}`) || strings.Contains(last, "Чёрная мельница") || !strings.Contains(last, `"lair":"недалеко на юго-востоке"`) {
+		t.Fatalf("narrator input lair: %s", last)
+	}
+	// Сброс мира удаляет логово, повторный старт создаёт его заново (шаблон при сбое модели).
+	if _, err := w.svc.Reset(ctx, w.game, 1); err != nil {
+		t.Fatal(err)
+	}
+	w.reload(t)
+	if w.has(t, 3, -3) {
+		t.Fatal("lair survived reset")
+	}
+	w.svc.LLM = &worldLLM{}
+	w.begin(t)
+	lair = w.at(t, 3, -3)
+	if lair.Name != model.TemplateLairName || !lair.Hidden || lair.DistantView != "" || lair.Terrain != model.TemplateLairTerrain || lair.Description != model.TemplateLairCard {
+		t.Fatalf("template lair = %+v", lair)
 	}
 }
 

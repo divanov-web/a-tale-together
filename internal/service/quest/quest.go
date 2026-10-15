@@ -84,6 +84,13 @@ func Plan(in Input) Tasks {
 			}
 		}
 	}
+	// Логово сил зла этапом не бывает (ADR-0031): клетки логова фракций исключаются из кандидатов на привязку.
+	lairs := map[model.Coord]bool{}
+	for _, f := range in.Factions {
+		if f.Lair != nil {
+			lairs[*f.Lair] = true
+		}
+	}
 	for _, f := range in.Factions {
 		active, story, side, last := factionQuests(in.Quests, f.ID)
 		if task, ok := issue(f, active, story, side, last, in.StoryLimit, in.SideLimit); ok {
@@ -103,7 +110,7 @@ func Plan(in Input) Tasks {
 					anchor = xy
 				}
 			}
-			if loc, ok := candidate(in.State, f.ID, anchor, cur.Distance); ok {
+			if loc, ok := candidate(in.State, f.ID, anchor, cur.Distance, lairs); ok {
 				t.Bind = append(t.Bind, BindTask{Quest: q, Stage: *cur, LocationID: loc})
 			}
 		}
@@ -163,12 +170,12 @@ func issue(f model.Faction, active, story, side int, last model.QuestKind, story
 }
 
 // candidate — первая по порядку снимка клетка с персонажем фракции на расстоянии ≥ distance от anchor.
-func candidate(state *model.RoundSnapshot, f model.FactionID, anchor [2]int, distance int) (model.LocationID, bool) {
+func candidate(state *model.RoundSnapshot, f model.FactionID, anchor [2]int, distance int, lairs map[model.Coord]bool) (model.LocationID, bool) {
 	if state == nil {
 		return 0, false
 	}
 	for _, l := range state.Locations {
-		if Distance(anchor, [2]int{l.X, l.Y}) < distance {
+		if Distance(anchor, [2]int{l.X, l.Y}) < distance || lairs[model.Coord{X: l.X, Y: l.Y}] {
 			continue
 		}
 		for _, c := range state.Characters {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"time"
 
 	"taletogether/internal/model"
@@ -85,6 +86,7 @@ type Service struct {
 	clock   Clock
 	logger  *slog.Logger
 	newCode func() string
+	newLair func() model.Coord // клетка логова сил зла для новой игры (ADR-0031); тесты подменяют
 	// Defaults — настройки нового мира; `cmd` меняет их по окружению (кворум 1 в dev).
 	Defaults model.GameSettings
 	// MinRoundMinutes — нижняя граница `round_minutes` для `/set`; в dev `cmd` опускает её до минуты.
@@ -93,15 +95,16 @@ type Service struct {
 
 // New собирает сервис игры.
 func New(store Store, rights Rights, clock Clock, logger *slog.Logger) *Service {
-	return &Service{store: store, rights: rights, clock: clock, logger: logger, newCode: joinCode, Defaults: model.DefaultGameSettings(), MinRoundMinutes: model.MinRoundMinutes}
+	return &Service{store: store, rights: rights, clock: clock, logger: logger, newCode: joinCode, newLair: randomLair, Defaults: model.DefaultGameSettings(), MinRoundMinutes: model.MinRoundMinutes}
 }
 
 // DefaultGenre — код жанра для новой игры, пока жанр не выбран в настройках.
 const DefaultGenre = "fantasy"
 
 // Create создаёт мир в чате: игра `setup` (ADR-0023: до завершения настройки персонажи не создаются) с настройками
-// по умолчанию, сезон 1, фракции из шаблона жанра, автор — администратор игры; все записи в одной транзакции.
-// `next_round_at = now` зовёт тик планировщика сделать нулевой вызов «генерация мира» (ADR-0028).
+// по умолчанию, сезон 1, фракции из шаблона жанра (у сил зла — случайная клетка логова, ADR-0031), автор —
+// администратор игры; все записи в одной транзакции. `next_round_at = now` зовёт тик планировщика сделать нулевой
+// вызов «генерация мира» (ADR-0028).
 func (s *Service) Create(ctx context.Context, chat model.Chat, actor model.User) (model.Game, error) {
 	ok, err := s.rights.CanManage(ctx, chat, actor.ID)
 	if err != nil {
@@ -156,9 +159,15 @@ func (s *Service) Create(ctx context.Context, chat model.Chat, actor model.User)
 	return game, nil
 }
 
+// createFactions создаёт стартовые фракции из шаблона жанра; силы зла получают логово — одну из `model.LairCorners`,
+// выбранную кодом (B42, ADR-0031): клетку на карте создаст стартовый пакет при `/begin`.
 func (s *Service) createFactions(ctx context.Context, game model.GameID, t model.GenreTemplate) error {
 	for _, code := range model.FactionCodes {
 		f := model.Faction{GameID: game, Code: code, Title: string(code), Relations: map[model.FactionCode]string{}}
+		if code == model.FactionEvil {
+			lair := s.newLair()
+			f.Lair = &lair
+		}
 		for _, ft := range t.Factions {
 			if ft.Code != code {
 				continue
@@ -479,6 +488,16 @@ func joinCode() string {
 		b[i] = alphabet[int(b[i])%len(alphabet)]
 	}
 	return string(b)
+}
+
+// randomLair — случайная клетка логова сил зла из `model.LairCorners` (ADR-0031); выбор делает код, не модель
+// (принцип 1), источник — `crypto/rand`, как у кода приглашения.
+func randomLair() model.Coord {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(model.LairCorners))))
+	if err != nil {
+		panic("game.randomLair: crypto/rand: " + err.Error())
+	}
+	return model.LairCorners[n.Int64()]
 }
 
 // Genres возвращает включённые жанры справочника.

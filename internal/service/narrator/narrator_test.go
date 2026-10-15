@@ -393,3 +393,28 @@ func TestBuildInput_Speeches(t *testing.T) {
 		t.Errorf("null speeches: %s", plain)
 	}
 }
+
+// TestBuildInput_Lair (S22, ADR-0031): логово во входе — фракция и вид издалека без имени, пока клетка скрыта; у каждой
+// сцены направление и дальность логова словами; открытая клетка передаёт имя; без логова полей нет.
+func TestBuildInput_Lair(t *testing.T) {
+	t.Parallel()
+	p := params(model.ModeBalanced)
+	p.Lair = &LairInfo{Faction: "Гильдия", At: model.Coord{X: 3, Y: -3}, Hidden: true, Name: "Чёрная мельница", DistantView: "крыло мельницы над холмами"}
+	in := BuildInput(p)
+	if in.World.Lair == nil || in.World.Lair.Faction != "Гильдия" || in.World.Lair.DistantView != "крыло мельницы над холмами" || in.World.Lair.Name != "" {
+		t.Fatalf("world lair = %+v", in.World.Lair)
+	}
+	if hall, cellar := in.Scenes[0], in.Scenes[1]; hall.Lair != "недалеко на юго-востоке" || cellar.Lair != "недалеко на юго-востоке" {
+		t.Fatalf("scene lair = %q, %q", hall.Lair, cellar.Lair)
+	}
+	if enc := in.Encode(); strings.Contains(enc, "Чёрная мельница") || !strings.Contains(enc, `"lair":{"faction":"Гильдия","distant_view":"крыло мельницы над холмами"}`) {
+		t.Fatalf("encoded = %s", enc)
+	}
+	p.Lair.Hidden = false
+	if in = BuildInput(p); in.World.Lair.Name != "Чёрная мельница" {
+		t.Fatalf("open lair = %+v", in.World.Lair)
+	}
+	if enc := BuildInput(params(model.ModeBalanced)).Encode(); strings.Contains(enc, `"lair"`) {
+		t.Fatalf("lair without faction lair: %s", enc)
+	}
+}

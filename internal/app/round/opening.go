@@ -15,7 +15,9 @@ import (
 // ролью `opening` через `app/llm.Complete` (модель рассказчика профиля; ответ сохраняется по ключу задания). Без
 // провайдера или при сбое — стартовая сцена и клетка шаблона жанра, соседи «неизведанные земли», цели и квесты из
 // шаблона. Выбранный администратором вариант стартового мира (ADR-0028) даёт тон, крючок завязки `premise` и
-// запасные цели фракций вместо шаблона жанра. Возвращает текст без заголовка; ошибка — только у записи в хранилище.
+// запасные цели фракций вместо шаблона жанра. Логово сил зла (ADR-0031): координаты у фракции, завязке уходит задание
+// `generate.lair`, карточка от модели или шаблон создаётся скрытой в `startPackage`. Возвращает текст без заголовка;
+// ошибка — только у записи в хранилище.
 func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, genre model.Genre, factions []model.Faction, chars []model.Character, locs []model.Location) (string, error) {
 	// Выбранный вариант стартового мира (ADR-0028) заменяет тон и стартовую сцену шаблона и даёт крючок завязки.
 	setup := g.Setup()
@@ -44,12 +46,13 @@ func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, ge
 		}
 	}
 	questTasks, goalTasks := startQuestTasks(factions, genre.Template, setup)
+	lair := lairTask(factions, start)
 	templateQuests := func() (string, error) {
 		quests, _, goals := narrator.TemplateQuests(narrator.Tasks{Quests: questTasks, Goals: goalTasks, StoryTemplate: genre.Template.StoryQuest})
 		if err := s.startQuests(ctx, g, quests, goals); err != nil {
 			return "", err
 		}
-		return fallback, s.startPackage(ctx, g, start, narrator.OpeningResult{}, tasks)
+		return fallback, s.startPackage(ctx, g, start, narrator.OpeningResult{}, tasks, lair, locs)
 	}
 	if s.LLM == nil || start.ID == 0 {
 		s.journal(ctx, g, chat.TelegramChatID, model.Round{}, "opening", map[string]any{"fallback": "рассказчик не настроен: стартовая сцена жанра"})
@@ -61,7 +64,7 @@ func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, ge
 	}
 	p := narrator.OpeningParams{Title: g.Title, Genre: genre.Title, Tone: tone, Premise: premise, Mode: g.Mode, Def: def, Neighbors: tasks,
 		Start:  narrator.OpeningStart{LocationID: start.ID, Name: start.Name, Description: start.Description, Terrain: start.Terrain, Objects: []string{}},
-		Quests: questTasks, Goals: goalTasks, Template: genre.Template.StoryQuest}
+		Quests: questTasks, Goals: goalTasks, Template: genre.Template.StoryQuest, Lair: lair}
 	for _, o := range start.Objects {
 		p.Start.Objects = append(p.Start.Objects, o.Title)
 	}
@@ -93,9 +96,21 @@ func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, ge
 	s.logger.Info("opening narrated", slog.Int64("game_id", int64(g.ID)), slog.Int("calls", res.Calls), slog.Int("issues", len(res.Issues)),
 		slog.Bool("start_from_model", res.Start != nil), slog.Int("neighbors", len(res.Neighbors)), slog.Int("quests", len(res.Quests)), slog.Int("goals", len(res.Goals)),
 		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut))
-	s.journal(ctx, g, chat.TelegramChatID, model.Round{}, "opening", map[string]any{"calls": res.Calls, "issues": res.Issues, "text": res.Text, "start": res.Start, "neighbors": res.Neighbors, "quests": res.Quests, "goals": res.Goals})
+	s.journal(ctx, g, chat.TelegramChatID, model.Round{}, "opening", map[string]any{"calls": res.Calls, "issues": res.Issues, "text": res.Text, "start": res.Start, "neighbors": res.Neighbors, "lair": res.Lair, "quests": res.Quests, "goals": res.Goals})
 	if err := s.startQuests(ctx, g, res.Quests, res.Goals); err != nil {
 		return "", err
 	}
-	return res.Text, s.startPackage(ctx, g, start, res, tasks)
+	return res.Text, s.startPackage(ctx, g, start, res, tasks, lair, locs)
+}
+
+// lairTask — задание завязке на карточку логова (ADR-0031): по первой фракции с координатами логова; направление от
+// стартовой клетки словами. nil — логова нет (старые игры).
+func lairTask(factions []model.Faction, start model.Location) *narrator.LairTask {
+	for _, f := range factions {
+		if f.Lair == nil {
+			continue
+		}
+		return &narrator.LairTask{X: f.Lair.X, Y: f.Lair.Y, Bearing: model.Coord{X: start.X, Y: start.Y}.Bearing(*f.Lair), Faction: string(f.Code), Title: f.Title}
+	}
+	return nil
 }

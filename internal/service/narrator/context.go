@@ -48,6 +48,17 @@ type Params struct {
 	Tasks    Tasks                     `json:"tasks"`    // задания на достройку мира (пункт 27) и квесты (пункт 28); пусто — пакет мира не нужен
 	Quests   []QuestInfo               `json:"quests"`   // активные квесты фракций для подсказок (пункт 28)
 	Speeches []model.SnapshotSpeech    `json:"speeches"` // реплики раунда из снимка (пункт 32, ADR-0027): в сцену присутствия персонажа
+	Lair     *LairInfo                 `json:"lair"`     // логово сил зла (ADR-0031): фон повествования; nil — логова нет
+}
+
+// LairInfo — логово сил зла для контекста рассказчика (ADR-0031): фракция, координаты, скрытость, имя и вид издалека
+// клетки. Имя передаётся только у открытой клетки; направление от каждой сцены считает `BuildInput`.
+type LairInfo struct {
+	Faction     string      `json:"faction"` // имя фракции
+	At          model.Coord `json:"at"`
+	Hidden      bool        `json:"hidden"`
+	Name        string      `json:"name"`         // имя клетки; скрытое не передаётся
+	DistantView string      `json:"distant_view"` // как логово выглядит издалека; пусто — ничего не заметно
 }
 
 // Input — переменная часть вызова: мир, сцены, события, подходы следующего раунда, задания на достройку мира.
@@ -67,6 +78,14 @@ type world struct {
 	RoundNo  int       `json:"round_no"`
 	Factions []Faction `json:"factions"`
 	Previous []string  `json:"previous"`
+	Lair     *lairIn   `json:"lair,omitempty"` // логово сил зла (ADR-0031): фон, не цель
+}
+
+// lairIn — логово во входе рассказчика: чьё, что видно издалека, имя только у открытой клетки.
+type lairIn struct {
+	Faction     string `json:"faction"`
+	DistantView string `json:"distant_view"`
+	Name        string `json:"name,omitempty"`
 }
 
 // generate — задания на генерацию с лимитами и ключами модели персонажа для подходов.
@@ -76,6 +95,7 @@ type generate struct {
 	Limits         limits          `json:"limits"`
 	CharacterModel modelInfo       `json:"character_model"`
 	Quests         *generateQuests `json:"quests,omitempty"` // пункт 28: новые квесты, этапы, цели
+	Lair           *LairTask       `json:"lair,omitempty"`   // ADR-0031: карточка логова сил зла (только завязка)
 }
 
 type limits struct {
@@ -102,7 +122,8 @@ type scene struct {
 	Exits       []sceneExit         `json:"exits"`
 	Objects     []sceneObject       `json:"objects"`
 	Characters  []sceneCharacter    `json:"characters"`
-	Speeches    []sceneSpeech       `json:"speeches"` // слова персонажей сцены в этом раунде (ADR-0027): данные, не события
+	Speeches    []sceneSpeech       `json:"speeches"`       // слова персонажей сцены в этом раунде (ADR-0027): данные, не события
+	Lair        string              `json:"lair,omitempty"` // где логово сил зла относительно сцены словами (ADR-0031); пусто — логова нет
 }
 
 // sceneSpeech — реплика персонажа сцены: цитата или пересказ в хронике, не действие и не факт.
@@ -188,6 +209,12 @@ type sceneKey struct {
 func BuildInput(p Params) Input {
 	in := Input{Scenes: []scene{}, Events: []event{}, Approaches: []approachIn{}, Quests: nonNilQuests(p.Quests)}
 	in.World = world{Title: p.Title, Tone: p.Tone, Mode: string(p.Mode), RoundNo: p.RoundNo, Factions: nonNilFactions(p.Factions), Previous: digest(p.Opening, p.Previous)}
+	if l := p.Lair; l != nil {
+		in.World.Lair = &lairIn{Faction: l.Faction, DistantView: l.DistantView}
+		if !l.Hidden {
+			in.World.Lair.Name = l.Name
+		}
+	}
 	if p.State == nil {
 		return in
 	}
@@ -244,6 +271,9 @@ func BuildInput(p Params) Input {
 		}
 		if pt, ok := p.State.Party(key.party); ok && key.party != 0 {
 			sc.Party = pt.Name
+		}
+		if p.Lair != nil {
+			sc.Lair = model.Coord{X: l.X, Y: l.Y}.Bearing(p.Lair.At)
 		}
 		for _, e := range p.State.Exits(l) {
 			x := sceneExit{Direction: e.Direction}

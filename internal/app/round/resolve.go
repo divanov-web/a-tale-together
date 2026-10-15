@@ -213,6 +213,27 @@ func (s *Service) interpret(ctx context.Context, g model.Game, chat model.Chat, 
 	return res.Intents
 }
 
+// lairInfo — логово сил зла для контекста рассказчика (ADR-0031): по первой фракции с координатами логова и клетке
+// с этими координатами (имя передаётся только у открытой). nil — логова нет или клетка ещё не создана.
+func (s *Service) lairInfo(ctx context.Context, g model.Game, factions []model.Faction) (*narrator.LairInfo, error) {
+	for _, f := range factions {
+		if f.Lair == nil {
+			continue
+		}
+		locs, err := s.store.ListLocations(ctx, g.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, l := range locs {
+			if l.X == f.Lair.X && l.Y == f.Lair.Y {
+				return &narrator.LairInfo{Faction: f.Title, At: *f.Lair, Hidden: l.Hidden, Name: l.Name, DistantView: l.DistantView}, nil
+			}
+		}
+		return nil, nil
+	}
+	return nil, nil
+}
+
 // narrate — вызов 2 из 2 (docs/llm/round-calls.md): публичные и локационные события, состояние после свёртки,
 // описания персонажей как данные, выжимка прошлых хроник, задания на достройку мира (пункт 27) и по квестам с
 // активными квестами для подсказок (пункт 28) → хроника по сценам и пакет мира через `app/llm.Complete` с ролью `narrator` (ответ сохраняется по ключу задания, ADR-0019). Без
@@ -244,6 +265,9 @@ func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r 
 	}
 	if p.Previous, err = s.store.RecentNarrations(ctx, g.ID, 3); err != nil {
 		s.logger.Warn("narrator: previous chronicles unavailable", slog.Int64("game_id", int64(g.ID)), slog.Any("err", err))
+	}
+	if p.Lair, err = s.lairInfo(ctx, g, factions); err != nil {
+		s.logger.Warn("narrator: lair unavailable", slog.Int64("game_id", int64(g.ID)), slog.Any("err", err))
 	}
 	call := applm.Call{Game: &g, Round: &r.ID, Role: model.RoleNarrator, PromptVersion: narrator.PromptVersion}
 	svc := narrator.New(narrator.Func(func(ctx context.Context, req model.LLMRequest) (model.LLMResponse, error) {

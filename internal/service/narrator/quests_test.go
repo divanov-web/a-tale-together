@@ -157,7 +157,7 @@ func TestOpening_Quests(t *testing.T) {
 			t.Fatalf("issues without %q: %s", want, joined)
 		}
 	}
-	if !strings.Contains(string(OpeningSchema), `"required": ["text", "factions", "start", "neighbors"]`) {
+	if !strings.Contains(string(OpeningSchema), `"required": ["text", "factions", "start", "neighbors", "lair"]`) {
 		t.Fatal("opening schema without factions")
 	}
 }

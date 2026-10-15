@@ -63,6 +63,7 @@ type caseParams struct {
 	Tasks    narrator.Tasks                     `json:"tasks"`    // задания на достройку мира (пункт 27) и квесты (пункт 28)
 	Quests   []narrator.QuestInfo               `json:"quests"`   // активные квесты для подсказок (пункт 28)
 	Speeches []model.SnapshotSpeech             `json:"speeches"` // реплики персонажей (пункт 32, ADR-0027)
+	Lair     *narrator.LairInfo                 `json:"lair"`     // логово сил зла как фон (B42, ADR-0031)
 }
 
 var digits = regexp.MustCompile(`\d`)
@@ -120,7 +121,7 @@ func run() error {
 		}
 		total++
 		p := narrator.Params{Title: set.Title, Tone: set.Tone, Factions: set.Factions, Def: set.CharacterModel,
-			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks, Quests: c.Params.Quests, Speeches: c.Params.Speeches}
+			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks, Quests: c.Params.Quests, Speeches: c.Params.Speeches, Lair: c.Params.Lair}
 		started := time.Now()
 		res, err := svc.Narrate(context.Background(), p)
 		elapsed += time.Since(started)
@@ -273,6 +274,11 @@ func runOpening(svc *narrator.Service, set evalSet) error {
 		p.Quests = append(p.Quests, narrator.QuestTask{FactionID: model.FactionID(i + 1), Faction: f.Code, Kind: model.QuestStory, MinStages: minStages, MaxStages: maxStages, Mandatory: true})
 		p.Goals = append(p.Goals, narrator.GoalTask{FactionID: model.FactionID(i + 1), Faction: f.Code, Fallback: f.Description})
 	}
+	// B42 (ADR-0031): логово второй стороны в одном из углов `model.LairCorners`.
+	if len(set.Factions) > 1 {
+		lair := model.LairCorners[1]
+		p.Lair = &narrator.LairTask{X: lair.X, Y: lair.Y, Bearing: model.Coord{X: start.X, Y: start.Y}.Bearing(lair), Faction: set.Factions[1].Code, Title: set.Factions[1].Title}
+	}
 	for _, o := range start.Objects {
 		p.Start.Objects = append(p.Start.Objects, o.Title)
 	}
@@ -296,6 +302,9 @@ func runOpening(svc *narrator.Service, set evalSet) error {
 		}
 	}
 	printQuests(res.Quests, nil, res.Goals)
+	if l := res.Lair; l != nil {
+		fmt.Printf("[логово %d,%d] %s (%s, шаблон=%v): %s; издалека: %q\n", l.X, l.Y, l.Name, l.Terrain, l.Template, l.Card, l.DistantView)
+	}
 	for _, n := range res.Neighbors {
 		fmt.Printf("[сосед %d,%d] %s (%s, шаблон=%v): %s\n", n.X, n.Y, n.Name, n.Terrain, n.Template, n.Card)
 	}

@@ -133,6 +133,73 @@ const (
 // UnknownTerritory — подпись скрытого соседа и направления без клетки для игрока и интерпретатора (ADR-0025).
 const UnknownTerritory = "неизведанная территория"
 
+// Coord — координаты клетки сетки.
+type Coord struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+// LairCorners — допустимые клетки логова сил зла (B42, ADR-0031): четыре угла на расстоянии трёх клеток от
+// стартовой по обеим осям; одну выбирает код при создании игры.
+var LairCorners = []Coord{{X: 3, Y: 3}, {X: 3, Y: -3}, {X: -3, Y: 3}, {X: -3, Y: -3}}
+
+// Шаблонная карточка логова при сбое завязки (ADR-0031): имя и облик под сеттинг придумывает модель, иначе так.
+const (
+	TemplateLairName    = "Логово"
+	TemplateLairTerrain = "ruins"
+	TemplateLairCard    = "Место, о котором в этих краях говорят вполголоса."
+)
+
+// Bearing — где клетка `to` относительно `c` словами для рассказчика: «далеко на северо-востоке», «рядом на юге»,
+// «здесь». Направление по знакам смещений, расстояние — наибольшее из смещений по осям (0 — здесь, 1 — рядом,
+// 2–3 — недалеко, дальше — далеко).
+func (c Coord) Bearing(to Coord) string {
+	dx, dy := to.X-c.X, to.Y-c.Y
+	ax, ay := dx, dy
+	if ax < 0 {
+		ax = -ax
+	}
+	if ay < 0 {
+		ay = -ay
+	}
+	dist := max(ax, ay)
+	if dist == 0 {
+		return "здесь"
+	}
+	var ns, we string
+	switch {
+	case dy > 0:
+		ns = "север"
+	case dy < 0:
+		ns = "юг"
+	}
+	switch {
+	case dx > 0:
+		we = "восток"
+	case dx < 0:
+		we = "запад"
+	}
+	var side string
+	switch {
+	case ns != "" && we != "":
+		side = "на " + map[string]string{"север": "северо-", "юг": "юго-"}[ns] + we + "е"
+	case ns != "":
+		side = "на " + ns + "е"
+	default:
+		side = "на " + we + "е"
+	}
+	var far string
+	switch {
+	case dist == 1:
+		far = "рядом"
+	case dist <= 3:
+		far = "недалеко"
+	default:
+		far = "далеко"
+	}
+	return far + " " + side
+}
+
 // GenerationJob — сохранённый ответ модели по ключу задания (ADR-0019): игра, раунд (нет у завязки), роль и хэш
 // входа. Пишется вне транзакции раунда, поэтому повтор раунда после отката берёт готовый ответ и не платит дважды.
 type GenerationJob struct {

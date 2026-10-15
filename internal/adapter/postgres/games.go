@@ -133,31 +133,41 @@ func (s *Store) ActiveSeason(ctx context.Context, game model.GameID) (model.Seas
 	return out, nil
 }
 
-// CreateFaction создаёт фракцию игры.
+// CreateFaction создаёт фракцию игры; координаты логова (ADR-0031) пишутся, если заданы.
 func (s *Store) CreateFaction(ctx context.Context, f model.Faction) (model.Faction, error) {
-	const q = `INSERT INTO factions (game_id, code, title, description, tone, relations) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
+	const q = `INSERT INTO factions (game_id, code, title, description, tone, relations, lair_x, lair_y) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`
 	rel := f.Relations
 	if rel == nil {
 		rel = map[model.FactionCode]string{}
 	}
-	if err := s.db(ctx).QueryRow(ctx, q, f.GameID, f.Code, f.Title, f.Description, f.Tone, rel).Scan(&f.ID); err != nil {
+	x, y := lairColumns(f.Lair)
+	if err := s.db(ctx).QueryRow(ctx, q, f.GameID, f.Code, f.Title, f.Description, f.Tone, rel, x, y).Scan(&f.ID); err != nil {
 		return model.Faction{}, fmt.Errorf("postgres.CreateFaction: %w", err)
 	}
 	return f, nil
 }
 
-// UpdateFaction сохраняет название, описание и тон фракции.
+// UpdateFaction сохраняет название, описание, тон и координаты логова фракции.
 func (s *Store) UpdateFaction(ctx context.Context, f model.Faction) error {
-	const q = `UPDATE factions SET title = $3, description = $4, tone = $5 WHERE game_id = $1 AND id = $2`
-	if _, err := s.db(ctx).Exec(ctx, q, f.GameID, f.ID, f.Title, f.Description, f.Tone); err != nil {
+	const q = `UPDATE factions SET title = $3, description = $4, tone = $5, lair_x = $6, lair_y = $7 WHERE game_id = $1 AND id = $2`
+	x, y := lairColumns(f.Lair)
+	if _, err := s.db(ctx).Exec(ctx, q, f.GameID, f.ID, f.Title, f.Description, f.Tone, x, y); err != nil {
 		return fmt.Errorf("postgres.UpdateFaction: %w", err)
 	}
 	return nil
 }
 
+// lairColumns — координаты логова как две nullable-колонки.
+func lairColumns(l *model.Coord) (x, y *int) {
+	if l == nil {
+		return nil, nil
+	}
+	return &l.X, &l.Y
+}
+
 // ListFactions возвращает фракции игры: стартовые good, evil, затем созданные по сюжету по id.
 func (s *Store) ListFactions(ctx context.Context, game model.GameID) ([]model.Faction, error) {
-	const q = `SELECT id, game_id, code, title, description, tone, relations, explored_since_reset FROM factions WHERE game_id = $1
+	const q = `SELECT id, game_id, code, title, description, tone, relations, explored_since_reset, lair_x, lair_y FROM factions WHERE game_id = $1
 ORDER BY array_position(ARRAY['good', 'evil'], code), id`
 	rows, err := s.db(ctx).Query(ctx, q, game)
 	if err != nil {
@@ -167,8 +177,12 @@ ORDER BY array_position(ARRAY['good', 'evil'], code), id`
 	var out []model.Faction
 	for rows.Next() {
 		var f model.Faction
-		if err := rows.Scan(&f.ID, &f.GameID, &f.Code, &f.Title, &f.Description, &f.Tone, &f.Relations, &f.ExploredSinceReset); err != nil {
+		var x, y *int
+		if err := rows.Scan(&f.ID, &f.GameID, &f.Code, &f.Title, &f.Description, &f.Tone, &f.Relations, &f.ExploredSinceReset, &x, &y); err != nil {
 			return nil, fmt.Errorf("postgres.ListFactions: scan: %w", err)
+		}
+		if x != nil && y != nil {
+			f.Lair = &model.Coord{X: *x, Y: *y}
 		}
 		out = append(out, f)
 	}

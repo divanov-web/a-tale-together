@@ -14,7 +14,7 @@ import (
 )
 
 // OpeningPromptVersion — версия промпта завязки, пишется в `llm_runs.prompt_version`.
-const OpeningPromptVersion = "narrator/opening-v5"
+const OpeningPromptVersion = "narrator/opening-v6"
 
 // Границы текста завязки в рунах: короче — не завязка, длиннее — не влезает в сообщение; в выжимку для хроник
 // уходит начало до openingDigestRune.
@@ -28,7 +28,8 @@ const (
 var ErrOpening = errors.New("narrator: завязка не по правилам")
 
 // OpeningSchema — JSON-схема ответа: текст завязки и стартовый пакет (ADR-0019): стартовая клетка с объектами и
-// карточки соседей по направлениям с видимостью (ADR-0025); цель и сюжетный квест каждой фракции (ADR-0020).
+// карточки соседей по направлениям с видимостью (ADR-0025); цель и сюжетный квест каждой фракции (ADR-0020);
+// карточка логова сил зла по заданию `generate.lair` (ADR-0031), без задания — пустые строки.
 var OpeningSchema = json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -62,9 +63,20 @@ var OpeningSchema = json.RawMessage(`{
         "required": ["direction", "name", "terrain", "card", "visible", "distant_view"],
         "additionalProperties": false
       }
+    },
+    "lair": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "terrain": {"type": "string"},
+        "card": {"type": "string"},
+        "distant_view": {"type": "string"}
+      },
+      "required": ["name", "terrain", "card", "distant_view"],
+      "additionalProperties": false
     }
   },
-  "required": ["text", "factions", "start", "neighbors"],
+  "required": ["text", "factions", "start", "neighbors", "lair"],
   "additionalProperties": false
 }`)
 
@@ -85,6 +97,17 @@ type OpeningParams struct {
 	Quests     []QuestTask          // сюжетный квест каждой фракции (пункт 28)
 	Goals      []GoalTask           // цель каждой фракции
 	Template   *model.QuestTemplate // сюжетный квест шаблона жанра при сбое
+	Lair       *LairTask            // логово сил зла (ADR-0031): координаты выбрал код, модель даёт имя, карточку и вид издалека; nil — логова нет
+}
+
+// LairTask — задание на карточку логова сил зла (ADR-0031): координаты и направление от стартовой клетки словами,
+// код и имя фракции. Клетка создаётся скрытой; модель придумывает имя, местность, карточку и вид издалека.
+type LairTask struct {
+	X       int    `json:"x"`
+	Y       int    `json:"y"`
+	Bearing string `json:"bearing"` // «недалеко на юго-востоке» от стартовой клетки
+	Faction string `json:"faction"` // код фракции
+	Title   string `json:"title"`   // имя фракции
 }
 
 // OpeningStart — стартовая клетка шаблона жанра: что уже есть, модель может переписать описание и объекты.
@@ -136,7 +159,7 @@ func BuildOpeningInput(p OpeningParams) OpeningInput {
 		World:      openingWorld{Title: p.Title, Genre: p.Genre, Tone: p.Tone, Premise: p.Premise, Mode: string(p.Mode), Factions: nonNilFactions(p.Factions)},
 		Start:      start,
 		Characters: []OpeningCharacter{},
-		Generate:   generate{Cells: []CellTask{}, Neighbors: neighbors, Limits: generationLimits(), CharacterModel: modelKeys(p.Def), Quests: questTasks(Tasks{Quests: p.Quests, Goals: p.Goals})},
+		Generate:   generate{Cells: []CellTask{}, Neighbors: neighbors, Limits: generationLimits(), CharacterModel: modelKeys(p.Def), Quests: questTasks(Tasks{Quests: p.Quests, Goals: p.Goals}), Lair: p.Lair},
 	}
 	in.Characters = append(in.Characters, p.Characters...)
 	return in
@@ -153,7 +176,7 @@ func (in OpeningInput) Encode() string {
 
 // OpeningSystemPrompt — системная часть промпта завязки текущей версии.
 func OpeningSystemPrompt() string {
-	b, err := prompts.FS.ReadFile("narrator/opening-v5.md")
+	b, err := prompts.FS.ReadFile("narrator/opening-v6.md")
 	if err != nil {
 		panic("narrator: opening prompt: " + err.Error())
 	}
@@ -167,6 +190,7 @@ type OpeningResult struct {
 	Neighbors []GeneratedNeighbor // карточки соседей по заданиям (шаблон там, где модель не ответила)
 	Quests    []GeneratedQuest    // сюжетный квест каждой фракции по заданиям (пункт 28)
 	Goals     []GeneratedGoal     // цель каждой фракции
+	Lair      *GeneratedNeighbor  // карточка логова по заданию (ADR-0031): всегда скрытая; nil без задания; шаблон, если модель не ответила
 	Calls     int                 // вызовов модели (1 или 2)
 	Issues    []string            // замечания к ответам модели (для лога и eval)
 	TokensIn  int
@@ -207,6 +231,10 @@ func (s *Service) Opening(ctx context.Context, p OpeningParams) (OpeningResult, 
 	res.Text = cur.Text
 	res.Start, res.Neighbors, issues = validateOpeningWorld(cur, p)
 	res.Issues = append(res.Issues, issues...)
+	if p.Lair != nil {
+		lair, more := validateLair(cur.Lair, *p.Lair)
+		res.Lair, res.Issues = &lair, append(res.Issues, more...)
+	}
 	var quests []rawQuest
 	var goals []rawGoal
 	for _, f := range cur.Factions {
@@ -228,6 +256,15 @@ type openingResponse struct {
 	Factions  []openingFaction  `json:"factions"`
 	Start     rawCell           `json:"start"`
 	Neighbors []openingNeighbor `json:"neighbors"`
+	Lair      openingLair       `json:"lair"`
+}
+
+// openingLair — карточка логова сил зла в ответе (ADR-0031): без задания поля пустые.
+type openingLair struct {
+	Name        string `json:"name"`
+	Terrain     string `json:"terrain"`
+	Card        string `json:"card"`
+	DistantView string `json:"distant_view"`
 }
 
 type openingFaction struct {
@@ -306,6 +343,28 @@ func validateOpeningWorld(out openingResponse, p OpeningParams) (*GeneratedCell,
 		neighbors = append(neighbors, card)
 	}
 	return start, neighbors, issues
+}
+
+// validateLair — карточка логова по заданию (ADR-0031): всегда скрытая; без имени — шаблон «Логово»; местность и
+// тексты по лимитам карточки соседа. TemplateLair даёт тот же шаблон без ответа модели.
+func validateLair(l openingLair, task LairTask) (GeneratedNeighbor, []string) {
+	card := GeneratedNeighbor{X: task.X, Y: task.Y, Name: clip(l.Name, model.MaxCellNameRunes), Terrain: normalizeKey(l.Terrain), Card: clip(l.Card, model.MaxCardRunes), DistantView: clip(l.DistantView, model.MaxCardRunes), Hidden: true}
+	if card.Name == "" {
+		return TemplateLair(task), []string{fmt.Sprintf("логово (%d, %d) не описано: шаблон", task.X, task.Y)}
+	}
+	var issues []string
+	if card.Terrain == "" {
+		card.Terrain = model.TemplateLairTerrain
+	}
+	if card.Card == "" {
+		card.Card, issues = model.TemplateLairCard, append(issues, fmt.Sprintf("логово (%d, %d) без карточки: шаблонная", task.X, task.Y))
+	}
+	return card, issues
+}
+
+// TemplateLair — шаблонная карточка логова при сбое завязки (ADR-0031): скрытая, без вида издалека.
+func TemplateLair(task LairTask) GeneratedNeighbor {
+	return GeneratedNeighbor{X: task.X, Y: task.Y, Name: model.TemplateLairName, Terrain: model.TemplateLairTerrain, Card: model.TemplateLairCard, Hidden: true, Template: true}
 }
 
 // openingDigest — завязка для выжимки прошлых хроник: начало текста до openingDigestRune.

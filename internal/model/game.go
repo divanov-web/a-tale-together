@@ -205,6 +205,9 @@ type Faction struct {
 	Relations   map[FactionCode]string
 	// ExploredSinceReset — счётчик исследования: клеток, открытых фракцией с последнего сброса (пункт 27; выдача квестов — пункт 28).
 	ExploredSinceReset int
+	// Lair — опорная клетка фракции, у сил зла одна из LairCorners (B42, ADR-0031): выбирается кодом при создании игры,
+	// клетка `card` создаётся скрытой при `/begin`; nil — логова нет (`good`, фракции по сюжету, старые игры).
+	Lair *Coord
 }
 
 // FactionTemplate — фракция в шаблоне жанра.

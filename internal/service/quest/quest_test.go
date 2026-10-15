@@ -123,6 +123,12 @@ func TestQuestPlan_Bind(t *testing.T) {
 	if got = Plan(in); len(got.Goals) != 0 {
 		t.Fatalf("goal already revised: %+v", got.Goals)
 	}
+	// S22 (ADR-0031): клетка логова сил зла этапом не бывает — Маг на холме (0,3) стоит в логове, этап квеста 3 ждёт.
+	in.Factions = []model.Faction{{ID: 1}, {ID: 2, Lair: &model.Coord{X: 0, Y: 3}}}
+	got = Plan(in)
+	if len(got.Bind) != 1 || got.Bind[0].Quest.ID != 1 {
+		t.Fatalf("bind with lair = %+v", got.Bind)
+	}
 }
 
 // TestQuestCheck_Conditions (S17): `fact` — факт у персонажа фракции (чужая фракция не считается); `object_state` —

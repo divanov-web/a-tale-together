@@ -64,3 +64,29 @@ func TestGlimpse_HiddenExit(t *testing.T) {
 		t.Fatalf("old snapshot = %+v, %v", old, err)
 	}
 }
+
+// TestCoord_Bearing (S22): направление и дальность логова словами от клетки сцены.
+func TestCoord_Bearing(t *testing.T) {
+	t.Parallel()
+	lair := Coord{X: 3, Y: -3}
+	cases := []struct {
+		name string
+		from Coord
+		want string
+	}{
+		{"start", Coord{0, 0}, "недалеко на юго-востоке"},
+		{"far", Coord{-2, 2}, "далеко на юго-востоке"},
+		{"near_south", Coord{3, -2}, "рядом на юге"},
+		{"near_west", Coord{4, -3}, "рядом на западе"},
+		{"here", Coord{3, -3}, "здесь"},
+		{"north_east_far", Coord{-1, -8}, "далеко на северо-востоке"},
+		{"north_west", Coord{5, -4}, "недалеко на северо-западе"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.from.Bearing(lair); got != c.want {
+				t.Fatalf("Bearing(%v → %v) = %q, want %q", c.from, lair, got, c.want)
+			}
+		})
+	}
+}
