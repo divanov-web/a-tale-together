@@ -90,41 +90,56 @@ func hasParty(state *model.RoundSnapshot, id model.PartyID) bool {
 }
 
 // splitParts делит текст на части не длиннее limit символов по строкам (слишком длинная строка режется по символам);
-// каждая часть после первой начинается с prefix. Короткий текст — одна часть.
-func splitParts(text, prefix string, limit int) []string {
-	if utf8.RuneCountInString(text) <= limit {
-		return []string{text}
+// части после первой получают подпись prefix; разметка каждой части вырезается из исходной (`FormattedText.Cut`,
+// ADR-0030) и сдвигается на длину подписи.
+func splitParts(text model.FormattedText, prefix string, limit int) []model.FormattedText {
+	total := utf8.RuneCountInString(text.Text)
+	if total <= limit {
+		return []model.FormattedText{text}
 	}
 	room := limit - utf8.RuneCountInString(prefix)
 	if room < 1 {
 		room = limit
 	}
-	var parts []string
-	var cur []rune
-	flush := func() {
-		if len(cur) > 0 {
-			parts = append(parts, string(cur))
-			cur = cur[:0]
+	var ranges [][2]int // границы частей в рунах исходного текста
+	start, cur := 0, 0  // начало текущей части и её длина
+	flush := func(end int) {
+		if cur > 0 {
+			ranges = append(ranges, [2]int{start, end})
+			cur = 0
 		}
 	}
-	for _, line := range strings.Split(text, "\n") {
-		lr := []rune(line)
-		for len(lr) > room {
-			flush()
-			parts = append(parts, string(lr[:room]))
-			lr = lr[room:]
+	pos := 0
+	for _, line := range strings.Split(text.Text, "\n") {
+		n := utf8.RuneCountInString(line)
+		for n > room {
+			flush(pos - 1) // перевод строки перед этой строкой остаётся за границей части
+			ranges = append(ranges, [2]int{pos, pos + room})
+			pos += room
+			n -= room
 		}
-		if len(cur) > 0 && len(cur)+1+len(lr) > room {
-			flush()
+		if cur > 0 && cur+1+n > room {
+			flush(pos - 1)
 		}
-		if len(cur) > 0 {
-			cur = append(cur, '\n')
+		if cur == 0 {
+			start = pos
+		} else {
+			cur++
 		}
-		cur = append(cur, lr...)
+		cur += n
+		pos += n + 1
 	}
-	flush()
-	for i := 1; i < len(parts); i++ {
-		parts[i] = prefix + parts[i]
+	flush(total)
+	parts := make([]model.FormattedText, 0, len(ranges))
+	for i, r := range ranges {
+		part := text.Cut(r[0], r[1])
+		if i > 0 {
+			var b model.TextBuilder
+			b.WriteString(prefix)
+			b.Append(part)
+			part = b.Build()
+		}
+		parts = append(parts, part)
 	}
 	return parts
 }

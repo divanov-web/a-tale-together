@@ -77,7 +77,7 @@ func (c *Client) Run(ctx context.Context, h Handler) error {
 // SendText отправляет текстовое сообщение (ответы на команды, ADR-0006), разметка — entities (ADR-0029). Длинные
 // игровые тексты делит сценарий при постановке в outbox (ADR-0011).
 func (c *Client) SendText(ctx context.Context, chat model.TelegramChatID, text model.FormattedText) error {
-	if _, err := c.SendFormatted(ctx, chat, text, nil); err != nil {
+	if _, err := c.Send(ctx, chat, text, nil); err != nil {
 		return fmt.Errorf("telegram.SendText: %w", err)
 	}
 	return nil
@@ -85,7 +85,7 @@ func (c *Client) SendText(ctx context.Context, chat model.TelegramChatID, text m
 
 // SendKeyboard отправляет текст с inline-кнопками под ним (ADR-0015); пустая клавиатура — обычное сообщение.
 func (c *Client) SendKeyboard(ctx context.Context, chat model.TelegramChatID, text model.FormattedText, kb model.Keyboard) error {
-	if _, err := c.SendFormatted(ctx, chat, text, kb); err != nil {
+	if _, err := c.Send(ctx, chat, text, kb); err != nil {
 		return fmt.Errorf("telegram.SendKeyboard: %w", err)
 	}
 	return nil
@@ -100,16 +100,11 @@ func (c *Client) SendReplyKeyboard(ctx context.Context, chat model.TelegramChatI
 	return nil
 }
 
-// Send отправляет простой текст с кнопками (nil — без них) и возвращает идентификатор сообщения Telegram; используется
-// воркером outbox.
-func (c *Client) Send(ctx context.Context, chat model.TelegramChatID, text string, kb model.Keyboard) (int64, error) {
-	return c.SendFormatted(ctx, chat, model.Plain(text), kb)
-}
-
-// SendFormatted отправляет текст с разметкой (ADR-0029) и кнопками (nil — без них) и возвращает идентификатор
-// сообщения Telegram. Ошибки классифицируются для повторов (ADR-0013): окончательный отказ Telegram →
-// `model.ErrSendRejected`, 429 → `model.RetryAfterError`, остальное (сеть, 5xx, таймаут) — временная ошибка.
-func (c *Client) SendFormatted(ctx context.Context, chat model.TelegramChatID, text model.FormattedText, kb model.Keyboard) (int64, error) {
+// Send отправляет текст с разметкой (ADR-0029) и кнопками (nil — без них) и возвращает идентификатор сообщения
+// Telegram; используется воркером outbox (ADR-0030). Ошибки классифицируются для повторов (ADR-0013): окончательный
+// отказ Telegram → `model.ErrSendRejected`, 429 → `model.RetryAfterError`, остальное (сеть, 5xx, таймаут) —
+// временная ошибка.
+func (c *Client) Send(ctx context.Context, chat model.TelegramChatID, text model.FormattedText, kb model.Keyboard) (int64, error) {
 	params := &bot.SendMessageParams{ChatID: int64(chat), Text: text.Text, Entities: entities(text)}
 	if len(kb) > 0 {
 		params.ReplyMarkup = markup(kb)

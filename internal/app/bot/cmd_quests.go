@@ -3,8 +3,6 @@ package bot
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 
 	"taletogether/internal/app/game"
 	"taletogether/internal/model"
@@ -50,8 +48,8 @@ func (s *Service) quests(ctx context.Context, req *request) error {
 			cells[l.ID] = l
 		}
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Фракция «%s»\n", faction.Title)
+	var b model.TextBuilder // ключ «Цель» жирным (B40)
+	b.Printf("Фракция «%s»\n", faction.Title)
 	goalText := ""
 	for _, goal := range goals {
 		if goal.FactionID == faction.ID {
@@ -64,7 +62,8 @@ func (s *Service) quests(ctx context.Context, req *request) error {
 	if goalText == "" {
 		goalText = "ещё не определена: появится при старте игры"
 	}
-	b.WriteString("Цель: " + goalText + "\n")
+	b.Key("Цель")
+	b.WriteString(goalText + "\n")
 	shown := 0
 	for _, q := range quests {
 		if q.FactionID != faction.ID {
@@ -79,14 +78,14 @@ func (s *Service) quests(ctx context.Context, req *request) error {
 		if q.Status == model.QuestDone {
 			status = ", завершён"
 		}
-		fmt.Fprintf(&b, "\n«%s» (%s%s)", q.Title, kind, status)
+		b.Printf("\n«%s» (%s%s)", q.Title, kind, status)
 		if q.Summary != "" {
 			b.WriteString("\n" + q.Summary)
 		}
 		for _, st := range q.Stages {
 			switch st.Status {
 			case model.StageDone:
-				fmt.Fprintf(&b, "\n✓ %s", st.Title)
+				b.Printf("\n✓ %s", st.Title)
 			case model.StageBound:
 				where := ""
 				hint := ""
@@ -96,12 +95,12 @@ func (s *Service) quests(ctx context.Context, req *request) error {
 						hint = narrator.ConditionWordsFor(st.Condition, l.Objects)
 					}
 				}
-				fmt.Fprintf(&b, "\n▶ %s%s", st.Title, where)
+				b.Printf("\n▶ %s%s", st.Title, where)
 				if hint != "" {
 					b.WriteString(": " + hint)
 				}
 			default:
-				fmt.Fprintf(&b, "\n○ %s", st.Title)
+				b.Printf("\n○ %s", st.Title)
 			}
 		}
 	}
@@ -109,5 +108,5 @@ func (s *Service) quests(ctx context.Context, req *request) error {
 		b.WriteString("\nКвестов пока нет: первый сюжетный появится при старте игры.")
 	}
 	b.WriteString("\n\nКвесты живут в мире: рассказчик намекает на ближайший этап, а закрывает его игра по вашим действиям. ✓ — сделано, ▶ — этап проявился в клетке, ○ — впереди.")
-	return s.reply(ctx, req.in, b.String())
+	return s.replyFormatted(ctx, req.in, b.Build())
 }

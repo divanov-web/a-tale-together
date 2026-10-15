@@ -9,8 +9,8 @@ import (
 // ErrNoLocation — персонаж ещё не стоит в клетке мира: разведка возможна после старта игры.
 var ErrNoLocation = errors.New("персонаж ещё не в мире: разведка доступна после старта игры")
 
-// ScoutText — ответ `/scout` (B36, ADR-0025): клетка персонажа и четыре направления, направления жирным (B39,
-// ADR-0029). Видимый сосед — имя (у карточки ещё её предложение), скрытый — «неизведанная территория» с видом издалека,
+// ScoutText — ответ `/scout` (B36, ADR-0025): клетка персонажа и четыре направления, направления и ключи строк жирным
+// (B39, B40, ADR-0029). Видимый сосед — имя (у карточки ещё её предложение), скрытый — «неизведанная территория» с видом издалека,
 // направление без клетки — «неизведанная территория». Вид преграды непроходимых границ добавит пункт 36.
 func ScoutText(c model.Character, locations []model.Location) (model.FormattedText, error) {
 	if c.LocationID == nil {
@@ -28,7 +28,8 @@ func ScoutText(c model.Character, locations []model.Location) (model.FormattedTe
 		return model.FormattedText{}, ErrNoLocation
 	}
 	var b model.TextBuilder
-	b.Printf("Разведка: %s (%d, %d)\n", here.Name, here.X, here.Y)
+	b.Key("Разведка")
+	b.Printf("%s (%d, %d)\n", here.Name, here.X, here.Y)
 	for _, d := range model.Directions {
 		dx, dy := d.Offset()
 		n, ok := byXY[[2]int{here.X + dx, here.Y + dy}]
@@ -43,6 +44,8 @@ func ScoutText(c model.Character, locations []model.Location) (model.FormattedTe
 		b.Bold(d.Toward())
 		b.WriteString(": " + line)
 	}
-	b.WriteString("\n\nПереход: напишите, куда идёт персонаж, — направление или название места.")
+	b.WriteString("\n\n")
+	b.Key("Переход")
+	b.WriteString("напишите, куда идёт персонаж, — направление или название места.")
 	return b.Build(), nil
 }

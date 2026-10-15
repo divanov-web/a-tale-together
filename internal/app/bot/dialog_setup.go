@@ -36,9 +36,9 @@ func (s *Service) startGameSetup(ctx context.Context, user model.User, g model.G
 		return err
 	}
 	if resume {
-		return s.replyPrivateKeyboard(ctx, user, fmt.Sprintf("Продолжаем настройку мира «%s».\n\n%s", g.Title, q.text), q.kb)
+		return s.replyPrivateFormatted(ctx, user, prefixed(fmt.Sprintf("Продолжаем настройку мира «%s».\n\n", g.Title), q.text), q.kb)
 	}
-	return s.replyPrivateKeyboard(ctx, user, fmt.Sprintf("Настройка мира «%s». На каждый вопрос ответьте значением, кнопкой или «%s», чтобы оставить как есть.\n\n%s", g.Title, setupSkip, q.text), q.kb)
+	return s.replyPrivateFormatted(ctx, user, prefixed(fmt.Sprintf("Настройка мира «%s». На каждый вопрос ответьте значением, кнопкой или «%s», чтобы оставить как есть.\n\n", g.Title, setupSkip), q.text), q.kb)
 }
 
 // setupStep применяет ответ к параметру и задаёт следующий вопрос; после последнего мир переходит из `setup`
@@ -73,7 +73,7 @@ func (s *Service) setupStep(ctx context.Context, req *request, d *model.Dialog, 
 		if err != nil {
 			return question{}, false, err
 		}
-		return question{text: "Настройка завершена. Игроки могут создавать персонажей.\n\n" + status}, true, nil
+		return question{text: prefixed("Настройка завершена. Игроки могут создавать персонажей.\n\n", status)}, true, nil
 	}
 	d.Step = next
 	q, err := s.setupQuestion(ctx, g, next)
@@ -112,8 +112,8 @@ func (s *Service) scenarioStep(g model.Game) bool {
 	return g.WorldSetups.Pending() || len(g.WorldSetups.List()) > 0
 }
 
-// setupQuestion — вопрос по параметру с текущим значением и кнопками типовых значений (ADR-0015); на каждом шаге
-// кнопка «Оставить как есть».
+// setupQuestion — вопрос по параметру с текущим значением («Сейчас» жирным, B40) и кнопками типовых значений
+// (ADR-0015); на каждом шаге кнопка «Оставить как есть».
 func (s *Service) setupQuestion(ctx context.Context, g model.Game, key string) (question, error) {
 	var p game.Param
 	for _, it := range game.Params {
@@ -133,21 +133,28 @@ func (s *Service) setupQuestion(ctx context.Context, g model.Game, key string) (
 		return question{}, err
 	}
 	answers = append(answers, [2]string{"Оставить как есть", setupSkip})
-	return question{text: fmt.Sprintf("%s (%s).\nСейчас: %s", p.Title, p.Hint, current), kb: answerButtons(key, perRow, answers...)}, nil
+	var b model.TextBuilder
+	b.Printf("%s (%s).\n", p.Title, p.Hint)
+	b.Key("Сейчас")
+	b.WriteString(current)
+	return question{text: b.Build(), kb: answerButtons(key, perRow, answers...)}, nil
 }
 
 // scenarioQuestion — шаг «Стартовый мир» (ADR-0028): варианты с кнопками, когда они уже получены; иначе ожидание
 // без кнопок — варианты придут отдельным сообщением с кнопками, и выбрать один из них обязательно.
 func (s *Service) scenarioQuestion(g model.Game) question {
 	if len(g.WorldSetups.List()) > 0 {
-		text := round.SetupOptionsText(g)
+		var b model.TextBuilder
+		b.WriteString(round.SetupOptionsText(g))
 		if cur := g.Setup(); cur != nil {
-			text += "\nСейчас: " + cur.Title
+			b.WriteString("\n")
+			b.Key("Сейчас")
+			b.WriteString(cur.Title)
 		}
-		return question{text: text, kb: round.SetupOptionsKeyboard(g)}
+		return question{text: b.Build(), kb: round.SetupOptionsKeyboard(g)}
 	}
-	return question{text: "Стартовый мир. Придумываю четыре варианта, это займёт минуту-две: они придут сюда отдельным сообщением с кнопками. " +
-		"Дождитесь его и выберите один из вариантов — без этого настройка не продолжится."}
+	return ask("Стартовый мир. Придумываю четыре варианта, это займёт минуту-две: они придут сюда отдельным сообщением с кнопками. "+
+		"Дождитесь его и выберите один из вариантов — без этого настройка не продолжится.", nil)
 }
 
 // setupTimezones — часовые пояса на кнопках диалога настройки; остальные вводятся текстом.

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -244,8 +245,11 @@ func TestGameFlow(t *testing.T) {
 	if err := s.UpdateCharacterBio(ctx, game.ID, created.ID, "тихая", "боится воды"); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.UpdateCharacterAppearance(ctx, game.ID, created.ID, "рыжая, в кольчуге"); err != nil {
+		t.Fatal(err)
+	}
 	list, err := s.ListCharacters(ctx, game.ID, season.ID)
-	if err != nil || len(list) != 1 || list[0].SecretBio != "боится воды" {
+	if err != nil || len(list) != 1 || list[0].SecretBio != "боится воды" || list[0].Appearance != "рыжая, в кольчуге" {
 		t.Fatalf("ListCharacters = %+v, %v", list, err)
 	}
 
@@ -440,8 +444,9 @@ func TestGameFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LockGame: %v", err)
 	}
-	// Outbox: дедуп по раунду и виду, claim с попыткой, финал.
-	msg := model.OutboxMessage{GameID: game.ID, RoundID: &r2.ID, TelegramChatID: -100, Kind: model.OutboxRoundClosed, Text: "закрыт", SendAfter: now}
+	// Outbox: дедуп по раунду и виду, разметка (ADR-0030), claim с попыткой, финал.
+	bold := []model.TextEntity{{Kind: model.EntityBold, Offset: 0, Length: 6}}
+	msg := model.OutboxMessage{GameID: game.ID, RoundID: &r2.ID, TelegramChatID: -100, Kind: model.OutboxRoundClosed, Text: "закрыт", Entities: bold, SendAfter: now}
 	for i := 0; i < 2; i++ {
 		if err := s.EnqueueOutbox(ctx, msg); err != nil {
 			t.Fatal(err)
@@ -451,7 +456,7 @@ func TestGameFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	queued, err := s.ListOutbox(ctx, game.ID)
-	if err != nil || len(queued) != 2 || queued[0].Part != 1 || queued[0].Status != model.OutboxPending {
+	if err != nil || len(queued) != 2 || queued[0].Part != 1 || queued[0].Status != model.OutboxPending || !reflect.DeepEqual(queued[0].Entities, bold) || queued[1].Entities != nil {
 		t.Fatalf("ListOutbox = %+v, %v", queued, err)
 	}
 	claimed, err := s.ClaimOutbox(ctx, now, 5*time.Minute, 10)

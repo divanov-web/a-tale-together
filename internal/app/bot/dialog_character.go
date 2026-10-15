@@ -22,6 +22,7 @@ const (
 	stepDistribution = "distribution"
 	stepAttributes   = "attributes"
 	stepSkills       = "skills"
+	stepAppearance   = "appearance"
 	stepPublicBio    = "public_bio"
 	stepSecretBio    = "secret_bio"
 )
@@ -34,6 +35,7 @@ type characterData struct {
 	Archetype  string            `json:"archetype"`
 	Attributes map[string]int    `json:"attributes,omitempty"`
 	Skills     map[string]int    `json:"skills,omitempty"`
+	Appearance string            `json:"appearance,omitempty"`
 	PublicBio  string            `json:"public_bio"`
 	SecretBio  string            `json:"secret_bio"`
 }
@@ -67,7 +69,7 @@ func (s *Service) startCharacterCreate(ctx context.Context, user model.User, g m
 	if err != nil {
 		return err
 	}
-	return s.replyPrivateKeyboard(ctx, user, "Создание персонажа в игре «"+g.Title+"».\n\n"+q.text, q.kb)
+	return s.replyPrivateFormatted(ctx, user, prefixed("Создание персонажа в игре «"+g.Title+"».\n\n", q.text), q.kb)
 }
 
 // characterStep применяет ответ к шагу и возвращает следующий вопрос или карточку созданного персонажа.
@@ -125,7 +127,7 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 			if data.Attributes, data.Skills, err = rules.AutoDistribute(def, a.Key); err != nil {
 				return question{}, false, err
 			}
-			next = stepPublicBio
+			next = stepAppearance
 		case g.Mode == model.ModeMechanics:
 			next = stepAttributes
 		default:
@@ -137,7 +139,7 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 			if data.Attributes, data.Skills, err = rules.AutoDistribute(def, data.Archetype); err != nil {
 				return question{}, false, err
 			}
-			next = stepPublicBio
+			next = stepAppearance
 		case "2", "вручную", "сам", "сама":
 			next = stepAttributes
 		default:
@@ -162,6 +164,15 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 			return question{}, false, err
 		}
 		data.Skills = skills
+		next = stepAppearance
+	case stepAppearance:
+		// Внешность (B41): необязательное поле, рассказчику не передаётся.
+		if answer != setupSkip {
+			if err := game.ValidateAppearance(answer); err != nil {
+				return question{}, false, err
+			}
+			data.Appearance = answer
+		}
 		next = stepPublicBio
 	case stepPublicBio:
 		if answer != setupSkip {
@@ -180,7 +191,7 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 		}
 		c, err := s.games.CreateCharacter(ctx, g, req.user, model.CharacterDraft{
 			FactionCode: data.Faction, Nickname: data.Nickname, Gender: data.Gender, Archetype: data.Archetype,
-			Attributes: data.Attributes, Skills: data.Skills, PublicBio: data.PublicBio, SecretBio: data.SecretBio,
+			Attributes: data.Attributes, Skills: data.Skills, Appearance: data.Appearance, PublicBio: data.PublicBio, SecretBio: data.SecretBio,
 		})
 		if err != nil {
 			return question{}, false, err
@@ -197,7 +208,12 @@ func (s *Service) characterStep(ctx context.Context, req *request, d *model.Dial
 		if link := s.gameChatLink(ctx, g); link != "" {
 			kb = append(kb, []model.Button{{Text: "Перейти в чат игры", URL: link}})
 		}
-		return question{text: "Персонаж создан!\n\n" + strings.TrimRight(card, "\n") + "\n\n" + next, kb: kb, before: playerKeyboardHint}, true, nil
+		var b model.TextBuilder
+		b.WriteString("Персонаж создан!\n\n")
+		b.Append(card)
+		b.WriteString("\n\n")
+		b.Append(next)
+		return question{text: b.Build(), kb: kb, before: playerKeyboardHint}, true, nil
 	default:
 		return question{}, false, fmt.Errorf("bot.characterStep: unknown step %q", d.Step)
 	}
@@ -228,7 +244,8 @@ func (s *Service) gameChatLink(ctx context.Context, g model.Game) string {
 }
 
 // characterQuestion — вопрос шага с подсказкой по модели персонажа и кнопками ответов (ADR-0015): фракция, пол,
-// архетип, распределение и пропуск описаний; никнейм, характеристики и навыки вводятся текстом, кнопок у них нет (B33).
+// архетип, распределение и пропуск внешности (B41) и описаний; никнейм, характеристики и навыки вводятся текстом,
+// кнопок у них нет (B33).
 func (s *Service) characterQuestion(ctx context.Context, g model.Game, step string) (question, error) {
 	cm, err := s.games.CharacterModel(ctx, g)
 	if err != nil {
@@ -248,39 +265,42 @@ func (s *Service) characterQuestion(ctx context.Context, g model.Game, step stri
 			fmt.Fprintf(&b, "%d. %s — %s\n", i+1, f.Title, f.Description)
 			answers = append(answers, [2]string{f.Title, strconv.Itoa(i + 1)})
 		}
-		return question{text: b.String(), kb: answerButtons(step, 1, answers...)}, nil
+		return ask(b.String(), answerButtons(step, 1, answers...)), nil
 	case stepNickname:
-		return question{text: fmt.Sprintf("Никнейм персонажа (от %d до %d символов, уникален в игре):", game.NicknameMin, game.NicknameMax)}, nil
+		return ask(fmt.Sprintf("Никнейм персонажа (от %d до %d символов, уникален в игре):", game.NicknameMin, game.NicknameMax), nil), nil
 	case stepGender:
-		return question{text: "Пол персонажа: 1 — мужской, 2 — женский, 3 — не указывать.",
-			kb: answerButtons(step, 3, [2]string{"Мужской", "1"}, [2]string{"Женский", "2"}, [2]string{"Не указывать", "3"})}, nil
+		return ask("Пол персонажа: 1 — мужской, 2 — женский, 3 — не указывать.",
+			answerButtons(step, 3, [2]string{"Мужской", "1"}, [2]string{"Женский", "2"}, [2]string{"Не указывать", "3"})), nil
 	case stepArchetype:
 		var answers [][2]string
 		for i, a := range def.Archetypes {
 			answers = append(answers, [2]string{a.Title, strconv.Itoa(i + 1)})
 		}
-		return question{text: "Архетип (кнопкой, номером или названием):\n" + archetypesHelp(def), kb: answerButtons(step, 3, answers...)}, nil
+		return ask("Архетип (кнопкой, номером или названием):\n"+archetypesHelp(def), answerButtons(step, 3, answers...)), nil
 	case stepDistribution:
-		return question{text: "Распределение очков: 1 — автоматически по архетипу, 2 — вручную.",
-			kb: answerButtons(step, 2, [2]string{"Автоматически", "1"}, [2]string{"Вручную", "2"})}, nil
+		return ask("Распределение очков: 1 — автоматически по архетипу, 2 — вручную.",
+			answerButtons(step, 2, [2]string{"Автоматически", "1"}, [2]string{"Вручную", "2"})), nil
 	case stepAttributes:
 		var names []string
 		for _, a := range def.Attributes {
 			names = append(names, fmt.Sprintf("%s (%d–%d)", a.Title, a.Min, a.Max))
 		}
-		return question{text: fmt.Sprintf("Характеристики, сумма %d. Введите числа по порядку: %s.\nНапример: %s", def.AttributePoints, strings.Join(names, ", "), exampleAttributes(def))}, nil
+		return ask(fmt.Sprintf("Характеристики, сумма %d. Введите числа по порядку: %s.\nНапример: %s", def.AttributePoints, strings.Join(names, ", "), exampleAttributes(def)), nil), nil
 	case stepSkills:
 		var names []string
 		for _, sk := range def.Skills {
 			names = append(names, sk.Title)
 		}
-		return question{text: fmt.Sprintf("Навыки: %d очков, не более %d в один. Доступны: %s.\nВведите пары «навык значение», например: %s", def.SkillPoints, def.SkillMax, strings.Join(names, ", "), exampleSkills(def))}, nil
+		return ask(fmt.Sprintf("Навыки: %d очков, не более %d в один. Доступны: %s.\nВведите пары «навык значение», например: %s", def.SkillPoints, def.SkillMax, strings.Join(names, ", "), exampleSkills(def)), nil), nil
+	case stepAppearance:
+		return ask(fmt.Sprintf("Внешность персонажа (до %d символов, видно всем; рост, лицо, одежда, приметы) или «%s»:", game.AppearanceMax, setupSkip),
+			answerButtons(step, 1, [2]string{"Пропустить", setupSkip})), nil
 	case stepPublicBio:
-		return question{text: fmt.Sprintf("Открытое описание персонажа (до %d символов, видно всем) или «%s»:", game.BioMax, setupSkip),
-			kb: answerButtons(step, 1, [2]string{"Пропустить", setupSkip})}, nil
+		return ask(fmt.Sprintf("Открытое описание персонажа (до %d символов, видно всем) или «%s»:", game.BioMax, setupSkip),
+			answerButtons(step, 1, [2]string{"Пропустить", setupSkip})), nil
 	case stepSecretBio:
-		return question{text: fmt.Sprintf("Скрытое описание (до %d символов, видит только рассказчик) или «%s»:", game.BioMax, setupSkip),
-			kb: answerButtons(step, 1, [2]string{"Пропустить", setupSkip})}, nil
+		return ask(fmt.Sprintf("Скрытое описание (до %d символов, видит только рассказчик) или «%s»:", game.BioMax, setupSkip),
+			answerButtons(step, 1, [2]string{"Пропустить", setupSkip})), nil
 	}
 	return question{}, fmt.Errorf("bot.characterQuestion: unknown step %q", step)
 }

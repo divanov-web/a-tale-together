@@ -143,6 +143,7 @@ type Character struct {
 	Nickname        string
 	Gender          Gender
 	Archetype       string
+	Appearance      string // описание внешности (B41): видно всем, рассказчику пока не передаётся
 	PublicBio       string
 	SecretBio       string
 	Status          CharacterStatus
@@ -171,6 +172,7 @@ type CharacterDraft struct {
 	Archetype   string
 	Attributes  map[string]int
 	Skills      map[string]int
+	Appearance  string
 	PublicBio   string
 	SecretBio   string
 }

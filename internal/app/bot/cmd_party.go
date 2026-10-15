@@ -40,16 +40,17 @@ func (s *Service) party(ctx context.Context, req *request) error {
 			mine = &parties[i]
 		}
 	}
-	var b strings.Builder
+	var b model.TextBuilder // ключи и заголовки списков жирным (B40)
 	switch {
 	case mine != nil:
 		b.WriteString("Ваша группа\n")
 		if mine.Party.LocationID != nil {
-			fmt.Fprintf(&b, "Локация: %s\n", names[*mine.Party.LocationID])
+			b.Key("Локация")
+			b.WriteString(names[*mine.Party.LocationID] + "\n")
 		}
-		b.WriteString("Участники:")
+		b.Header("Участники")
 		for _, m := range mine.Members {
-			fmt.Fprintf(&b, "\n• %s — %s", m.Nickname, m.Status)
+			b.Printf("\n• %s — %s", m.Nickname, m.Status)
 		}
 	case g.Status == model.GameDraft:
 		b.WriteString("Группы соберутся при старте игры: все персонажи войдут в одну группу.")
@@ -72,10 +73,12 @@ func (s *Service) party(ctx context.Context, req *request) error {
 		others = append(others, fmt.Sprintf("• %s%s", strings.Join(members, ", "), where))
 	}
 	if len(others) > 0 {
-		b.WriteString("\n\nДругие группы:\n" + strings.Join(others, "\n"))
+		b.WriteString("\n\n")
+		b.Header("Другие группы")
+		b.WriteString("\n" + strings.Join(others, "\n"))
 	}
 	b.WriteString("\n\nГруппы ведёт рассказчик: кто расходится по разным локациям, становится отдельной группой, пока групп меньше лимита; иначе группа держится вместе.")
-	return s.reply(ctx, req.in, b.String())
+	return s.replyFormatted(ctx, req.in, b.Build())
 }
 
 // cellLabel — клетка для карточек и `/status`: имя и координаты на сетке (пункт 27), например «Лес (0, 1)».

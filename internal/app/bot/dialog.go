@@ -32,7 +32,7 @@ func (s *Service) handleDialogAnswer(ctx context.Context, req *request) error {
 		if err != nil {
 			return err
 		}
-		return s.replyKeyboard(ctx, req.in, "Кнопка устарела: этот вопрос уже отвечен. Текущий вопрос:\n\n"+q.text, q.kb)
+		return s.replyFormattedKeyboard(ctx, req.in, prefixed("Кнопка устарела: этот вопрос уже отвечен. Текущий вопрос:\n\n", q.text), q.kb)
 	}
 	var reply question
 	var done bool
@@ -62,7 +62,7 @@ func (s *Service) handleDialogAnswer(ctx context.Context, req *request) error {
 			return err
 		}
 	}
-	return s.replyKeyboard(ctx, req.in, reply.text, reply.kb)
+	return s.replyFormattedKeyboard(ctx, req.in, reply.text, reply.kb)
 }
 
 // question — вопрос диалога: текст и кнопки с ответами шага (ADR-0015); свободные поля без кнопок. Кнопки «Прервать»
@@ -70,10 +70,13 @@ func (s *Service) handleDialogAnswer(ctx context.Context, req *request) error {
 // before — сообщение перед итогом, без inline-кнопок: оно ставит reply-клавиатуру лички (ADR-0021), а итог
 // с кнопками остаётся последним.
 type question struct {
-	text   string
+	text   model.FormattedText // текст с разметкой (ADR-0029): ключи карточек жирным (B40)
 	kb     model.Keyboard
 	before string
 }
+
+// ask — вопрос обычным текстом с кнопками (nil — без кнопок).
+func ask(text string, kb model.Keyboard) question { return question{text: model.Plain(text), kb: kb} }
 
 // dialogQuestion — текущий вопрос диалога любого вида.
 func (s *Service) dialogQuestion(ctx context.Context, d *model.Dialog) (question, error) {

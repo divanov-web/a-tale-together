@@ -388,12 +388,13 @@ func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r 
 	}
 	opts := narrator.Options(state, def, g.Mode)
 	chronicle := tagMentions(chronicleMessage(g, r, visibility.Public(result.Events), state, opts), mentions)
-	for i, part := range splitParts(chronicle, header(g, r.RoundNo)+" (продолжение)\n", partLimit) {
-		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: chat.TelegramChatID, Kind: model.OutboxChronicle, Part: i + 1, Text: part, SendAfter: s.clock.Now()}); err != nil {
+	chronicleParts := splitParts(model.Plain(chronicle), header(g, r.RoundNo)+" (продолжение)\n", partLimit)
+	for i, part := range chronicleParts {
+		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: chat.TelegramChatID, Kind: model.OutboxChronicle, Part: i + 1, Text: part.Text, Entities: part.Entities, SendAfter: s.clock.Now()}); err != nil {
 			return err
 		}
 	}
-	parts := len(splitParts(chronicle, header(g, r.RoundNo)+" (продолжение)\n", partLimit))
+	parts := len(chronicleParts)
 	notices := 0
 	for _, res := range result.Results {
 		c, ok := state.Character(res.CharacterID)
@@ -412,7 +413,7 @@ func (s *Service) publish(ctx context.Context, g model.Game, chat model.Chat, r 
 		}
 		own := visibility.Filter(result.Events, visibility.Viewer{CharacterID: c.ID, LocationID: c.LocationID})
 		text := noticeText(g, r, res, own, preset, optionsFor(*c, state, opts, fmt.Sprintf("Варианты на раунд %d", r.RoundNo+1)))
-		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: user.PrivateChat(), Kind: model.OutboxPrivate, Part: 1, Text: text, Keyboard: optionsKeyboard(*c, opts, r.RoundNo+1), SendAfter: s.clock.Now()}); err != nil {
+		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: user.PrivateChat(), Kind: model.OutboxPrivate, Part: 1, Text: text.Text, Entities: text.Entities, Keyboard: optionsKeyboard(*c, opts, r.RoundNo+1), SendAfter: s.clock.Now()}); err != nil {
 			return err
 		}
 		notices++

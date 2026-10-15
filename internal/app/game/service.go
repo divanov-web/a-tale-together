@@ -39,6 +39,7 @@ type Store interface {
 	GetCharacter(ctx context.Context, game model.GameID, season model.SeasonID, user model.UserID) (model.Character, error)
 	ListCharacters(ctx context.Context, game model.GameID, season model.SeasonID) ([]model.Character, error)
 	UpdateCharacterBio(ctx context.Context, game model.GameID, id model.CharacterID, public, secret string) error
+	UpdateCharacterAppearance(ctx context.Context, game model.GameID, id model.CharacterID, appearance string) error
 	ListParties(ctx context.Context, game model.GameID, season model.SeasonID) ([]model.Party, error)
 	CreateParty(ctx context.Context, p model.Party) (model.Party, error)
 	UpdateParty(ctx context.Context, p model.Party) error

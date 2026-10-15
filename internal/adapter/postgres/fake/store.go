@@ -756,6 +756,19 @@ func (s *Store) UpdateCharacterBio(_ context.Context, game model.GameID, id mode
 	return nil
 }
 
+// UpdateCharacterAppearance — см. postgres.Store.
+func (s *Store) UpdateCharacterAppearance(_ context.Context, game model.GameID, id model.CharacterID, appearance string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.chars[id]
+	if !ok || c.GameID != game {
+		return model.ErrNotFound
+	}
+	c.Appearance = appearance
+	s.chars[id] = c
+	return nil
+}
+
 // NicknameTaken — см. postgres.Store.
 func (s *Store) NicknameTaken(_ context.Context, game model.GameID, season model.SeasonID, nickname string) (bool, error) {
 	s.mu.Lock()

@@ -10,11 +10,11 @@ import (
 	"taletogether/internal/model"
 )
 
-const characterColumns = `id, game_id, season_id, user_id, model_id, nickname, gender, archetype, public_bio, secret_bio, status, missed_rounds, away, death_rounds_left, died_at, faction_id, party_id, hp, conditions, inventory, location_id, knowledge, xp, created_at`
+const characterColumns = `id, game_id, season_id, user_id, model_id, nickname, gender, archetype, appearance, public_bio, secret_bio, status, missed_rounds, away, death_rounds_left, died_at, faction_id, party_id, hp, conditions, inventory, location_id, knowledge, xp, created_at`
 
 func scanCharacter(row pgx.Row) (model.Character, error) {
 	var c model.Character
-	err := row.Scan(&c.ID, &c.GameID, &c.SeasonID, &c.UserID, &c.ModelID, &c.Nickname, &c.Gender, &c.Archetype, &c.PublicBio, &c.SecretBio,
+	err := row.Scan(&c.ID, &c.GameID, &c.SeasonID, &c.UserID, &c.ModelID, &c.Nickname, &c.Gender, &c.Archetype, &c.Appearance, &c.PublicBio, &c.SecretBio,
 		&c.Status, &c.MissedRounds, &c.Away, &c.DeathRoundsLeft, &c.DiedAt, &c.FactionID, &c.PartyID, &c.HP, &c.Conditions, &c.Inventory, &c.LocationID, &c.Knowledge, &c.XP, &c.CreatedAt)
 	if c.Knowledge == nil {
 		c.Knowledge = []string{}
@@ -28,8 +28,8 @@ func scanCharacter(row pgx.Row) (model.Character, error) {
 // CreateCharacter создаёт персонажа и его характеристики; вызывать внутри InTx.
 func (s *Store) CreateCharacter(ctx context.Context, c model.Character) (model.Character, error) {
 	const q = `
-INSERT INTO characters (game_id, season_id, user_id, model_id, nickname, gender, archetype, public_bio, secret_bio, status, faction_id, hp, conditions, inventory, xp, location_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+INSERT INTO characters (game_id, season_id, user_id, model_id, nickname, gender, archetype, appearance, public_bio, secret_bio, status, faction_id, hp, conditions, inventory, xp, location_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING ` + characterColumns
 	conditions := c.Conditions
 	if conditions == nil {
@@ -39,7 +39,7 @@ RETURNING ` + characterColumns
 	if inventory == nil {
 		inventory = []model.Item{}
 	}
-	out, err := scanCharacter(s.db(ctx).QueryRow(ctx, q, c.GameID, c.SeasonID, c.UserID, c.ModelID, c.Nickname, c.Gender, c.Archetype, c.PublicBio, c.SecretBio,
+	out, err := scanCharacter(s.db(ctx).QueryRow(ctx, q, c.GameID, c.SeasonID, c.UserID, c.ModelID, c.Nickname, c.Gender, c.Archetype, c.Appearance, c.PublicBio, c.SecretBio,
 		c.Status, c.FactionID, c.HP, conditions, inventory, c.XP, c.LocationID))
 	if err != nil {
 		return model.Character{}, fmt.Errorf("postgres.CreateCharacter: %w", err)
@@ -130,6 +130,14 @@ WHERE game_id = $1 AND id = $2`
 func (s *Store) UpdateCharacterBio(ctx context.Context, game model.GameID, id model.CharacterID, public, secret string) error {
 	if _, err := s.db(ctx).Exec(ctx, `UPDATE characters SET public_bio = $3, secret_bio = $4, updated_at = now() WHERE game_id = $1 AND id = $2`, game, id, public, secret); err != nil {
 		return fmt.Errorf("postgres.UpdateCharacterBio: %w", err)
+	}
+	return nil
+}
+
+// UpdateCharacterAppearance сохраняет описание внешности (B41).
+func (s *Store) UpdateCharacterAppearance(ctx context.Context, game model.GameID, id model.CharacterID, appearance string) error {
+	if _, err := s.db(ctx).Exec(ctx, `UPDATE characters SET appearance = $3, updated_at = now() WHERE game_id = $1 AND id = $2`, game, id, appearance); err != nil {
+		return fmt.Errorf("postgres.UpdateCharacterAppearance: %w", err)
 	}
 	return nil
 }

@@ -29,12 +29,12 @@ func TestScoutText(t *testing.T) {
 	if got.Text != want {
 		t.Fatalf("scout =\n%q\nwant\n%q", got.Text, want)
 	}
-	// Жирным ровно четыре направления: смещения в рунах.
-	wantBold := []model.TextEntity{{Kind: model.EntityBold, Offset: 28, Length: 8}, {Kind: model.EntityBold, Offset: 66, Length: 5}, {Kind: model.EntityBold, Offset: 99, Length: 8}, {Kind: model.EntityBold, Offset: 135, Length: 9}}
+	// Жирным ключи «Разведка» и «Переход» (B40) и ровно четыре направления (B39): смещения в рунах.
+	wantBold := []model.TextEntity{{Kind: model.EntityBold, Offset: 0, Length: 8}, {Kind: model.EntityBold, Offset: 28, Length: 8}, {Kind: model.EntityBold, Offset: 66, Length: 5}, {Kind: model.EntityBold, Offset: 99, Length: 8}, {Kind: model.EntityBold, Offset: 135, Length: 9}, {Kind: model.EntityBold, Offset: 189, Length: 7}}
 	if !reflect.DeepEqual(got.Entities, wantBold) {
 		t.Fatalf("entities = %+v, want %+v", got.Entities, wantBold)
 	}
-	for _, e := range got.Entities {
+	for _, e := range got.Entities[1:5] {
 		if word := string([]rune(got.Text)[e.Offset : e.Offset+e.Length]); !strings.HasPrefix(word, "на ") {
 			t.Fatalf("bold %q", word)
 		}

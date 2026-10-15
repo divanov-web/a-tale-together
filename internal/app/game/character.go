@@ -13,9 +13,10 @@ import (
 
 // Лимиты полей персонажа (docs/game/character.md).
 const (
-	NicknameMin = 2
-	NicknameMax = 30
-	BioMax      = 100
+	NicknameMin   = 2
+	NicknameMax   = 30
+	BioMax        = 100
+	AppearanceMax = 300 // описание внешности (B41)
 )
 
 // CharacterModel возвращает модель персонажа жанра игры.
@@ -78,6 +79,14 @@ func ValidateBio(text string) error {
 	return nil
 }
 
+// ValidateAppearance проверяет длину описания внешности (B41).
+func ValidateAppearance(text string) error {
+	if len([]rune(strings.TrimSpace(text))) > AppearanceMax {
+		return fmt.Errorf("%w: описание внешности до %d символов", ErrBadValue, AppearanceMax)
+	}
+	return nil
+}
+
 // CreateCharacter создаёт персонажа активного участника по черновику: валидация по модели,
 // HP по формуле, стартовый инвентарь архетипа из каталога жанра; персонаж и характеристики в одной транзакции.
 func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user model.User, d model.CharacterDraft) (model.Character, error) {
@@ -110,6 +119,9 @@ func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user mod
 		return model.Character{}, err
 	}
 	if err := ValidateBio(d.SecretBio); err != nil {
+		return model.Character{}, err
+	}
+	if err := ValidateAppearance(d.Appearance); err != nil {
 		return model.Character{}, err
 	}
 	if !d.Gender.Valid() {
@@ -168,7 +180,7 @@ func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user mod
 	}
 	c := model.Character{
 		GameID: game.ID, SeasonID: season.ID, UserID: user.ID, ModelID: cm.ID,
-		Nickname: strings.TrimSpace(d.Nickname), Gender: d.Gender, Archetype: d.Archetype,
+		Nickname: strings.TrimSpace(d.Nickname), Gender: d.Gender, Archetype: d.Archetype, Appearance: strings.TrimSpace(d.Appearance),
 		PublicBio: strings.TrimSpace(d.PublicBio), SecretBio: strings.TrimSpace(d.SecretBio),
 		Status: model.CharacterActive, FactionID: faction.ID, HP: hp, Conditions: []string{}, Inventory: inventory, LocationID: start, Knowledge: []string{},
 		Attributes: d.Attributes, Skills: d.Skills,
@@ -201,8 +213,9 @@ func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user mod
 			return nil
 		}
 		// Объявление в группе (B25, ADR-0022) в одной транзакции с персонажем: повтор создания отклонит уникальность.
+		notice := JoinedNotice(created, archetype.Title, faction)
 		return s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: game.ID, TelegramChatID: chat.TelegramChatID, Kind: model.OutboxJoined,
-			Part: 1, Text: JoinedNotice(created, archetype.Title, faction), SendAfter: s.clock.Now()})
+			Part: 1, Text: notice.Text, Entities: notice.Entities, SendAfter: s.clock.Now()})
 	})
 	if err != nil {
 		return model.Character{}, fmt.Errorf("game.CreateCharacter: %w", err)
@@ -211,17 +224,25 @@ func (s *Service) CreateCharacter(ctx context.Context, game model.Game, user mod
 	return created, nil
 }
 
-// JoinedNotice — объявление в группе о новом персонаже (B25): никнейм с архетипом, фракция и открытое описание;
-// скрытое описание в группу не попадает (принцип 6).
-func JoinedNotice(c model.Character, archetype string, f model.Faction) string {
-	var b strings.Builder
+// JoinedNotice — объявление в группе о новом персонаже (B25): никнейм с архетипом, фракция, внешность (B41) и
+// открытое описание, ключи жирным (B40); скрытое описание в группу не попадает (принцип 6).
+func JoinedNotice(c model.Character, archetype string, f model.Faction) model.FormattedText {
+	var b model.TextBuilder
 	b.WriteString("Новый участник\n\n")
 	b.WriteString(c.Nickname + " — " + archetype + "\n")
-	b.WriteString("Фракция: «" + f.Title + "»\n")
-	if c.PublicBio != "" {
-		b.WriteString("Описание: " + c.PublicBio + "\n")
+	b.Key("Фракция")
+	b.WriteString("«" + f.Title + "»")
+	if c.Appearance != "" {
+		b.WriteString("\n")
+		b.Key("Внешность")
+		b.WriteString(c.Appearance)
 	}
-	return strings.TrimRight(b.String(), "\n")
+	if c.PublicBio != "" {
+		b.WriteString("\n")
+		b.Key("Описание")
+		b.WriteString(c.PublicBio)
+	}
+	return b.Build()
 }
 
 // adoptLeader назначает персонажа лидером его группы, если лидера ещё нет (группа создана для него при входе).
@@ -238,6 +259,22 @@ func (s *Service) adoptLeader(ctx context.Context, game model.Game, c model.Char
 		}
 	}
 	return nil
+}
+
+// SetAppearance меняет описание внешности персонажа (B41).
+func (s *Service) SetAppearance(ctx context.Context, game model.Game, user model.UserID, text string) (model.Character, error) {
+	if err := ValidateAppearance(text); err != nil {
+		return model.Character{}, err
+	}
+	c, err := s.Character(ctx, game, user)
+	if err != nil {
+		return model.Character{}, err
+	}
+	c.Appearance = strings.TrimSpace(text)
+	if err := s.store.UpdateCharacterAppearance(ctx, game.ID, c.ID, c.Appearance); err != nil {
+		return model.Character{}, fmt.Errorf("game.SetAppearance: %w", err)
+	}
+	return c, nil
 }
 
 // SetBio меняет открытое или скрытое описание персонажа.

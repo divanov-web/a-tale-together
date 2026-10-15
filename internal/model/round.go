@@ -325,7 +325,8 @@ type OutboxMessage struct {
 	Kind              OutboxKind
 	Part              int
 	Text              string
-	Keyboard          Keyboard // кнопки под сообщением (ADR-0015); nil — без кнопок
+	Entities          []TextEntity // разметка текста (ADR-0029, ADR-0030); nil — обычный текст
+	Keyboard          Keyboard     // кнопки под сообщением (ADR-0015); nil — без кнопок
 	Status            OutboxStatus
 	TelegramMessageID *int64
 	Attempts          int
@@ -334,4 +335,9 @@ type OutboxMessage struct {
 	LastError         string
 	CreatedAt         time.Time
 	SentAt            *time.Time
+}
+
+// Formatted — текст сообщения с разметкой для отправки.
+func (m OutboxMessage) Formatted() FormattedText {
+	return FormattedText{Text: m.Text, Entities: m.Entities}
 }

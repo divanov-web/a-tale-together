@@ -54,12 +54,20 @@ func openingScene(g model.Game, text string) string {
 	return fmt.Sprintf("«%s» — начало истории\n\n%s", g.Title, text)
 }
 
-func roundOpenText(g model.Game, r model.Round, carried int, now time.Time) string {
-	text := fmt.Sprintf("%s открыт\nЗаявки до %s: /act <текст> здесь или в личке с ботом. Соседние места: /scout", header(g, r.RoundNo), FormatTime(g, r.DeadlineAt, now))
+// roundOpenText — анонс открытия раунда в группу; ключи строк жирным (B40, ADR-0030).
+func roundOpenText(g model.Game, r model.Round, carried int, now time.Time) model.FormattedText {
+	var b model.TextBuilder
+	b.Printf("%s открыт\n", header(g, r.RoundNo))
+	b.Key("Заявки до " + FormatTime(g, r.DeadlineAt, now))
+	b.WriteString("/act <текст> здесь или в личке с ботом. ")
+	b.Key("Соседние места")
+	b.WriteString("/scout")
 	if carried > 0 {
-		text += fmt.Sprintf("\nПеренесено заявок из пропущенного раунда: %d.", carried)
+		b.WriteString("\n")
+		b.Key("Перенесено заявок из пропущенного раунда")
+		b.Printf("%d.", carried)
 	}
-	return text
+	return b.Build()
 }
 
 func roundSkippedText(g model.Game, r model.Round) string {
@@ -171,10 +179,12 @@ func rewardFact(ev model.Event) string {
 }
 
 // noticeText — уведомление о заявке игроку (с названием мира: у игрока может быть несколько игр): статус, исход,
-// проверка (числа по режиму), приватные события персонажа, варианты следующего раунда по его локации (B15).
-func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model.Event, preset rules.ModePreset, options string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "«%s» — раунд %d — ваш итог\n\nЗаявка «%s»: ", g.Title, r.RoundNo, truncateText(res.Intent.RawText, 80))
+// проверка (числа по режиму), приватные события персонажа, варианты следующего раунда по его локации (B15);
+// ключи строк жирным (B40, ADR-0030).
+func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model.Event, preset rules.ModePreset, options model.FormattedText) model.FormattedText {
+	var b model.TextBuilder
+	b.Printf("«%s» — раунд %d — ваш итог\n\n", g.Title, r.RoundNo)
+	b.Key(fmt.Sprintf("Заявка «%s»", truncateText(res.Intent.RawText, 80)))
 	switch res.Status {
 	case model.ResultResolved:
 		b.WriteString(res.Summary)
@@ -186,84 +196,103 @@ func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model
 		b.WriteString(string(res.Status) + " — " + res.Reason)
 	}
 	if res.Check != nil {
+		b.WriteString("\n")
 		if preset.ShowNumbers {
-			fmt.Fprintf(&b, "\nПроверка: параметр %d, сложность %d, шанс %d%%, бросок %d", res.Check.Param, res.Check.Difficulty, res.Check.ChancePct, res.Check.Roll)
+			b.Key("Проверка")
+			b.Printf("параметр %d, сложность %d, шанс %d%%, бросок %d", res.Check.Param, res.Check.Difficulty, res.Check.ChancePct, res.Check.Roll)
 			if res.Check.Pushed {
-				fmt.Fprintf(&b, ", повторный бросок %d", res.Check.PushRoll)
+				b.Printf(", повторный бросок %d", res.Check.PushRoll)
 			}
 		} else if g.Mode == model.ModeNarrative {
-			fmt.Fprintf(&b, "\nШанс был: %s", rules.ChanceWords(res.Check.ChancePct))
+			b.Key("Шанс был")
+			b.WriteString(rules.ChanceWords(res.Check.ChancePct))
 		} else {
-			fmt.Fprintf(&b, "\nШанс был %d%%", res.Check.ChancePct)
+			b.Printf("Шанс был %d%%", res.Check.ChancePct)
 			if res.Check.Pushed {
 				b.WriteString(", пришлось напрячься")
 			}
 		}
 	}
-	var facts []string
 	for _, ev := range own {
 		if ev.Visibility != model.VisibilityPrivate {
 			continue
 		}
 		switch ev.Type {
 		case model.EventFactLearned:
-			facts = append(facts, "• "+payloadStr(ev, "fact"))
+			b.WriteString("\n• " + payloadStr(ev, "fact"))
 		case model.EventConditionAdded:
-			facts = append(facts, "• состояние: "+narrator.ConditionWords(payloadStr(ev, "condition")))
+			b.WriteString("\n• ")
+			b.Key("состояние")
+			b.WriteString(narrator.ConditionWords(payloadStr(ev, "condition")))
 		case model.EventHPChanged:
-			facts = append(facts, fmt.Sprintf("• HP: %s", payloadStr(ev, "to")))
+			b.WriteString("\n• ")
+			b.Key("HP")
+			b.WriteString(payloadStr(ev, "to"))
 		case model.EventQuestIssued:
-			facts = append(facts, fmt.Sprintf("• новое дело фракции: «%s» — %s", payloadStr(ev, "quest"), payloadStr(ev, "summary")))
+			b.WriteString("\n• ")
+			b.Key("новое дело фракции")
+			b.Printf("«%s» — %s", payloadStr(ev, "quest"), payloadStr(ev, "summary"))
 		case model.EventQuestStagePlaced:
-			facts = append(facts, fmt.Sprintf("• «%s»: этап «%s» — здесь, в «%s»", payloadStr(ev, "quest"), payloadStr(ev, "stage"), payloadStr(ev, "cell")))
+			b.WriteString("\n• ")
+			b.Key("«" + payloadStr(ev, "quest") + "»")
+			b.Printf("этап «%s» — здесь, в «%s»", payloadStr(ev, "stage"), payloadStr(ev, "cell"))
 		case model.EventQuestStageDone:
-			line := fmt.Sprintf("• «%s»: этап «%s» выполнен", payloadStr(ev, "quest"), payloadStr(ev, "stage"))
+			b.WriteString("\n• ")
+			b.Key("«" + payloadStr(ev, "quest") + "»")
+			b.Printf("этап «%s» выполнен", payloadStr(ev, "stage"))
 			if reward := rewardFact(ev); reward != "" {
-				line += " — " + reward
+				b.WriteString(" — " + reward)
 			}
-			facts = append(facts, line)
 		case model.EventQuestDone:
-			facts = append(facts, fmt.Sprintf("• «%s» завершён", payloadStr(ev, "quest")))
+			b.Printf("\n• «%s» завершён", payloadStr(ev, "quest"))
 		case model.EventGoalRevised:
-			facts = append(facts, fmt.Sprintf("• цель фракции теперь: %s", payloadStr(ev, "text")))
+			b.WriteString("\n• ")
+			b.Key("цель фракции теперь")
+			b.WriteString(payloadStr(ev, "text"))
 		}
 	}
-	if len(facts) > 0 {
-		b.WriteString("\n" + strings.Join(facts, "\n"))
+	if options.Text != "" {
+		b.WriteString("\n\n")
+		b.Append(options)
 	}
-	if options != "" {
-		b.WriteString("\n\n" + options)
-	}
-	b.WriteString("\n\nСледующая заявка: /act <текст> после открытия раунда. " + scoutHint)
-	return b.String()
+	b.WriteString("\n\n")
+	b.Key("Следующая заявка")
+	b.WriteString("/act <текст> после открытия раунда. " + scoutHint)
+	return b.Build()
 }
 
 // scoutHint — подсказка к личным сообщениям раунда: переходов среди вариантов нет (B36, ADR-0025), куда идти — `/scout`.
 const scoutHint = "Куда можно пойти — /scout."
 
-// roundOpenPersonalText — личное «раунд открыт» с вариантами (B15) персонажам, не получившим уведомление о заявке.
-func roundOpenPersonalText(g model.Game, r model.Round, options string, now time.Time) string {
-	text := fmt.Sprintf("«%s» — раунд %d открыт\n\nЗаявки до %s: напишите, что делает персонаж, или /act <текст>. Одна заявка на раунд. %s", g.Title, r.RoundNo, FormatTime(g, r.DeadlineAt, now), scoutHint)
-	if options != "" {
-		text += "\n\n" + options
+// roundOpenPersonalText — личное «раунд открыт» с вариантами (B15) персонажам, не получившим уведомление о заявке;
+// ключи жирным (B40).
+func roundOpenPersonalText(g model.Game, r model.Round, options model.FormattedText, now time.Time) model.FormattedText {
+	var b model.TextBuilder
+	b.Printf("«%s» — раунд %d открыт\n\n", g.Title, r.RoundNo)
+	b.Key("Заявки до " + FormatTime(g, r.DeadlineAt, now))
+	b.WriteString("напишите, что делает персонаж, или /act <текст>. Одна заявка на раунд. " + scoutHint)
+	if options.Text != "" {
+		b.WriteString("\n\n")
+		b.Append(options)
 	}
-	return text
+	return b.Build()
 }
 
 // optionsFor — блок вариантов персонажа по его локации (B15): подход, параметр персонажа, итоговая сложность и шанс
 // в процентах во всех режимах игры (B19: слова остаются публичной хронике). Заголовок title дополняется названием
-// локации. Пусто без локации или подходов.
-func optionsFor(c model.SnapshotCharacter, state *model.RoundSnapshot, opts []narrator.Option, title string) string {
+// локации; заголовок и подходы — ключи строк, жирным (B40). Пусто без локации или подходов.
+func optionsFor(c model.SnapshotCharacter, state *model.RoundSnapshot, opts []narrator.Option, title string) model.FormattedText {
 	if c.LocationID == nil {
-		return ""
+		return model.FormattedText{}
 	}
-	var lines []string
+	var lines model.TextBuilder
 	for _, o := range opts {
 		if o.LocationID != *c.LocationID {
 			continue
 		}
+		lines.WriteString("\n• ")
 		if o.Attribute == "" {
-			lines = append(lines, "• "+o.Title+" (без броска)")
+			lines.WriteString(o.Title + " (без броска)")
 			continue
 		}
 		stat := o.Attribute
@@ -276,16 +305,20 @@ func optionsFor(c model.SnapshotCharacter, state *model.RoundSnapshot, opts []na
 				ch = x
 			}
 		}
-		lines = append(lines, fmt.Sprintf("• %s (%s): параметр %d, сложность %d, шанс %d%%", o.Title, stat, ch.Param, o.Difficulty, ch.Pct))
+		lines.Key(fmt.Sprintf("%s (%s)", o.Title, stat))
+		lines.Printf("параметр %d, сложность %d, шанс %d%%", ch.Param, o.Difficulty, ch.Pct)
 	}
-	if len(lines) == 0 {
-		return ""
+	if lines.Len() == 0 {
+		return model.FormattedText{}
 	}
 	where := ""
 	if l, ok := state.Location(*c.LocationID); ok {
 		where = " (" + l.Name + ")"
 	}
-	return fmt.Sprintf("%s%s:\n%s", title, where, strings.Join(lines, "\n"))
+	var b model.TextBuilder
+	b.Header(title + where)
+	b.Append(lines.Build())
+	return b.Build()
 }
 
 func payloadStr(ev model.Event, key string) string {

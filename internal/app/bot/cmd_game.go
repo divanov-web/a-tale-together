@@ -65,17 +65,18 @@ func (s *Service) gameStatus(ctx context.Context, req *request) error {
 		if ok, err := s.games.CanAdmin(ctx, g, req.user.ID); err != nil {
 			return err
 		} else if ok {
-			return s.replyKeyboard(ctx, req.in, text, model.Keyboard{{{Text: "Продолжить настройку", Data: model.CallbackCommand("set", "")}}})
+			return s.replyFormattedKeyboard(ctx, req.in, text, model.Keyboard{{{Text: "Продолжить настройку", Data: model.CallbackCommand("set", "")}}})
 		}
 	}
-	return s.reply(ctx, req.in, text)
+	return s.replyFormatted(ctx, req.in, text)
 }
 
-// renderStatus собирает сводку игры по шаблону status.
-func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error) {
+// renderStatus собирает сводку игры: одно поле на строку, пустые строки между блоками (B16), ключи и заголовки
+// списков жирным (B40).
+func (s *Service) renderStatus(ctx context.Context, g model.Game) (model.FormattedText, error) {
 	st, err := s.games.Status(ctx, g)
 	if err != nil {
-		return "", err
+		return model.FormattedText{}, err
 	}
 	type factionRow struct {
 		Title, Code string
@@ -116,7 +117,7 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 	}
 	current, last, next, err := s.roundLines(ctx, g)
 	if err != nil {
-		return "", err
+		return model.FormattedText{}, err
 	}
 	switch g.Status {
 	case model.GameSetup:
@@ -152,14 +153,57 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (string, error
 			parties = append(parties, row)
 		}
 	}
-	return templates.Render("status", map[string]any{
-		"Parties": parties,
-		"Title":   g.Title, "Status": statusTitle(g.Status), "Genre": st.Genre.Title, "Format": string(g.Format), "Mode": string(g.Mode),
-		"SeasonNo": st.Season.SeasonNo, "RulesVersion": g.RulesVersion, "RoundMinutes": g.RoundMinutes, "Timezone": g.Timezone,
-		"PlayWindow": window, "Limits": strings.Join(limits, ", "), "MembersCount": len(st.Members),
-		"CharactersCount": len(st.Characters), "Factions": factions, "Characters": chars, "JoinLink": s.joinLink(g),
-		"MinAnswers": g.Settings.MinRoundAnswers, "CurrentRound": current, "LastRound": last, "NextRound": next,
-	})
+	var b model.TextBuilder
+	b.Printf("Мир «%s» — %s\n\n", g.Title, statusTitle(g.Status))
+	b.Append(characterCard(cardRows{
+		{"Жанр", st.Genre.Title}, {"Формат", string(g.Format)}, {"Режим", string(g.Mode)}, {"Сезон", strconv.Itoa(st.Season.SeasonNo)},
+		{"Правила", "v" + strconv.Itoa(g.RulesVersion)}, {"Раунд", fmt.Sprintf("%d мин", g.RoundMinutes)}, {"Кворум", strconv.Itoa(g.Settings.MinRoundAnswers)},
+		{"Часовой пояс", g.Timezone}, {"Игровое окно", window}, {"Границы", strings.Join(limits, ", ")},
+		{"Игроки", strconv.Itoa(len(st.Members))}, {"Персонажей", strconv.Itoa(len(st.Characters))},
+	}))
+	b.WriteString("\n\n")
+	b.Header("Фракции")
+	b.WriteString("\n")
+	for _, f := range factions {
+		b.Printf("• %s (%s): %d\n", f.Title, f.Code, f.Count)
+	}
+	b.WriteString("\n")
+	b.Header("Персонажи")
+	if len(chars) == 0 {
+		b.WriteString(" пока нет")
+	}
+	for _, c := range chars {
+		gender := ""
+		if c.Gender != "" {
+			gender = c.Gender + ", "
+		}
+		b.Printf("\n• %s — %s, %s%s, %s", c.Nickname, c.Archetype, gender, c.Faction, c.Status)
+	}
+	b.WriteString("\n")
+	b.Header("Группы")
+	if len(parties) == 0 {
+		b.WriteString(" пока нет")
+	}
+	for _, p := range parties {
+		b.WriteString("\n• " + p.Members)
+		if p.Location != "" {
+			b.WriteString(" — " + p.Location)
+		}
+	}
+	b.WriteString("\n\n")
+	if current != "" {
+		b.Key("Текущий раунд")
+		b.WriteString(current + "\n")
+	}
+	if last != "" {
+		b.Key("Предыдущий раунд")
+		b.WriteString(last + "\n")
+	}
+	b.Key("Следующий раунд")
+	b.WriteString(next + "\n\n")
+	b.Key("Приглашение")
+	b.WriteString(s.joinLink(g))
+	return b.Build(), nil
 }
 
 // gameSet — /set <параметр> <значение> для текущей игры; без аргументов у администратора игры в `setup` возвращает

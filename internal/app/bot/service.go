@@ -301,15 +301,17 @@ func (s *Service) reply(ctx context.Context, in model.Incoming, text string) err
 
 // replyFormatted отправляет ответ с разметкой (ADR-0029) в тот же чат без кнопок.
 func (s *Service) replyFormatted(ctx context.Context, in model.Incoming, text model.FormattedText) error {
-	if err := s.send(ctx, in.ChatID, in.UpdateID, text, nil); err != nil {
-		return fmt.Errorf("bot.reply: %w", err)
-	}
-	return nil
+	return s.replyFormattedKeyboard(ctx, in, text, nil)
 }
 
 // replyKeyboard отправляет ответ в тот же чат с кнопками под ним (nil — без кнопок).
 func (s *Service) replyKeyboard(ctx context.Context, in model.Incoming, text string, kb model.Keyboard) error {
-	if err := s.send(ctx, in.ChatID, in.UpdateID, model.Plain(text), kb); err != nil {
+	return s.replyFormattedKeyboard(ctx, in, model.Plain(text), kb)
+}
+
+// replyFormattedKeyboard отправляет ответ с разметкой и кнопками (nil — без кнопок) в тот же чат.
+func (s *Service) replyFormattedKeyboard(ctx context.Context, in model.Incoming, text model.FormattedText, kb model.Keyboard) error {
+	if err := s.send(ctx, in.ChatID, in.UpdateID, text, kb); err != nil {
 		return fmt.Errorf("bot.reply: %w", err)
 	}
 	return nil
@@ -322,10 +324,23 @@ func (s *Service) replyPrivate(ctx context.Context, user model.User, text string
 
 // replyPrivateKeyboard отправляет сообщение с кнопками пользователю в личку.
 func (s *Service) replyPrivateKeyboard(ctx context.Context, user model.User, text string, kb model.Keyboard) error {
-	if err := s.send(ctx, user.PrivateChat(), 0, model.Plain(text), kb); err != nil {
+	return s.replyPrivateFormatted(ctx, user, model.Plain(text), kb)
+}
+
+// replyPrivateFormatted отправляет сообщение с разметкой и кнопками (nil — без кнопок) пользователю в личку.
+func (s *Service) replyPrivateFormatted(ctx context.Context, user model.User, text model.FormattedText, kb model.Keyboard) error {
+	if err := s.send(ctx, user.PrivateChat(), 0, text, kb); err != nil {
 		return fmt.Errorf("bot.replyPrivate: %w", err)
 	}
 	return nil
+}
+
+// prefixed — текст с разметкой после обычного вступления: смещения сдвигаются на длину вступления.
+func prefixed(prefix string, text model.FormattedText) model.FormattedText {
+	var b model.TextBuilder
+	b.WriteString(prefix)
+	b.Append(text)
+	return b.Build()
 }
 
 // send отправляет текст (с разметкой, ADR-0029) с кнопками или без и пишет исходящее в журнал чата. Ответ в личку

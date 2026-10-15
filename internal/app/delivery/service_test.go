@@ -20,15 +20,17 @@ func (c *clock) Now() time.Time { return c.t }
 type sender struct {
 	fail      int
 	sent      []string
-	keyboards []model.Keyboard // клавиатура каждого отправленного сообщения (nil — без кнопок)
+	entities  [][]model.TextEntity // разметка каждого отправленного сообщения (ADR-0030)
+	keyboards []model.Keyboard     // клавиатура каждого отправленного сообщения (nil — без кнопок)
 }
 
-func (s *sender) Send(_ context.Context, _ model.TelegramChatID, text string, kb model.Keyboard) (int64, error) {
+func (s *sender) Send(_ context.Context, _ model.TelegramChatID, text model.FormattedText, kb model.Keyboard) (int64, error) {
 	if s.fail > 0 {
 		s.fail--
 		return 0, errors.New("network")
 	}
-	s.sent = append(s.sent, text)
+	s.sent = append(s.sent, text.Text)
+	s.entities = append(s.entities, text.Entities)
 	s.keyboards = append(s.keyboards, kb)
 	return int64(100 + len(s.sent)), nil
 }
@@ -133,7 +135,7 @@ type classifying struct {
 	sent int
 }
 
-func (s *classifying) Send(context.Context, model.TelegramChatID, string, model.Keyboard) (int64, error) {
+func (s *classifying) Send(context.Context, model.TelegramChatID, model.FormattedText, model.Keyboard) (int64, error) {
 	if s.err != nil {
 		return 0, s.err
 	}

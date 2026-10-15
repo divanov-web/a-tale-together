@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
-	"taletogether/internal/app/bot/templates"
 	"taletogether/internal/app/game"
 	"taletogether/internal/model"
 )
@@ -21,18 +21,19 @@ func (s *Service) character(ctx context.Context, req *request) error {
 	if err != nil {
 		return err
 	}
-	return s.reply(ctx, req.in, text)
+	return s.replyFormatted(ctx, req.in, text)
 }
 
-// renderCharacter собирает краткую карточку персонажа по шаблону character.
-func (s *Service) renderCharacter(ctx context.Context, g model.Game, c model.Character) (string, error) {
+// renderCharacter собирает краткую карточку персонажа: одно поле на строку, ключи жирным (B40); внешность (B41)
+// строкой, когда задана; описания и знания — отдельными командами (B28).
+func (s *Service) renderCharacter(ctx context.Context, g model.Game, c model.Character) (model.FormattedText, error) {
 	cm, err := s.games.CharacterModel(ctx, g)
 	if err != nil {
-		return "", err
+		return model.FormattedText{}, err
 	}
 	factions, err := s.games.Factions(ctx, g.ID)
 	if err != nil {
-		return "", err
+		return model.FormattedText{}, err
 	}
 	faction := ""
 	for _, f := range factions {
@@ -96,12 +97,67 @@ func (s *Service) renderCharacter(ctx context.Context, g model.Game, c model.Cha
 			}
 		}
 	}
-	return templates.Render("character", map[string]any{
-		"Location": location, "Knowledge": len(c.Knowledge), "Death": death, "Party": party,
-		"Nickname": c.Nickname, "Gender": c.Gender.Word(), "Archetype": archetype, "Faction": faction, "Status": string(c.Status), "Game": g.Title,
-		"HP": c.HP, "Conditions": strings.Join(c.Conditions, ", "), "Attributes": strings.Join(attrs, ", "),
-		"Skills": strings.Join(skills, ", "), "Inventory": strings.Join(items, ", "),
-	})
+	status := string(c.Status)
+	if death != "" {
+		status += " (" + death + ")"
+	}
+	if party == "" {
+		party = "нет"
+	}
+	conditions := strings.Join(c.Conditions, ", ")
+	if conditions == "" {
+		conditions = "нет"
+	}
+	inventory := strings.Join(items, ", ")
+	if inventory == "" {
+		inventory = "пусто"
+	}
+	knowledge := " (пока нет)"
+	if len(c.Knowledge) > 0 {
+		knowledge = fmt.Sprintf(" (%d)", len(c.Knowledge))
+	}
+	return characterCard(cardRows{
+		{"", c.Nickname + " — " + archetype},
+		{"Пол", c.Gender.Word()},
+		{"Фракция", "«" + faction + "»"},
+		{"Статус", status},
+		{"Игра", "«" + g.Title + "»"},
+		{"Локация", location},
+		{"Группа", party + " (/party)"},
+		{"HP", strconv.Itoa(c.HP)},
+		{"Состояния", conditions},
+		{"Характеристики", strings.Join(attrs, ", ")},
+		{"Навыки", strings.Join(skills, ", ")},
+		{"Инвентарь", inventory},
+		{"Внешность", c.Appearance},
+		{"Описания", "/bio"},
+		{"Знания", "/knowledge" + knowledge},
+	}), nil
+}
+
+// cardRow — строка карточки «ключ: значение»; пустой ключ — строка без ключа (заголовок), пустое значение при ключе —
+// строка пропускается.
+type cardRow struct{ key, value string }
+
+// cardRows — строки карточки по порядку.
+type cardRows []cardRow
+
+// characterCard собирает карточку из строк: ключи жирным (B40), одно поле на строку, без завершающего перевода строки.
+func characterCard(rows cardRows) model.FormattedText {
+	var b model.TextBuilder
+	for _, r := range rows {
+		if r.key != "" && r.value == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		if r.key != "" {
+			b.Key(r.key)
+		}
+		b.WriteString(r.value)
+	}
+	return b.Build()
 }
 
 // characterCreate — /create в личке: запуск диалога создания персонажа в текущей игре.
@@ -134,21 +190,33 @@ func (s *Service) currentCharacter(ctx context.Context, req *request) (model.Gam
 	return g, c, true, nil
 }
 
-// characterBios — /bio или /secret без текста: открытое и скрытое описание персонажа (B28).
+// characterBios — /bio, /secret или /appearance без текста: внешность (B41), открытое и скрытое описание персонажа (B28).
 func (s *Service) characterBios(ctx context.Context, req *request) error {
 	_, c, ok, err := s.currentCharacter(ctx, req)
 	if !ok || err != nil {
 		return err
 	}
-	public, secret := c.PublicBio, c.SecretBio
+	appearance, public, secret := c.Appearance, c.PublicBio, c.SecretBio
+	if appearance == "" {
+		appearance = "нет"
+	}
 	if public == "" {
 		public = "нет"
 	}
 	if secret == "" {
 		secret = "нет"
 	}
-	return s.reply(ctx, req.in, fmt.Sprintf("%s\n\nОткрытое описание: %s\nСкрытое описание (видит только рассказчик): %s\n\nИзменить: /bio <текст>, /secret <текст> — до %d символов.",
-		c.Nickname, public, secret, game.BioMax))
+	var b model.TextBuilder
+	b.WriteString(c.Nickname + "\n\n")
+	b.Key("Внешность")
+	b.WriteString(appearance + "\n")
+	b.Key("Открытое описание")
+	b.WriteString(public + "\n")
+	b.Key("Скрытое описание (видит только рассказчик)")
+	b.WriteString(secret + "\n\n")
+	b.Key("Изменить")
+	b.Printf("/appearance <текст> — до %d символов; /bio <текст>, /secret <текст> — до %d символов.", game.AppearanceMax, game.BioMax)
+	return s.replyFormatted(ctx, req.in, b.Build())
 }
 
 // knowledgeChunk — предел длины одного сообщения со знаниями (лимит Telegram 4096 символов).
@@ -164,27 +232,35 @@ func (s *Service) characterKnowledge(ctx context.Context, req *request) error {
 		return s.reply(ctx, req.in, c.Nickname+": знаний пока нет. Они появляются после осмотра, испытаний и квестов.")
 	}
 	for _, text := range knowledgeMessages(c.Nickname, c.Knowledge, knowledgeChunk) {
-		if err := s.reply(ctx, req.in, text); err != nil {
+		if err := s.replyFormatted(ctx, req.in, text); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// knowledgeMessages раскладывает знания списком «•» по сообщениям не длиннее limit символов; первое с заголовком.
-func knowledgeMessages(nickname string, knowledge []string, limit int) []string {
-	var out []string
-	b := strings.Builder{}
-	b.WriteString(fmt.Sprintf("Знания %s (%d):\n", nickname, len(knowledge)))
+// knowledgeMessages раскладывает знания списком «•» по сообщениям не длиннее limit символов; первое с заголовком
+// «Знания <ник> (N)» жирным (B40).
+func knowledgeMessages(nickname string, knowledge []string, limit int) []model.FormattedText {
+	var out []model.FormattedText
+	var b model.TextBuilder
+	b.Header(fmt.Sprintf("Знания %s (%d)", nickname, len(knowledge)))
+	b.WriteString("\n")
 	for _, k := range knowledge {
 		line := "• " + k + "\n"
-		if b.Len() > 0 && len([]rune(b.String()))+len([]rune(line)) > limit {
-			out = append(out, strings.TrimRight(b.String(), "\n"))
-			b.Reset()
+		if b.Len() > 0 && b.Len()+len([]rune(line)) > limit {
+			out = append(out, trimRight(b.Build()))
+			b = model.TextBuilder{}
 		}
 		b.WriteString(line)
 	}
-	return append(out, strings.TrimRight(b.String(), "\n"))
+	return append(out, trimRight(b.Build()))
+}
+
+// trimRight снимает завершающие переводы строки у размеченного текста; выделения за концом текста не остаются.
+func trimRight(f model.FormattedText) model.FormattedText {
+	trimmed := strings.TrimRight(f.Text, "\n")
+	return f.Cut(0, len([]rune(trimmed)))
 }
 
 // characterBio — /bio <текст>.
@@ -195,6 +271,22 @@ func (s *Service) characterBio(ctx context.Context, req *request) error {
 // characterSecret — /secret <текст>.
 func (s *Service) characterSecret(ctx context.Context, req *request) error {
 	return s.setBio(ctx, req, true)
+}
+
+// characterAppearance — /appearance <текст>: описание внешности (B41); без текста — как /bio.
+func (s *Service) characterAppearance(ctx context.Context, req *request) error {
+	text := strings.TrimSpace(req.in.Args)
+	if text == "" {
+		return s.characterBios(ctx, req)
+	}
+	g, err := s.games.Current(ctx, req.user)
+	if err != nil {
+		return err
+	}
+	if _, err := s.games.SetAppearance(ctx, g, req.user.ID, text); err != nil {
+		return err
+	}
+	return s.reply(ctx, req.in, "Описание внешности сохранено.")
 }
 
 func (s *Service) setBio(ctx context.Context, req *request, secret bool) error {

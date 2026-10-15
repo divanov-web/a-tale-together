@@ -1033,9 +1033,12 @@ func (s *Service) openNext(ctx context.Context, g *model.Game, chat model.Chat, 
 	s.journal(ctx, *g, chat.TelegramChatID, r, "opened", map[string]any{"deadline_at": r.DeadlineAt, "carried": carried})
 	text := roundOpenText(*g, r, carried, now)
 	if note := s.skippedNote(*g, last); note != "" {
-		text = note + "\n\n" + text // одно сообщение: пропуск и открытие (B4)
+		var b model.TextBuilder // одно сообщение: пропуск и открытие (B4)
+		b.WriteString(note + "\n\n")
+		b.Append(text)
+		text = b.Build()
 	}
-	if err := s.enqueue(ctx, *g, chat, &r.ID, model.OutboxRoundOpen, text); err != nil {
+	if err := s.enqueueFormatted(ctx, *g, chat, &r.ID, model.OutboxRoundOpen, text); err != nil {
 		return false, err
 	}
 	return true, s.notifyOpen(ctx, *g, last, r, now)
@@ -1084,7 +1087,7 @@ func (s *Service) notifyOpen(ctx context.Context, g model.Game, last, r model.Ro
 			continue
 		}
 		text := roundOpenPersonalText(g, r, optionsFor(c, &state, opts, "Варианты для вас"), now)
-		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: user.PrivateChat(), Kind: model.OutboxPrivateOpen, Part: 1, Text: text, Keyboard: optionsKeyboard(c, opts, r.RoundNo), SendAfter: s.clock.Now()}); err != nil {
+		if err := s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: &r.ID, TelegramChatID: user.PrivateChat(), Kind: model.OutboxPrivateOpen, Part: 1, Text: text.Text, Entities: text.Entities, Keyboard: optionsKeyboard(c, opts, r.RoundNo), SendAfter: s.clock.Now()}); err != nil {
 			return err
 		}
 	}
@@ -1092,7 +1095,12 @@ func (s *Service) notifyOpen(ctx context.Context, g model.Game, last, r model.Ro
 }
 
 func (s *Service) enqueue(ctx context.Context, g model.Game, chat model.Chat, round *model.RoundID, kind model.OutboxKind, text string) error {
-	return s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: round, TelegramChatID: chat.TelegramChatID, Kind: kind, Part: 1, Text: text, SendAfter: s.clock.Now()})
+	return s.enqueueFormatted(ctx, g, chat, round, kind, model.Plain(text))
+}
+
+// enqueueFormatted ставит в outbox одно сообщение с разметкой (ADR-0030).
+func (s *Service) enqueueFormatted(ctx context.Context, g model.Game, chat model.Chat, round *model.RoundID, kind model.OutboxKind, text model.FormattedText) error {
+	return s.store.EnqueueOutbox(ctx, model.OutboxMessage{GameID: g.ID, RoundID: round, TelegramChatID: chat.TelegramChatID, Kind: kind, Part: 1, Text: text.Text, Entities: text.Entities, SendAfter: s.clock.Now()})
 }
 
 func (s *Service) canAdmin(ctx context.Context, game model.Game, actor model.UserID) error {

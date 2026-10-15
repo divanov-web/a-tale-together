@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"taletogether/internal/model"
@@ -17,21 +16,21 @@ const welcomeSummaryRunes = 500
 // Welcome — что делать дальше новому персонажу (B23), по статусу игры: `draft` — ждать старта, бот напишет;
 // `paused` — игра на паузе; `active` — номер раунда и дедлайн (или время следующего раунда), кратко завязка или
 // последняя хроника, варианты хода по локации персонажа кнопками (`/act #…`, только при открытом раунде).
-func (s *Service) Welcome(ctx context.Context, g model.Game, c model.Character) (string, model.Keyboard, error) {
+func (s *Service) Welcome(ctx context.Context, g model.Game, c model.Character) (model.FormattedText, model.Keyboard, error) {
 	switch g.Status {
 	case model.GameSetup, model.GameDraft:
-		return "Администратор ещё не начал историю. Бот напишет сюда, когда она начнётся.", nil, nil
+		return model.Plain("Администратор ещё не начал историю. Бот напишет сюда, когда она начнётся."), nil, nil
 	case model.GameStarting:
-		return "История вот-вот начнётся: стартовая сцена придёт в группу, а сюда — варианты первого раунда.", nil, nil
+		return model.Plain("История вот-вот начнётся: стартовая сцена придёт в группу, а сюда — варианты первого раунда."), nil, nil
 	case model.GamePaused:
-		return "Игра на паузе. Бот напишет сюда, когда администратор её возобновит.", nil, nil
+		return model.Plain("Игра на паузе. Бот напишет сюда, когда администратор её возобновит."), nil, nil
 	case model.GameFinishing, model.GameFinished:
-		return "Игра завершена.", nil, nil
+		return model.Plain("Игра завершена."), nil, nil
 	}
 	now := s.clock.Now()
 	summary, err := s.summary(ctx, g, c)
 	if err != nil {
-		return "", nil, fmt.Errorf("round.Welcome: %w", err)
+		return model.FormattedText{}, nil, fmt.Errorf("round.Welcome: %w", err)
 	}
 	open, err := s.store.OpenRound(ctx, g.ID)
 	if errors.Is(err, model.ErrNotFound) {
@@ -39,44 +38,44 @@ func (s *Service) Welcome(ctx context.Context, g model.Game, c model.Character) 
 		if g.NextRoundAt != nil {
 			text = fmt.Sprintf("История уже идёт. Следующий раунд откроется в %s, бот пришлёт сюда варианты хода.", FormatTime(g, *g.NextRoundAt, now))
 		}
-		return joinBlocks(text, summary), nil, nil
+		return joinBlocks(model.Plain(text), summary), nil, nil
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("round.Welcome: %w", err)
+		return model.FormattedText{}, nil, fmt.Errorf("round.Welcome: %w", err)
 	}
 	chars, err := s.store.ListCharacters(ctx, g.ID, open.SeasonID)
 	if err != nil {
-		return "", nil, fmt.Errorf("round.Welcome: %w", err)
+		return model.FormattedText{}, nil, fmt.Errorf("round.Welcome: %w", err)
 	}
 	locations, err := s.store.ListLocations(ctx, g.ID)
 	if err != nil {
-		return "", nil, fmt.Errorf("round.Welcome: %w", err)
+		return model.FormattedText{}, nil, fmt.Errorf("round.Welcome: %w", err)
 	}
 	def, err := s.characterDef(ctx, g)
 	if err != nil {
-		return "", nil, fmt.Errorf("round.Welcome: %w", err)
+		return model.FormattedText{}, nil, fmt.Errorf("round.Welcome: %w", err)
 	}
 	state := snapshot(g, chars, locations, nil, nil, nil, def)
 	opts := narrator.Options(&state, def, g.Mode)
-	head := fmt.Sprintf("Идёт раунд %d, заявки до %s.", open.RoundNo, FormatTime(g, open.DeadlineAt, now))
+	head := model.Plain(fmt.Sprintf("Идёт раунд %d, заявки до %s.", open.RoundNo, FormatTime(g, open.DeadlineAt, now)))
 	sc, ok := state.Character(c.ID)
 	if !ok {
-		return joinBlocks(head, summary, "Напишите, что делает персонаж, или /act <текст>."), nil, nil
+		return joinBlocks(head, summary, model.Plain("Напишите, что делает персонаж, или /act <текст>.")), nil, nil
 	}
 	options := optionsFor(*sc, &state, opts, "Варианты хода")
 	hint := "Напишите, что делает персонаж, или /act <текст>. " + scoutHint
-	if options != "" {
+	if options.Text != "" {
 		hint = "Нажмите вариант или напишите действие своими словами. " + scoutHint
 	}
-	return joinBlocks(head, summary, options, hint), optionsKeyboard(*sc, opts, open.RoundNo), nil
+	return joinBlocks(head, summary, options, model.Plain(hint)), optionsKeyboard(*sc, opts, open.RoundNo), nil
 }
 
 // summary — кратко, что происходит: сцена последней опубликованной хроники в локации персонажа, иначе её общий
-// текст или первая сцена, иначе завязка истории.
-func (s *Service) summary(ctx context.Context, g model.Game, c model.Character) (string, error) {
+// текст или первая сцена, иначе завязка истории; заголовок блока жирным (B40).
+func (s *Service) summary(ctx context.Context, g model.Game, c model.Character) (model.FormattedText, error) {
 	info, err := s.Info(ctx, g)
 	if err != nil {
-		return "", err
+		return model.FormattedText{}, err
 	}
 	if info.Last != nil && info.Last.Narration != nil {
 		n := info.Last.Narration
@@ -87,13 +86,21 @@ func (s *Service) summary(ctx context.Context, g model.Game, c model.Character) 
 			}
 		}
 		if text != "" {
-			return fmt.Sprintf("Последняя хроника (раунд %d):\n%s", info.Last.RoundNo, truncateText(text, welcomeSummaryRunes)), nil
+			return headedBlock(fmt.Sprintf("Последняя хроника (раунд %d)", info.Last.RoundNo), truncateText(text, welcomeSummaryRunes)), nil
 		}
 	}
 	if g.OpeningScene != "" {
-		return "Завязка:\n" + truncateText(g.OpeningScene, welcomeSummaryRunes), nil
+		return headedBlock("Завязка", truncateText(g.OpeningScene, welcomeSummaryRunes)), nil
 	}
-	return "", nil
+	return model.FormattedText{}, nil
+}
+
+// headedBlock — блок «Заголовок:» жирным и текст с новой строки.
+func headedBlock(title, text string) model.FormattedText {
+	var b model.TextBuilder
+	b.Header(title)
+	b.WriteString("\n" + text)
+	return b.Build()
 }
 
 // notifyStartLater — личное сообщение участникам при /begin, если первый раунд откроется позже (вне игрового окна);
@@ -122,13 +129,17 @@ func (s *Service) notifyStartLater(ctx context.Context, g model.Game, chars []mo
 	return nil
 }
 
-// joinBlocks склеивает непустые блоки через пустую строку (B16).
-func joinBlocks(blocks ...string) string {
-	var out []string
-	for _, b := range blocks {
-		if b != "" {
-			out = append(out, b)
+// joinBlocks склеивает непустые блоки через пустую строку (B16), сохраняя разметку.
+func joinBlocks(blocks ...model.FormattedText) model.FormattedText {
+	var b model.TextBuilder
+	for _, block := range blocks {
+		if block.Text == "" {
+			continue
 		}
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.Append(block)
 	}
-	return strings.Join(out, "\n\n")
+	return b.Build()
 }
