@@ -107,6 +107,7 @@ func (s *Store) DeleteGameProgress(ctx context.Context, game model.GameID) error
 		`DELETE FROM speeches WHERE game_id = $1`,
 		`DELETE FROM world_events WHERE game_id = $1`,
 		`DELETE FROM generation_jobs WHERE game_id = $1`,
+		`DELETE FROM cooldowns WHERE game_id = $1`,
 		`DELETE FROM rounds WHERE game_id = $1`,
 		`UPDATE characters SET party_id = NULL WHERE game_id = $1`,
 		`DELETE FROM parties WHERE game_id = $1`,

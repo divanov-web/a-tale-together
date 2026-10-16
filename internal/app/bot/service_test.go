@@ -1675,3 +1675,40 @@ func TestGame_SetupScenario(t *testing.T) {
 	mustContain(t, h.send(owner, private(owner), "/set scenario 1"), "Сохранено")
 	mustContain(t, h.send(owner, groupChat, "/status"), "Мир «Ольховый Брод»", "Гильдия ярмарки (good)")
 }
+
+// TestCharacter_BioCooldown (пункт 34, ADR-0033): до `/begin` описания меняются свободно; в игре каждое — раз в 10 раундов,
+// повтор раньше срока получает отказ с остатком и номером раунда, остаток виден в `/bio` без текста; открытое и
+// скрытое описания перезаряжаются независимо.
+func TestCharacter_BioCooldown(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.svc.games.Defaults.PauseAfterSkipped = 0 // пустые раунды не ставят игру на паузу
+	code := h.createGame()
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-", "-")
+
+	mustContain(t, h.send(alice, private(alice), "/bio Первое"), "сохранено")
+	mustContain(t, h.send(alice, private(alice), "/bio Второе"), "сохранено")
+	mustContain(t, h.send(alice, private(alice), "/bio"), "Открытое описание: Второе", "не чаще раза в 10 раундов")
+	if got := h.send(alice, private(alice), "/bio"); strings.Contains(got, "Перезарядка") {
+		t.Fatalf("cooldown before /begin: %q", got)
+	}
+
+	h.begin()
+	mustContain(t, h.send(alice, private(alice), "/bio Третье"), "сохранено")
+	mustContain(t, h.send(alice, private(alice), "/bio Четвёртое"), "Изменить можно через 10 раундов (с раунда 11)")
+	mustContain(t, h.send(alice, private(alice), "/secret Тайна"), "сохранено")
+	mustContain(t, h.send(alice, private(alice), "/secret Другая"), "Изменить можно через 10 раундов (с раунда 11)")
+	mustContain(t, h.send(alice, private(alice), "/bio"), "Открытое описание: Третье", "Скрытое описание (видит только рассказчик): Тайна",
+		"Перезарядка: открытое описание — через 10 раундов (с раунда 11); скрытое описание — через 10 раундов (с раунда 11).")
+
+	h.clock.advance(time.Minute) // лимит частоты сообщений игрока
+	for i := 0; i < 9; i++ {
+		mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
+	}
+	mustContain(t, h.send(alice, private(alice), "/bio Пятое"), "Изменить можно через 1 раунд (с раунда 11)")
+	mustContain(t, h.send(alice, private(alice), "/bio"), "открытое описание — через 1 раунд (с раунда 11)")
+	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
+	mustContain(t, h.send(alice, private(alice), "/bio Пятое"), "сохранено")
+	mustContain(t, h.send(alice, private(alice), "/bio"), "Открытое описание: Пятое", "Перезарядка: открытое описание — через 10 раундов (с раунда 21).")
+	mustContain(t, h.send(alice, private(alice), "/secret Третья"), "сохранено")
+}

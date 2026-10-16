@@ -248,6 +248,22 @@ func TestGameFlow(t *testing.T) {
 	if err := s.UpdateCharacterAppearance(ctx, game.ID, created.ID, "рыжая, в кольчуге"); err != nil {
 		t.Fatal(err)
 	}
+	// Перезарядки (ADR-0033): upsert по владельцу и действию, список владельца.
+	if err := s.SetCooldown(ctx, model.Cooldown{GameID: game.ID, Owner: model.CooldownCharacter, OwnerID: int64(created.ID), Action: model.CooldownBio, LastRound: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCooldown(ctx, model.Cooldown{GameID: game.ID, Owner: model.CooldownCharacter, OwnerID: int64(created.ID), Action: model.CooldownBio, LastRound: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCooldown(ctx, model.Cooldown{GameID: game.ID, Owner: model.CooldownFaction, OwnerID: int64(created.FactionID), Action: model.CooldownHint, LastRound: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.ListCooldowns(ctx, game.ID, model.CooldownCharacter, int64(created.ID)); err != nil || len(got) != 1 || got[0].Action != model.CooldownBio || got[0].LastRound != 3 {
+		t.Fatalf("ListCooldowns(character) = %+v, %v", got, err)
+	}
+	if got, err := s.ListCooldowns(ctx, game.ID, model.CooldownFaction, int64(created.FactionID)); err != nil || len(got) != 1 || got[0].Action != model.CooldownHint {
+		t.Fatalf("ListCooldowns(faction) = %+v, %v", got, err)
+	}
 	list, err := s.ListCharacters(ctx, game.ID, season.ID)
 	if err != nil || len(list) != 1 || list[0].SecretBio != "боится воды" || list[0].Appearance != "рыжая, в кольчуге" {
 		t.Fatalf("ListCharacters = %+v, %v", list, err)

@@ -56,3 +56,13 @@ func TestTextBuilder_KeyAppendCut(t *testing.T) {
 		t.Fatalf("whole cut = %+v", whole)
 	}
 }
+
+func TestPlural(t *testing.T) {
+	t.Parallel()
+	cases := map[int]string{1: "1 раунд", 2: "2 раунда", 4: "4 раунда", 5: "5 раундов", 11: "11 раундов", 12: "12 раундов", 21: "21 раунд", 22: "22 раунда", 100: "100 раундов", 111: "111 раундов"}
+	for n, want := range cases {
+		if got := Plural(n, "раунд", "раунда", "раундов"); got != want {
+			t.Errorf("Plural(%d) = %q; want %q", n, got, want)
+		}
+	}
+}

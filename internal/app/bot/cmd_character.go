@@ -9,6 +9,7 @@ import (
 
 	"taletogether/internal/app/game"
 	"taletogether/internal/model"
+	"taletogether/internal/service/rules"
 )
 
 // character — /character: краткая карточка персонажа в текущей игре; описания — /bio, знания — /knowledge (B28).
@@ -190,10 +191,15 @@ func (s *Service) currentCharacter(ctx context.Context, req *request) (model.Gam
 	return g, c, true, nil
 }
 
-// characterBios — /bio, /secret или /appearance без текста: внешность (B41), открытое и скрытое описание персонажа (B28).
+// characterBios — /bio, /secret или /appearance без текста: внешность (B41), открытое и скрытое описание персонажа (B28),
+// остаток перезарядки описаний (пункт 34, ADR-0033).
 func (s *Service) characterBios(ctx context.Context, req *request) error {
-	_, c, ok, err := s.currentCharacter(ctx, req)
+	g, c, ok, err := s.currentCharacter(ctx, req)
 	if !ok || err != nil {
+		return err
+	}
+	cooldowns, err := s.games.Cooldowns(ctx, g, c)
+	if err != nil {
 		return err
 	}
 	appearance, public, secret := c.Appearance, c.PublicBio, c.SecretBio
@@ -215,8 +221,33 @@ func (s *Service) characterBios(ctx context.Context, req *request) error {
 	b.Key("Скрытое описание (видит только рассказчик)")
 	b.WriteString(secret + "\n\n")
 	b.Key("Изменить")
-	b.Printf("/appearance <текст> — до %d символов; /bio <текст>, /secret <текст> — до %d символов.", game.AppearanceMax, game.BioMax)
+	b.Printf("/appearance <текст> — до %d символов; /bio <текст>, /secret <текст> — до %d символов, каждое не чаще раза в %d раундов.",
+		game.AppearanceMax, game.BioMax, rules.CooldownRounds[model.CooldownBio])
+	if line := cooldownLine(cooldowns); line != "" {
+		b.WriteString("\n")
+		b.Key("Перезарядка")
+		b.WriteString(line)
+	}
 	return s.replyFormatted(ctx, req.in, b.Build())
+}
+
+// cooldownLine — остаток перезарядки описаний для `/bio`; пусто, если оба описания можно менять сейчас.
+func cooldownLine(states map[model.CooldownAction]rules.CooldownState) string {
+	var parts []string
+	for _, item := range []struct {
+		action model.CooldownAction
+		title  string
+	}{{model.CooldownBio, "открытое"}, {model.CooldownSecret, "скрытое"}} {
+		st := states[item.action]
+		if st.Ready {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s описание — через %s (с раунда %d)", item.title, model.Plural(st.Left, "раунд", "раунда", "раундов"), st.ReadyAt))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "; ") + "."
 }
 
 // knowledgeChunk — предел длины одного сообщения со знаниями (лимит Telegram 4096 символов).

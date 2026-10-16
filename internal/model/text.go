@@ -105,3 +105,15 @@ func (t *TextBuilder) Len() int { return t.runes }
 func (t *TextBuilder) Build() FormattedText {
 	return FormattedText{Text: t.b.String(), Entities: t.entities}
 }
+
+// Plural подбирает форму слова к числу по правилам русского языка: `Plural(3, "раунд", "раунда", "раундов")` → «3 раунда».
+func Plural(n int, one, few, many string) string {
+	word := many
+	switch n10, n100 := n%10, n%100; {
+	case n10 == 1 && n100 != 11:
+		word = one
+	case n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14):
+		word = few
+	}
+	return fmt.Sprintf("%d %s", n, word)
+}

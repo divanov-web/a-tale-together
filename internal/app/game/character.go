@@ -277,7 +277,67 @@ func (s *Service) SetAppearance(ctx context.Context, game model.Game, user model
 	return c, nil
 }
 
-// SetBio меняет открытое или скрытое описание персонажа.
+// CooldownError — действие на перезарядке (ADR-0033): сколько раундов осталось и с какого раунда можно.
+type CooldownError struct {
+	Action  model.CooldownAction
+	Left    int
+	ReadyAt int
+}
+
+// Error — текст отказа игроку.
+func (e *CooldownError) Error() string {
+	return fmt.Sprintf("изменить можно через %s (с раунда %d)", model.Plural(e.Left, "раунд", "раунда", "раундов"), e.ReadyAt)
+}
+
+// Is сопоставляет ошибку с ErrCooldown.
+func (e *CooldownError) Is(target error) bool { return target == ErrCooldown }
+
+// currentRound — номер последнего раунда игры; 0, пока раундов нет (до `/begin`).
+func (s *Service) currentRound(ctx context.Context, game model.GameID) (int, error) {
+	r, err := s.store.LastRound(ctx, game)
+	if errors.Is(err, model.ErrNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("round: %w", err)
+	}
+	return r.RoundNo, nil
+}
+
+// cooldown проверяет перезарядку действия персонажа в раунде round по записям хранилища (ADR-0033).
+func (s *Service) cooldown(ctx context.Context, game model.GameID, c model.Character, action model.CooldownAction, round int) (rules.CooldownState, error) {
+	list, err := s.store.ListCooldowns(ctx, game, model.CooldownCharacter, int64(c.ID))
+	if err != nil {
+		return rules.CooldownState{}, fmt.Errorf("cooldowns: %w", err)
+	}
+	last := 0
+	for _, cd := range list {
+		if cd.Action == action {
+			last = cd.LastRound
+		}
+	}
+	return rules.CheckCooldown(action, last, round), nil
+}
+
+// Cooldowns — состояние перезарядок описаний персонажа в текущем раунде для `/bio` без текста (ADR-0033).
+func (s *Service) Cooldowns(ctx context.Context, game model.Game, c model.Character) (map[model.CooldownAction]rules.CooldownState, error) {
+	round, err := s.currentRound(ctx, game.ID)
+	if err != nil {
+		return nil, fmt.Errorf("game.Cooldowns: %w", err)
+	}
+	out := map[model.CooldownAction]rules.CooldownState{}
+	for _, action := range []model.CooldownAction{model.CooldownBio, model.CooldownSecret} {
+		st, err := s.cooldown(ctx, game.ID, c, action, round)
+		if err != nil {
+			return nil, fmt.Errorf("game.Cooldowns: %w", err)
+		}
+		out[action] = st
+	}
+	return out, nil
+}
+
+// SetBio меняет открытое или скрытое описание персонажа не чаще раза в `rules.CooldownRounds` раундов каждое
+// (ADR-0033): проверка и запись перезарядки в одной транзакции с изменением; до первого раунда смена свободна.
 func (s *Service) SetBio(ctx context.Context, game model.Game, user model.UserID, secret bool, text string) (model.Character, error) {
 	if err := ValidateBio(text); err != nil {
 		return model.Character{}, err
@@ -287,12 +347,40 @@ func (s *Service) SetBio(ctx context.Context, game model.Game, user model.UserID
 		return model.Character{}, err
 	}
 	text = strings.TrimSpace(text)
+	action := model.CooldownBio
 	if secret {
 		c.SecretBio = text
+		action = model.CooldownSecret
 	} else {
 		c.PublicBio = text
 	}
-	if err := s.store.UpdateCharacterBio(ctx, game.ID, c.ID, c.PublicBio, c.SecretBio); err != nil {
+	err = s.store.InTx(ctx, func(ctx context.Context) error {
+		round, err := s.currentRound(ctx, game.ID)
+		if err != nil {
+			return err
+		}
+		if round > 0 {
+			st, err := s.cooldown(ctx, game.ID, c, action, round)
+			if err != nil {
+				return err
+			}
+			if !st.Ready {
+				return &CooldownError{Action: action, Left: st.Left, ReadyAt: st.ReadyAt}
+			}
+		}
+		if err := s.store.UpdateCharacterBio(ctx, game.ID, c.ID, c.PublicBio, c.SecretBio); err != nil {
+			return err
+		}
+		if round == 0 {
+			return nil
+		}
+		return s.store.SetCooldown(ctx, model.Cooldown{GameID: game.ID, Owner: model.CooldownCharacter, OwnerID: int64(c.ID), Action: action, LastRound: round})
+	})
+	var cooldown *CooldownError
+	if errors.As(err, &cooldown) {
+		return model.Character{}, cooldown // текст отказа игроку без обёрток
+	}
+	if err != nil {
 		return model.Character{}, fmt.Errorf("game.SetBio: %w", err)
 	}
 	return c, nil

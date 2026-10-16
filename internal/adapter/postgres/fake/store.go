@@ -39,6 +39,7 @@ type Store struct {
 	discoveries    map[discoveryKey]bool
 	quests         map[model.QuestID]model.Quest
 	goals          map[model.FactionGoalID]model.FactionGoal
+	cooldowns      map[cooldownKey]model.Cooldown // перезарядки действий (ADR-0033)
 	jobs           map[jobKey]model.GenerationJob // вне снимка транзакции: пишется автономно, как в Postgres
 	parties        map[model.PartyID]model.Party
 	events         []model.Event
@@ -64,6 +65,13 @@ type memberKey struct {
 	user model.UserID
 }
 
+type cooldownKey struct {
+	game    model.GameID
+	owner   model.CooldownOwner
+	ownerID int64
+	action  model.CooldownAction
+}
+
 // New создаёт пустое хранилище с жанром fantasy и базовой моделью персонажа.
 func New(now func() time.Time) *Store {
 	s := &Store{
@@ -74,7 +82,7 @@ func New(now func() time.Time) *Store {
 		rounds: map[model.RoundID]model.Round{}, subs: map[model.SubmissionID]model.Submission{}, speeches: map[model.SpeechID]model.Speech{},
 		llmProfiles: map[model.LLMProfileID]model.LLMProfile{}, settings: map[string]string{}, locations: map[model.LocationID]model.Location{},
 		parties: map[model.PartyID]model.Party{}, discoveries: map[discoveryKey]bool{}, jobs: map[jobKey]model.GenerationJob{},
-		quests: map[model.QuestID]model.Quest{}, goals: map[model.FactionGoalID]model.FactionGoal{},
+		quests: map[model.QuestID]model.Quest{}, goals: map[model.FactionGoalID]model.FactionGoal{}, cooldowns: map[cooldownKey]model.Cooldown{},
 	}
 	cm := model.CharacterModel{ID: 1, Code: "basic_fantasy", Definition: BasicFantasy()}
 	s.cmodels[cm.ID] = cm
@@ -146,6 +154,7 @@ type state struct {
 	settings    map[string]string
 	quests      map[model.QuestID]model.Quest
 	goals       map[model.FactionGoalID]model.FactionGoal
+	cooldowns   map[cooldownKey]model.Cooldown
 	nextID      int64
 }
 
@@ -160,7 +169,7 @@ func (s *Store) snapshot() state {
 		chars: maps.Clone(s.chars), rounds: maps.Clone(s.rounds), subs: maps.Clone(s.subs), speeches: maps.Clone(s.speeches), outbox: slices.Clone(s.outbox),
 		locations: maps.Clone(s.locations), discoveries: maps.Clone(s.discoveries), parties: maps.Clone(s.parties), events: slices.Clone(s.events), resolved: slices.Clone(s.resolved), resolvedRnd: slices.Clone(s.resolvedRounds),
 		llmProfiles: maps.Clone(s.llmProfiles), llmRuns: slices.Clone(s.llmRuns), settings: maps.Clone(s.settings), nextID: s.nextID,
-		quests: maps.Clone(s.quests), goals: maps.Clone(s.goals),
+		quests: maps.Clone(s.quests), goals: maps.Clone(s.goals), cooldowns: maps.Clone(s.cooldowns),
 	}
 }
 
@@ -172,7 +181,7 @@ func (s *Store) restore(st state) {
 	s.discoveries = st.discoveries
 	s.events, s.resolved, s.resolvedRounds = st.events, st.resolved, st.resolvedRnd
 	s.llmProfiles, s.llmRuns, s.settings, s.nextID = st.llmProfiles, st.llmRuns, st.settings, st.nextID
-	s.quests, s.goals = st.quests, st.goals
+	s.quests, s.goals, s.cooldowns = st.quests, st.goals, st.cooldowns
 }
 
 // MarkUpdate — см. postgres.Store.
@@ -780,4 +789,33 @@ func (s *Store) NicknameTaken(_ context.Context, game model.GameID, season model
 		}
 	}
 	return false, nil
+}
+
+// ListCooldowns — см. postgres.Store.
+func (s *Store) ListCooldowns(_ context.Context, game model.GameID, owner model.CooldownOwner, ownerID int64) ([]model.Cooldown, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Err != nil {
+		return nil, s.Err
+	}
+	var out []model.Cooldown
+	for k, c := range s.cooldowns {
+		if k.game == game && k.owner == owner && k.ownerID == ownerID {
+			out = append(out, c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Action < out[j].Action })
+	return out, nil
+}
+
+// SetCooldown — см. postgres.Store.
+func (s *Store) SetCooldown(_ context.Context, c model.Cooldown) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Err != nil {
+		return s.Err
+	}
+	c.UpdatedAt = s.now()
+	s.cooldowns[cooldownKey{game: c.GameID, owner: c.Owner, ownerID: c.OwnerID, action: c.Action}] = c
+	return nil
 }

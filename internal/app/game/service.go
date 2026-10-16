@@ -41,6 +41,9 @@ type Store interface {
 	ListCharacters(ctx context.Context, game model.GameID, season model.SeasonID) ([]model.Character, error)
 	UpdateCharacterBio(ctx context.Context, game model.GameID, id model.CharacterID, public, secret string) error
 	UpdateCharacterAppearance(ctx context.Context, game model.GameID, id model.CharacterID, appearance string) error
+	LastRound(ctx context.Context, game model.GameID) (model.Round, error)
+	ListCooldowns(ctx context.Context, game model.GameID, owner model.CooldownOwner, ownerID int64) ([]model.Cooldown, error)
+	SetCooldown(ctx context.Context, c model.Cooldown) error
 	ListParties(ctx context.Context, game model.GameID, season model.SeasonID) ([]model.Party, error)
 	CreateParty(ctx context.Context, p model.Party) (model.Party, error)
 	UpdateParty(ctx context.Context, p model.Party) error
@@ -77,6 +80,7 @@ var (
 	ErrChooseGame    = errors.New("вы участвуете в нескольких играх: выберите игру командой /games")
 	ErrBadValue      = errors.New("недопустимое значение")
 	ErrGameSetup     = errors.New("администратор ещё настраивает мир; бот напишет, когда можно будет создать персонажа")
+	ErrCooldown      = errors.New("действие на перезарядке") // сентинел для errors.Is; текст игроку даёт CooldownError
 )
 
 // Service — сценарии игры.
