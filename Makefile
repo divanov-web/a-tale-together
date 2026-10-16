@@ -4,6 +4,7 @@ GOOSE ?= $(HOME)/.local/bin/goose
 BIN := bin/bot
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 -include .env
+DATABASE_URL_SIM ?= postgres://tale:tale@localhost:5432/tale_sim?sslmode=disable
 export
 
 PID := bin/bot.pid
