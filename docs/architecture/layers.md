@@ -14,7 +14,7 @@ cmd/bot ──────────────► internal/app ──► int
 
 | Слой | Пакеты | Отвечает | Импортирует | Не импортирует |
 |---|---|---|---|---|
-| Запуск | `cmd/bot`, `cmd/eval-interpreter`, `cmd/eval-narrator`, `cmd/internal/evalcost` | конфиг, логгер, сборка зависимостей, фоновые циклы, остановка по сигналу; прогон оценочных наборов интерпретатора и рассказчика (тарифы из БД и цена вызовов — общий помощник `evalcost`, ADR-0032) | всё | |
+| Запуск | `cmd/bot`, `cmd/simulate`, `cmd/eval-interpreter`, `cmd/eval-narrator`, `cmd/internal/stack`, `cmd/internal/evalcost` | конфиг, логгер, сборка зависимостей (общая сборка стека `stack.Build` для бота и имитатора, ADR-0034), фоновые циклы, остановка по сигналу; прогон партии ИИ-игроками (`simulate`); прогон оценочных наборов интерпретатора и рассказчика (тарифы из БД и цена вызовов — общий помощник `evalcost`, ADR-0032) | всё | |
 | Сценарии | `internal/app/*` | порядок шагов прикладного действия, границы транзакций, вызов сервисов, запись в outbox | `service`, `model` | SQL, Telegram API, SDK LLM |
 | Логика | `internal/service/*` | правила, разрешение раунда, видимость, сборка контекста и валидация ответов LLM | `model` | `app`, `adapter`, БД, Telegram |
 | Модель | `internal/model` | типы сущностей, событий, намерений, статусов; без поведения с I/O | ничего внутреннего | |
@@ -41,6 +41,8 @@ cmd/bot ──────────────► internal/app ──► int
 | `service/narrator` | `New(LLM, logger)`, `Narrate(ctx, Params) (Result, error)`, `BuildInput`, `Options`, `OptionsText`, `Describe`, `Schema`, `PromptVersion` | контекст из состояния после раунда и событий по видимости → один вызов `LLM` → проверка (ID, сцены, секреты, цифры) → дозапрос → дописывание кодом; подходы следующего раунда со сложностью и шансами; слова событий для шаблонов (ADR-0011) |
 | `adapter/postgres` | `Store`, `InTx` | репозитории по сущностям, миграции goose; `fake` — хранилище в памяти для тестов |
 | `adapter/telegram` | `Client` | источник update (сообщения, нажатия кнопок, статус бота в чате), отправка текста с inline-кнопками и `message_id`, снятие кнопок (ADR-0015); длинные тексты делит сценарий при постановке в outbox (`app/round.splitParts`, ADR-0011) |
+| `app/sim` | `Load`, `New(...)`, `Runner.Run(ctx) (Report, error)`, `Journal`, `ModelOverride`, `Features` | имитатор партии с ИИ-игроками (ADR-0034): сценарий прогона, фазы игрока, ходы и `/next`, роль LLM `player`, транскрипт и сводка; состояние из БД, игроку — только ящики чатов |
+| `adapter/telegram/fake` | `Transport` | подмена транспорта в процессе: ящики сообщений по чатам, сборка входящих как из update; реализует `bot.Telegram` и `delivery.Sender` |
 | `app/llm` | `List`, `Profile`, `Resolve`, `Use`, `Reset`, `Add`, `Complete`, `Test` | профили LLM из БД с кэшем, карта провайдеров по ключу, подстановка модели и параметров профиля, запись `llm_runs` |
 | `adapter/chatlog` | `Writer.Write`, `Writer.Cleanup` | журнал чатов для разбора ошибок ИИ: JSONL по чатам и дням; реализует `Journal` сценариев `bot`, `delivery`, `llm`, `round` (ADR-0012) |
 | `adapter/llm/*` | `Client.Complete` | провайдеры по ADR-0003: `claudecli`, `anthropic` и `openai` (заглушки до пункта 08), `fake` |

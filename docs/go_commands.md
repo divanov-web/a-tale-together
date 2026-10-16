@@ -7,6 +7,8 @@
 | `make start` | собрать и запустить бота в фоне: pid `bin/bot.pid`, лог `logs/bot.log`; снимает экземпляр без pid-файла |
 | `make restart` | `stop` + `start`; после каждой правки кода и после миграций |
 | `make stop` | остановить фонового бота (и экземпляр без pid-файла) |
+| `make sim` | прогон партии ИИ-игроками на БД `DATABASE_URL_SIM` без Telegram (`SIM_ARGS="-run sim/runs/basic.json -rounds 3 -model-narrator sonnet"`); отчёт `logs/sim/<метка>/` — [dev/simulation.md](dev/simulation.md) |
+| `make migrate-sim` | миграции на БД прогонов `DATABASE_URL_SIM` |
 | `make wipe` | вайп песочницы (только `APP_ENV=dev`): `stop`, удаление всех игр и связанных данных по `scripts/wipe-sandbox.sql` (пользователи, чат, настройки и профили LLM остаются), очистка `logs/chats`, `logs/images`, `logs/bot.log`, `start`; выполняет Claude по просьбе руководителя (`/tale-wipe`) |
 
 Проверка после запуска: `make logs` — строка `bot starting` с новой версией, без `409 Conflict`; `/ping` в песочнице отвечает новой версией.

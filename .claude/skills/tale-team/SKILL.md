@@ -43,6 +43,7 @@ argument-hint: "[status | map | extend <область>]"
 | Скилл | `/tale-env` | установка и запуск: Go, Postgres, `.env`, миграции, тесты, тестовый бот |
 | Скилл | `/tale-debug` | разбор сбоя или бага по журналу чатов `logs/chats` и `logs/bot.log`: раунд, заявки, вызовы LLM, доставка |
 | Скилл | `/tale-wipe` | вайп песочницы по просьбе руководителя: `make wipe` удаляет игры и логи, оставляет пользователей, чат, настройки и профили LLM |
+| Скилл | `/tale-sim` | прогон партии ИИ-игроками без Telegram (`make sim`, ADR-0034): запуск, чтение отчёта `logs/sim/`, находки в бэклог, расписание фич |
 | Правило | `rules/go.md` | `**/*.go`, `go.mod` |
 | Правило | `rules/go-tests.md` | `**/*_test.go` |
 | Правило | `rules/postgres.md` | `migrations/**`, `internal/adapter/postgres/**`, `**/*.sql` |
@@ -51,6 +52,7 @@ argument-hint: "[status | map | extend <область>]"
 | Правило | `rules/telegram.md` | `internal/adapter/telegram/**`, `internal/app/bot/**` |
 | Правило | `rules/docs.md` | `docs/**`, `**/readme.md`, `README.md` |
 | Правило | `rules/guide.md` | `guide/**` — руководство игрока со стороны пользователя |
+| Правило | `rules/sim.md` | `internal/app/sim/**`, `internal/adapter/telegram/fake/**`, `cmd/simulate/**`, `sim/**`, `assets/prompts/player/**` |
 | Правило | `rules/meta.md` | `.claude/**`, `CLAUDE.md` |
 
 ## Рабочий цикл задачи
@@ -58,7 +60,7 @@ argument-hint: "[status | map | extend <область>]"
 1. Понять задачу; открыть `docs/plan/telegram.md` (очередь плана бота: `план | в работе`; готовые пункты — `docs/plan/telegram-done.md`; индекс всех планов `docs/plan/README.md`) и файл пункта `docs/plan/telegram/NN-*.md`; замечания руководителя после ручного тестирования вне текущего пункта — строкой в `docs/plan/backlog.md` (замечание, предложение, где, статус; выполненная строка переносится в `docs/plan/backlog-done.md` с датой и коммитом); документы по карте.
 2. Классифицировать: архитектура → `/tale-architect`; механика → `/tale-gamedesign`; промпт LLM → `/tale-prompts`; среда → `/tale-env`; иначе код по правилам области.
 3. Архитектурное или спорное решение → ADR до кода. Изменение концепта → вопрос в `docs/game/open-questions.md`, работа продолжается по безопасному допущению.
-4. Код → `make test` → `make lint` → readme пакета, `docs/` и статусы шагов в файле пункта плана обновлены.
+4. Код → `make test` → `make lint` → readme пакета, `docs/` и статусы шагов в файле пункта плана обновлены. Новая команда или механика игрока → фича в расписании имитатора (`sim.Features`, `sim/runs/basic.json`; `/tale-sim`, решение руководителя 2026-10-16).
 5. Применить локально (правило руководителя 2026-10-10): после правок кода Claude сам перезапускает фонового бота (`make restart`, при необходимости `make start`/`make stop`, `docs/go_commands.md`) и проверяет `make logs` — новая версия в `bot starting`, без `409 Conflict`; результат в отчёте. `make run` в терминале — только руководитель. Базу тоже обновляет Claude: после правок схемы или `settings` — `make migrate` на `tale` и `tale_test`, затем проверить строки уже запущенных игр и при необходимости поправить их SQL (значения по умолчанию, dev-режим), результат показать в отчёте.
 6. Коммит файлов задачи (правило Git выше), хеш в отчёте.
 7. Отчёт по форме выше.
@@ -72,7 +74,7 @@ argument-hint: "[status | map | extend <область>]"
 
 ## Среда (кратко)
 
-Go 1.27 в `~/.local/go/bin`; PostgreSQL 16 локально в WSL (apt); `.env` по `.env.example`; команды `make check build start restart stop logs test test-integration lint migrate fmt` (`docs/go_commands.md`); `make run` в терминале — только руководитель. Подробно: `/tale-env`, `docs/dev/environment.md`.
+Go 1.27 в `~/.local/go/bin`; PostgreSQL 16 локально в WSL (apt); `.env` по `.env.example`; команды `make check build start restart stop logs test test-integration lint migrate fmt sim migrate-sim` (`docs/go_commands.md`); `make run` в терминале — только руководитель. Подробно: `/tale-env`, `docs/dev/environment.md`.
 
 ## Статус
 

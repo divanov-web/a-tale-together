@@ -8,7 +8,7 @@ Windows 11 → WSL Ubuntu 24.04. Всё запускается из WSL. Для 
 ## PostgreSQL
 Установлен из apt: PostgreSQL 16, кластер `16 main` на 5432 (`pg_lsclusters`). Роль и базы создаются один раз (нужен sudo):
 ```bash
-sudo -u postgres psql -c "create user tale with password 'tale';" -c "create database tale owner tale;" -c "create database tale_test owner tale;"
+sudo -u postgres psql -c "create user tale with password 'tale';" -c "create database tale owner tale;" -c "create database tale_test owner tale;" -c "create database tale_sim owner tale;"
 ```
 Проверка: `psql "postgres://tale:tale@localhost:5432/tale?sslmode=disable" -c 'select 1'`.
 
@@ -34,6 +34,7 @@ cp .env.example .env
 | `make eval-interpreter` | оценочный набор интерпретатора на живом `claude-cli` (подписка Claude Code; `EVAL_ARGS="-v -case имя -model haiku -effort low"`; модель по умолчанию `sonnet`, как в профиле `local-claude`), порог 90 % |
 | `make eval-narrator` | оценочный набор рассказчика на живом `claude-cli` (подписка; те же `EVAL_ARGS`, модель по умолчанию `opus`), порог 90 %; `EVAL_ARGS="-opening"` — живая завязка истории по миру первого случая (ADR-0018) |
 | `make migrate` / `migrate-down` / `migrate-status` | миграции goose |
+| `make sim` / `make migrate-sim` | прогон партии ИИ-игроками без Telegram на БД `DATABASE_URL_SIM` (`tale_sim`, создаётся вместе с остальными) и её миграции; отчёт в `logs/sim/<метка>/` ([simulation.md](simulation.md)) |
 | `make fmt` | форматирование |
 | `make wipe` | вайп песочницы: удалить все игры и логи, оставить пользователей, чат, настройки и профили LLM (`scripts/wipe-sandbox.sql`, только `APP_ENV=dev`); см. [go_commands.md](../go_commands.md) |
 

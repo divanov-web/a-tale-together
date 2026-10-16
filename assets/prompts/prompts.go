@@ -3,7 +3,8 @@ package prompts
 
 import "embed"
 
-// FS — файлы промптов и оценочных наборов: `interpreter/v1.md`, `interpreter/eval/*.json`, `narrator/v1.md`, `narrator/eval/*.json`.
+// FS — файлы промптов и оценочных наборов: `interpreter/v1.md`, `interpreter/eval/*.json`, `narrator/v1.md`, `narrator/eval/*.json`,
+// `player/v1.md` (ИИ-игрок имитатора, ADR-0034).
 //
-//go:embed interpreter narrator
+//go:embed interpreter narrator player
 var FS embed.FS

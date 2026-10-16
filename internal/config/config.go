@@ -17,6 +17,7 @@ type Config struct {
 	TelegramBotToken string        `env:"TELEGRAM_BOT_TOKEN"`      // Токен бота Telegram
 	DatabaseURL      string        `env:"DATABASE_URL"`            // DSN PostgreSQL
 	DatabaseURLTest  string        `env:"DATABASE_URL_TEST"`       // DSN тестовой БД для интеграционных тестов
+	DatabaseURLSim   string        `env:"DATABASE_URL_SIM"`        // DSN БД прогонов имитатора (ADR-0034)
 	AppEnv           string        `env:"APP_ENV"`                 // dev|prod: в prod отключены dev-команды
 	LogLevel         string        `env:"LOG_LEVEL"`               // debug|info|warn|error
 	MigrateOnStart   bool          `env:"MIGRATE_ON_START"`        // Применять миграции при старте
@@ -42,6 +43,7 @@ func Defaults() Config {
 	return Config{
 		DatabaseURL:      "postgres://tale:tale@localhost:5432/tale?sslmode=disable",
 		DatabaseURLTest:  "postgres://tale:tale@localhost:5432/tale_test?sslmode=disable",
+		DatabaseURLSim:   "postgres://tale:tale@localhost:5432/tale_sim?sslmode=disable",
 		AppEnv:           "dev",
 		LogLevel:         "info",
 		SchedulerTick:    10 * time.Second,

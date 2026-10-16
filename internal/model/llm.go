@@ -28,6 +28,7 @@ const (
 	RoleOpening     LLMRole = "opening"  // завязка истории при /begin: модель рассказчика профиля (ADR-0018)
 	RoleWorldgen    LLMRole = "worldgen" // генерация мира: нулевой вызов при /create, варианты стартового мира (ADR-0028); модель рассказчика
 	RoleTest        LLMRole = "test"     // проверка профиля командой /llm test
+	RoleSimPlayer   LLMRole = "player"   // ИИ-игрок имитатора партии (ADR-0034): модель задаёт сценарий прогона
 )
 
 // LLMParams — параметры профиля в `llm_profiles.params` (jsonb).

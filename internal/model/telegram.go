@@ -104,3 +104,14 @@ func ParseCallbackData(data string) (command, args, step, text string) {
 	}
 	return "", "", "", data
 }
+
+// SentMessage — сообщение бота, как его видит чат: номер сообщения, текст, кнопки под ним и reply-клавиатура лички
+// (ADR-0034). Боевой клиент такие сообщения не хранит; их ведёт подмена транспорта для имитатора.
+type SentMessage struct {
+	ID       int64
+	Chat     TelegramChatID
+	Text     FormattedText
+	Keyboard Keyboard       // inline-кнопки; nil — без кнопок
+	Reply    *ReplyKeyboard // reply-клавиатура, поставленная этим сообщением; nil — не менялась
+	SentAt   time.Time
+}
