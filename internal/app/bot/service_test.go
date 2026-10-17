@@ -880,8 +880,9 @@ func TestRound_BeginActPauseNext(t *testing.T) {
 	mustContain(t, h.send(alice, groupChat, "/status"), "Текущий раунд: 2, заявки до 12:31; заявок 1 из 2", "Предыдущий раунд: 1 пропущен: заявок 1 из 2")
 
 	// Кворум собран: раунд 2 заморожен со снимком; Боб без заявки — нет, оба подали.
-	mustContain(t, h.send(bob, groupChat, "/act слежу за гонцом"), "Заявка принята: раунд 2") // B14: открытая заявка в группе
-	mustContain(t, h.send(bob, private(bob), "ещё раз"), "уже принята")                       // B17: повтор текстом — та же ошибка
+	mustContain(t, h.send(bob, groupChat, "/act слежу за гонцом"), "Боб: заявка принята на раунд 2") // B14: открытая заявка в группе; B50: ответ адресован по нику
+	mustContain(t, h.send(bob, groupChat, "/act ещё раз"), "Боб: заявка на этот раунд уже принята")  // B50: отказ в группе тоже адресован
+	mustContain(t, h.send(bob, private(bob), "ещё раз"), "Заявка на этот раунд уже принята")         // B17: повтор текстом — та же ошибка, в личке без ника
 	mustContain(t, h.send(owner, groupChat, "/next"), "Раунд закрыт, следующий открыт")
 	texts = h.outboxTexts()
 	mustContain(t, texts[3], "Раунд 2 — итоги")
@@ -1573,8 +1574,10 @@ func TestAway_Command(t *testing.T) {
 		t.Fatalf("away player notified: %q", got)
 	}
 
-	// /back при открытом раунде 2: заявка «жду», после заморозки Боб active.
-	mustContain(t, h.send(bob, private(bob), "/back"), "Боб возвращается: заявка «жду» принята на раунд 2")
+	// /back при открытом раунде 2: заявка «жду», которую заменяет настоящая заявка того же раунда (B51); после заморозки Боб active.
+	mustContain(t, h.send(bob, private(bob), "/back"), "Боб возвращается: заявка «жду» принята на раунд 2", "она заменит «жду»")
+	mustContain(t, h.send(bob, private(bob), "/act осматриваюсь"), "Заявка принята: раунд 2")
+	mustContain(t, h.send(bob, private(bob), "/act ещё раз"), "Заявка на этот раунд уже принята")
 	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: уходит из истории\n") // пометка снята, статус сменит заморозка
 	h.clock.advance(15 * time.Minute)
 	h.tick()
@@ -1598,7 +1601,8 @@ func TestSay_Command(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/say "+strings.Repeat("я", 201)), "Реплика до 200 символов")
 	mustContain(t, h.send(alice, private(alice), "/say Я здесь, не стреляйте!"), "Реплика принята: раунд 1, до ")
 	mustContain(t, h.send(alice, private(alice), "/say Повторяю!"), "Реплика на этот раунд уже принята")
-	mustContain(t, h.send(bob, groupChat, "/say Кто идёт?"), "Реплика принята: раунд 1")
+	mustContain(t, h.send(bob, groupChat, "/say Кто идёт?"), "Боб: реплика принята на раунд 1") // B50: ответ в группе адресован по нику
+	mustContain(t, h.send(bob, groupChat, "/say Эй?"), "Боб: реплика на этот раунд уже принята")
 	mustContain(t, h.send(owner, groupChat, "/say что-то"), "Персонажа ещё нет")
 	mustContain(t, h.send(alice, groupChat, "/status"), "заявок 0 из 2")
 	mustContain(t, h.send(owner, groupChat, "/round"), "Заявок: 0; реплик: 2", "• Элис говорит: «Я здесь, не стреляйте!»", "• Боб говорит: «Кто идёт?»")

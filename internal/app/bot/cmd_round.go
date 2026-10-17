@@ -213,8 +213,9 @@ func (s *Service) roundReplay(ctx context.Context, req *request) error {
 }
 
 // act — /act <текст>: заявка персонажа на открытый раунд. В личке — текущая игра пользователя, заявка скрыта;
-// в группе — игра чата, текст заявки виден всем, это выбор игрока (B14). Аргумент `#…` — ссылка на вариант сцены
-// с кнопки под личным сообщением (ADR-0015): заявкой становится название подхода.
+// в группе — игра чата, текст заявки виден всем, это выбор игрока (B14), а ответ и отказ адресованы персонажу по
+// нику (B50): в общем чате «Заявка принята» без адресата читается каждым как своя. Аргумент `#…` — ссылка на вариант
+// сцены с кнопки под личным сообщением (ADR-0015): заявкой становится название подхода.
 func (s *Service) act(ctx context.Context, req *request) error {
 	text := strings.TrimSpace(req.in.Args)
 	if text == "" {
@@ -232,17 +233,30 @@ func (s *Service) act(ctx context.Context, req *request) error {
 		r, sub, err = s.rounds.Submit(ctx, g, c, text)
 	}
 	if err != nil {
+		return addressed(req, c, err)
+	}
+	deadline := round.FormatTime(g, r.DeadlineAt, s.clock.Now())
+	switch {
+	case !req.in.IsPrivate():
+		return s.reply(ctx, req.in, fmt.Sprintf("%s: заявка принята на раунд %d, до %s.", c.Nickname, r.RoundNo, deadline))
+	case req.in.Callback != nil:
+		return s.reply(ctx, req.in, fmt.Sprintf("Заявка принята: «%s», раунд %d, до %s.", sub.RawText, r.RoundNo, deadline))
+	}
+	return s.reply(ctx, req.in, fmt.Sprintf("Заявка принята: раунд %d, до %s.", r.RoundNo, deadline))
+}
+
+// addressed — отказ сценария в группе с ником персонажа впереди (B50): текст ошибки игроку остаётся тем же
+// (`errors.Is` для `userErrors`), но читается как адресованный; в личке ошибка возвращается как есть.
+func addressed(req *request, c model.Character, err error) error {
+	if req.in.IsPrivate() {
 		return err
 	}
-	if req.in.Callback != nil {
-		return s.reply(ctx, req.in, fmt.Sprintf("Заявка принята: «%s», раунд %d, до %s.", sub.RawText, r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
-	}
-	return s.reply(ctx, req.in, fmt.Sprintf("Заявка принята: раунд %d, до %s.", r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
+	return fmt.Errorf("%s: %w", c.Nickname, err)
 }
 
 // say — /say <текст>: реплика персонажа на открытый раунд (пункт 32, ADR-0027) по тем же правилам, что заявка, но
 // отдельно от неё: место заявки не занимает, кворума не даёт, попадает в снимок и в сцену рассказчика. В группе текст
-// виден всем, как у открытой заявки.
+// виден всем, как у открытой заявки, ответ и отказ адресованы персонажу по нику (B50).
 func (s *Service) say(ctx context.Context, req *request) error {
 	text := strings.TrimSpace(req.in.Args)
 	if text == "" {
@@ -254,9 +268,13 @@ func (s *Service) say(ctx context.Context, req *request) error {
 	}
 	r, _, err := s.rounds.Say(ctx, g, c, text)
 	if err != nil {
-		return err
+		return addressed(req, c, err)
 	}
-	return s.reply(ctx, req.in, fmt.Sprintf("Реплика принята: раунд %d, до %s. Рассказчик может процитировать или пересказать её; действие — /act.", r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
+	deadline := round.FormatTime(g, r.DeadlineAt, s.clock.Now())
+	if !req.in.IsPrivate() {
+		return s.reply(ctx, req.in, fmt.Sprintf("%s: реплика принята на раунд %d, до %s. Рассказчик может процитировать или пересказать её; действие — /act.", c.Nickname, r.RoundNo, deadline))
+	}
+	return s.reply(ctx, req.in, fmt.Sprintf("Реплика принята: раунд %d, до %s. Рассказчик может процитировать или пересказать её; действие — /act.", r.RoundNo, deadline))
 }
 
 // actor — игра и персонаж отправителя по контексту сообщения: игра чата в группе, текущая игра пользователя в личке.

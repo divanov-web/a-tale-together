@@ -40,7 +40,8 @@ func (s *Service) away(ctx context.Context, req *request) error {
 }
 
 // back — /back в личке (ADR-0026): снимает пометку ухода; выведенному персонажу при открытом раунде ставит заявку
-// ожидания, возвращение объясняет рассказчик; без открытого раунда вернёт первая заявка.
+// ожидания (её заменит `/act` того же раунда, B51), возвращение объясняет рассказчик; без открытого раунда вернёт
+// первая заявка.
 func (s *Service) back(ctx context.Context, req *request) error {
 	g, c, err := s.actor(ctx, req)
 	if err != nil {
@@ -49,7 +50,7 @@ func (s *Service) back(ctx context.Context, req *request) error {
 	r, err := s.rounds.Back(ctx, g, c)
 	switch {
 	case err == nil && r != nil:
-		return s.reply(ctx, req.in, fmt.Sprintf("%s возвращается: заявка «%s» принята на раунд %d, до %s. Рассказчик объяснит возвращение.", c.Nickname, round.BackSubmission, r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now())))
+		return s.reply(ctx, req.in, fmt.Sprintf("%s возвращается: заявка «%s» принята на раунд %d, до %s. Рассказчик объяснит возвращение; хотите действовать в этом раунде — подайте заявку /act, она заменит «%s».", c.Nickname, round.BackSubmission, r.RoundNo, round.FormatTime(g, r.DeadlineAt, s.clock.Now()), round.BackSubmission))
 	case err == nil:
 		return s.reply(ctx, req.in, fmt.Sprintf("Уход отменён: %s остаётся в истории.", c.Nickname))
 	case errors.Is(err, round.ErrNoOpenRound):

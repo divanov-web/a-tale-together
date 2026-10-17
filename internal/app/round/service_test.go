@@ -934,6 +934,14 @@ func TestAway_LeaveAndBack(t *testing.T) {
 	if sub, err := w.store.GetSubmission(ctx, w.game.ID, r3.ID, bob.ID); err != nil || sub.RawText != BackSubmission {
 		t.Fatalf("back submission = %+v, %v", sub, err)
 	}
+	// B51: заявка ожидания заменяется настоящей заявкой того же раунда сразу, а та уже не заменяется.
+	bob, _ = w.store.GetCharacter(ctx, w.game.ID, bob.SeasonID, bob.UserID)
+	if _, sub, err := w.svc.Submit(ctx, w.game, bob, "осматриваюсь"); err != nil || sub.RawText != "осматриваюсь" {
+		t.Fatalf("Submit after back = %+v, %v", sub, err)
+	}
+	if _, _, err := w.svc.Submit(ctx, w.game, bob, "ещё раз"); !errors.Is(err, ErrAlreadyActed) {
+		t.Fatalf("second Submit after back = %v, want ErrAlreadyActed", err)
+	}
 	w.tick(t, 10*time.Minute)
 	bob, _ = w.store.GetCharacter(ctx, w.game.ID, bob.SeasonID, bob.UserID)
 	if bob.Status != model.CharacterActive || bob.MissedRounds != 0 || bob.Away {

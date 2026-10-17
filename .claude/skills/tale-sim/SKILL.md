@@ -22,6 +22,6 @@ argument-hint: "[run <сценарий>] [rounds N] [report <папка>]"
 6. Находки → строки `docs/plan/backlog.md` (замечание, предложение, где); результат прогона (дата, сценарий, модели, раундов, вызовов, токены, стоимость, выводы) → таблица измерений `docs/llm/README.md`.
 
 ## Поддержка
-- Новая команда или механика игрока (пункт плана или строка бэклога) → фича в `sim.Features` (`internal/app/sim/scenario.go`) и в `features` сценария `sim/runs/basic.json`; сквозной тест `go test ./internal/app/sim/` проходит.
+- Новая команда или механика игрока (пункт плана или строка бэклога) → фича в `sim.Features` (`internal/app/sim/scenario.go`: ключ, команда бота, задание) и в `features` сценария `sim/runs/basic.json`; сквозной тест `go test ./internal/app/sim/` проходит (он же отвергает фичу на команду, которой нет в реестре бота).
 - Изменение промпта игрока → `assets/prompts/player/vN.md`, `sim.PromptVersion`, дымовой прогон.
 - Новый сценарий (нагрузка, инъекции) → файл в `sim/runs/`, `sim.Load` проверяет его.

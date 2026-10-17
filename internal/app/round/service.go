@@ -370,7 +370,8 @@ func (s *Service) Next(ctx context.Context, game model.Game, actor model.UserID)
 }
 
 // Submit создаёт заявку персонажа на открытый раунд. Повторная заявка отклоняется; при `settings.allow_resubmit`
-// заменяет текст не чаще раза в минуту.
+// заменяет текст не чаще раза в минуту. Заявка ожидания `BackSubmission` (её ставит `/back`) заменяется настоящей
+// заявкой того же раунда всегда (B51): вернувшийся игрок не теряет ход.
 func (s *Service) Submit(ctx context.Context, game model.Game, c model.Character, text string) (model.Round, model.Submission, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -394,10 +395,12 @@ func (s *Service) Submit(ctx context.Context, game model.Game, c model.Character
 		return model.Round{}, model.Submission{}, fmt.Errorf("round.Submit: %w", err)
 	}
 	if ex, err := s.store.GetSubmission(ctx, game.ID, r.ID, c.ID); err == nil {
-		if !game.Settings.AllowResubmit {
+		switch {
+		case ex.RawText == BackSubmission:
+			// Заявка ожидания (её ставит `/back`, B51) — заглушка до настоящего хода: заменяется без ограничений.
+		case !game.Settings.AllowResubmit:
 			return model.Round{}, model.Submission{}, ErrAlreadyActed
-		}
-		if now.Sub(ex.UpdatedAt) < model.SubmissionReplaceWindow {
+		case now.Sub(ex.UpdatedAt) < model.SubmissionReplaceWindow:
 			return model.Round{}, model.Submission{}, ErrTooFrequent
 		}
 	} else if !errors.Is(err, model.ErrNotFound) {
@@ -467,6 +470,7 @@ func (s *Service) Say(ctx context.Context, game model.Game, c model.Character, t
 }
 
 // BackSubmission — текст заявки возвращения по `/back`: ожидание; возврат объясняет рассказчик по `entry = returned`.
+// Заглушка до настоящего хода: `Submit` в том же раунде заменяет её (B51).
 const BackSubmission = "жду"
 
 // Away — уход персонажа по слову игрока (пункт 20, ADR-0026): пометка `away`, заявка открытого раунда удаляется

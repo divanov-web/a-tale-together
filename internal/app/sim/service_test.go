@@ -199,6 +199,44 @@ func runScenario(t *testing.T, sc Scenario, opts ...Settings) (Report, *fake.Sto
 	return rep, store, player, err
 }
 
+// TestFeatures_CommandsKnown (B52): команда каждой фичи каталога есть в реестре бота — иначе игроки раунда получают
+// «Неизвестная команда». Команды шлются в личку от нового пользователя: любой ответ, кроме «Неизвестная команда»,
+// значит, что маршрут есть.
+func TestFeatures_CommandsKnown(t *testing.T) {
+	ctx := context.Background()
+	clock := realClock{}
+	store := fake.New(clock.Now)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	tr := tgfake.New("tale_bot", nil)
+	chats := chat.New(store, logger)
+	games := game.New(store, chats, clock, logger)
+	rounds := round.New(store, games, clock, logger)
+	llm := applm.New(store, map[string]applm.Client{model.ProviderFake: &scriptedPlayer{}}, clock, logger)
+	commands := bot.New(bot.Settings{Version: "test", Env: "dev", BotUsername: "tale_bot"}, store, store, tr, chats, games, rounds, llm, clock, logger)
+	user := model.TelegramUser{ID: 777001, FirstName: "Тест", Username: "feature_sim"}
+	private := model.TelegramChatID(user.ID)
+	var last int64
+	for _, f := range Features {
+		if f.Command == "" {
+			t.Errorf("фича %q без команды", f.Key)
+			continue
+		}
+		if err := commands.Handle(ctx, tr.Text(private, model.ChatPrivate, user, "/"+f.Command)); err != nil {
+			t.Errorf("фича %q: /%s: %v", f.Key, f.Command, err)
+			continue
+		}
+		msgs := tr.Messages(private, last)
+		if len(msgs) == 0 {
+			t.Errorf("фича %q: бот не ответил на /%s", f.Key, f.Command)
+			continue
+		}
+		last = msgs[len(msgs)-1].ID
+		if strings.Contains(msgs[len(msgs)-1].Text.Text, "Неизвестная команда") {
+			t.Errorf("фича %q: команда /%s не в реестре бота", f.Key, f.Command)
+		}
+	}
+}
+
 // TestRunner_ThreeRounds: полный прогон на фейках без сети — три игрока входят по расписанию, три раунда
 // закрываются по /next, игра доигрывается до финала по max_rounds, отчёт содержит раунды и заявки.
 func TestRunner_ThreeRounds(t *testing.T) {

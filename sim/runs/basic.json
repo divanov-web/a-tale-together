@@ -36,7 +36,7 @@
     "6": ["quests", "party"],
     "7": ["bio", "secret"],
     "8": ["away@gleb_sim", "character"],
-    "9": ["back@gleb_sim", "journal"],
+    "9": ["back@gleb_sim", "status"],
     "10": ["knowledge", "group_act"]
   }
 }

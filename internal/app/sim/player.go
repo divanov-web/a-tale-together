@@ -13,7 +13,7 @@ import (
 )
 
 // PromptVersion — версия промпта ИИ-игрока (`assets/prompts/player/vN.md`); пишется в `llm_runs`.
-const PromptVersion = "player/v1"
+const PromptVersion = "player/v2"
 
 // schema — схема ответа ИИ-игрока.
 var schema = json.RawMessage(`{"type":"object","properties":{
@@ -58,7 +58,7 @@ type player struct {
 
 // systemPrompt — системная часть промпта игрока из `prompts.FS`.
 func systemPrompt() (string, error) {
-	raw, err := prompts.FS.ReadFile("player/v1.md")
+	raw, err := prompts.FS.ReadFile("player/v2.md")
 	if err != nil {
 		return "", fmt.Errorf("sim: промпт игрока: %w", err)
 	}
