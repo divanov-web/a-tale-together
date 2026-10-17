@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Деплой на прод-сервере (docs/dev/server.md): код из origin/master, сборка, миграции, системные файлы, перезапуск.
-# Запуск под пользователем divanov: ~/Go/a-tale-together/deploy/deploy.sh. Локальных правок на сервере не бывает,
+# Запуск под пользователем divanov: ~/Projects/a-tale-together/deploy/deploy.sh. Локальных правок на сервере не бывает,
 # поэтому рабочая копия приводится к origin/master без слияния (git reset --hard).
 set -euo pipefail
 cd "$(dirname "$0")/.."

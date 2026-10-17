@@ -7,15 +7,15 @@ VPS Fornex, Ubuntu 24.04, 1 vCPU, 1 ГБ ОЗУ + swap 2 ГБ, диск 10 ГБ.
 | Что | Где |
 |---|---|
 | Пользователь | `divanov` (ssh по ключу, `sudo` без пароля); алиас `ssh fornex-dev` с домашней машины. `root` только для администрирования (`ssh fornex`) |
-| Код | `~/Go/a-tale-together`, клон `https://github.com/divanov-web/a-tale-together`, всегда равен `origin/master` |
+| Код | `~/Projects/a-tale-together` (на сервере не `~/Go`: имя сталкивалось с `~/go`, кэшем модулей Go), клон `https://github.com/divanov-web/a-tale-together`, всегда равен `origin/master` |
 | Go, goose, claude | `~/.local/go/bin/go` 1.27.2, `~/.local/bin/goose`, `~/.local/bin/claude` (Claude Code, нативная установка) |
 | PostgreSQL | 16 из apt, localhost:5432, роль `tale`, база `tale`. Тестовой и имитаторской баз нет |
-| Конфигурация | `~/Go/a-tale-together/.env`: `APP_ENV=prod`, `LOG_LEVEL=info`, `TELEGRAM_BOT_TOKEN` отдельного бота, `CLAUDE_CLI_PATH=/home/divanov/.local/bin/claude` |
+| Конфигурация | `~/Projects/a-tale-together/.env`: `APP_ENV=prod`, `LOG_LEVEL=info`, `TELEGRAM_BOT_TOKEN` отдельного бота, `CLAUDE_CLI_PATH=/home/divanov/.local/bin/claude` |
 | Сервис | `tale-bot` (systemd, `deploy/tale-bot.service`), автозапуск, перезапуск при падении |
 | Лог | `logs/bot.log` (тот же путь, что дома), ротация `/etc/logrotate.d/tale-bot`; журнал чатов `logs/chats/`, 30 дней |
 | Бэкап | `/etc/cron.daily/tale-backup` → `/var/backups/tale/tale-<дата>.dump`, 14 дней |
 
-## Команды (под `divanov`, из `~/Go/a-tale-together`)
+## Команды (под `divanov`, из `~/Projects/a-tale-together`)
 
 | Команда | Действие |
 |---|---|
@@ -38,4 +38,4 @@ VPS Fornex, Ubuntu 24.04, 1 vCPU, 1 ГБ ОЗУ + swap 2 ГБ, диск 10 ГБ.
 - ОЗУ 1 ГБ: каждый вызов LLM через `claude-cli` поднимает процесс Node (300–500 МБ), параллелизм профиля 2. Для нагрузки реальной группы нужен тариф с 2 ГБ ОЗУ и 20 ГБ диска (после установки свободно около 1.3 ГБ).
 - Подписка Claude Code допустима для теста; для прода с чужими игроками нужен провайдер `anthropic-api` (пункт плана 08, вопрос T2 в [open-questions](../game/open-questions.md)).
 - Фаервол не включён: наружу слушают только ssh 22 и Amnezia 443, Postgres привязан к localhost. `ufw` рядом с Docker ломает маршрутизацию VPN, поэтому не ставится без отдельного решения.
-- Дома и на сервере один и тот же пользователь и путь к проекту, поэтому `.env.example`, Makefile и скиллы работают в обоих местах без правок.
+- Дома проект в `~/Go/a-tale-together`, на сервере в `~/Projects/a-tale-together`; Makefile и скрипты используют относительные пути, полный путь прописан только в `deploy/tale-bot.service` и `deploy/tale-bot.logrotate`.

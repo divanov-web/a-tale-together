@@ -16,7 +16,7 @@
 | CI/CD из GitHub Actions по push | без входа на сервер | секреты и ssh-ключ в GitHub, лишнее для одного разработчика |
 
 ## Решение
-- Сервер: пользователь `divanov` (sudo без пароля, вход только по ключу), Go в `~/.local/go`, PostgreSQL 16 из apt (роль `tale`, одна база `tale`; тестовой и имитаторской баз на проде нет), клон репозитория в `~/Go/a-tale-together` — пути совпадают с домашними.
+- Сервер: пользователь `divanov` (sudo без пароля, вход только по ключу), Go в `~/.local/go`, PostgreSQL 16 из apt (роль `tale`, одна база `tale`; тестовой и имитаторской баз на проде нет), клон репозитория в `~/Projects/a-tale-together` (не `~/Go`: сталкивается с `~/go`, кэшем модулей Go; полный путь только в юните и logrotate).
 - Сервис `tale-bot` (`deploy/tale-bot.service`): `User=divanov`, `EnvironmentFile=.env`, `Restart=on-failure`, stdout и stderr дописываются в `logs/bot.log`; ротация `deploy/tale-bot.logrotate` (неделя или 50 МБ, 8 копий, `copytruncate`).
 - Деплой `deploy/deploy.sh`: `git fetch` + `git reset --hard origin/master` (локальных правок на сервере не бывает), `make build`, `make migrate`, установка системных файлов из `deploy/`, `systemctl restart`; при пустом `TELEGRAM_BOT_TOKEN` сервис не запускается. Push в GitHub делает руководитель, деплой запускает Claude по его команде через ssh.
 - Бэкап: `deploy/tale-backup.sh` в `/etc/cron.daily`, `pg_dump -Fc` в `/var/backups/tale`, 14 дней.
