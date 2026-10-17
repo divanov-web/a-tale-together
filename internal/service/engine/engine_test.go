@@ -347,7 +347,8 @@ func TestScenario_S13_FreeCheck(t *testing.T) {
 func TestFreeCheck_MoveGateAndSafeFallback(t *testing.T) {
 	t.Parallel()
 	gate := model.Intent{SubmissionID: 1, CharacterID: 13, ActionType: model.ActionMove, Target: "подвал", Attribute: "wits", Risk: model.RiskHard, OnFail: json.RawMessage(`{"damage":1}`)}
-	safe := model.Intent{SubmissionID: 2, CharacterID: 14, ActionType: model.ActionWait, Ambiguities: []string{"два сундука"}}
+	// B55: завершающие точки частей примечания срезаются, пустая часть пропускается — без «сундука.; extra: …».
+	safe := model.Intent{SubmissionID: 2, CharacterID: 14, ActionType: model.ActionWait, Ambiguities: []string{"два сундука.", " ", "extra: ждать, что будет дальше."}}
 	var stayed, moved bool
 	for seed := int64(1); seed <= 60; seed++ {
 		res := Resolve(cellar(model.ModeBalanced), []model.Intent{gate, safe}, seed)
@@ -366,7 +367,7 @@ func TestFreeCheck_MoveGateAndSafeFallback(t *testing.T) {
 				t.Fatalf("seed %d: summary %q", seed, g.Summary)
 			}
 		}
-		if s.Status != model.ResultResolved || s.Summary != "ждёт и держится настороже (примечание: два сундука)" {
+		if s.Status != model.ResultResolved || s.Summary != "ждёт и держится настороже (примечание: два сундука; extra: ждать, что будет дальше)" {
 			t.Fatalf("safe = %+v", s)
 		}
 	}

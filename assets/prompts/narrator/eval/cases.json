@@ -3539,10 +3539,10 @@
   },
   {
    "name": "lair_background",
-   "comment": "логово Гильдии теней скрыто в (3,-3) с видом издалека «крыло мельницы над холмами»: рассказчик может упомянуть примету или тревогу с юго-востока, но не называет имя «Чёрная мельница», не ведёт туда персонажей и не описывает, что внутри; события раунда как в speech_quote (B42, ADR-0031)",
+   "comment": "логово Гильдии теней скрыто в (3,-3) с видом издалека «крыло мельницы над холмами»; раунд 6 — код даёт сценам направление `lair` (B53: каждый третий раунд): рассказчик может упомянуть примету или тревогу с юго-востока, но не называет имя «Чёрная мельница», не ведёт туда персонажей и не описывает, что внутри; события раунда как в locked_door, реплик нет; слово «мельниц» допустимо — оно из `distant_view` (B42, ADR-0031)",
    "params": {
     "mode": "balanced",
-    "round_no": 7,
+    "round_no": 6,
     "events": [
      {
       "seq": 117,
@@ -3815,16 +3815,310 @@
    "required": [
     "Вор",
     "Кузнец",
-    "Маг",
-    "стреля"
+    "Маг"
    ],
    "forbidden": [
     "Чёрная мельница",
     "гильди",
     "логов",
-    "мельниц",
     "печать",
     "шпион"
+   ]
+  },
+  {
+   "name": "lair_silent",
+   "comment": "B53: то же логово, раунд 7 — направления `lair` у сцен нет, а прошлая хроника уже несла примету «крыло мельницы над холмами на юго-востоке». Ожидание: в этом раунде о логове и его стороне ни слова — ни мельницы, ни холмов, ни юго-востока; выходы башни (север, юг, запад, восток) по-прежнему можно называть",
+   "params": {
+    "mode": "balanced",
+    "round_no": 7,
+    "events": [
+     {
+      "seq": 117,
+      "type": "object_changed",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 11,
+      "payload": {
+       "character_id": 11,
+       "location_id": 2,
+       "object": "cellar_door",
+       "title": "дверь подвала",
+       "from": "locked",
+       "to": "open"
+      }
+     },
+     {
+      "seq": 118,
+      "type": "check_rolled",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 12,
+      "payload": {
+       "character_id": 12,
+       "object": "cellar_door",
+       "title": "дверь подвала",
+       "free": false,
+       "summary": "взаимодействует: дверь подвала",
+       "check": {
+        "attribute": "strength",
+        "skill": "athletics",
+        "param": 4,
+        "difficulty": 7,
+        "chance_pct": 20,
+        "roll": 63,
+        "pushed": true,
+        "push_roll": 88,
+        "outcome": "failure"
+       }
+      }
+     },
+     {
+      "seq": 119,
+      "type": "character_moved",
+      "visibility": "location",
+      "location_id": 1,
+      "character_id": 13,
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 2,
+       "from_name": "Зал башни",
+       "to_name": "Подвал башни"
+      }
+     },
+     {
+      "seq": 120,
+      "type": "character_moved",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 13,
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 2,
+       "from_name": "Зал башни",
+       "to_name": "Подвал башни"
+      }
+     }
+    ],
+    "bios": {
+     "11": {
+      "public": "ловкий вор с прищуром",
+      "secret": "на самом деле шпион Гильдии теней и ищет печать гильдии"
+     },
+     "12": {
+      "public": "кузнец из деревни у леса",
+      "secret": ""
+     },
+     "13": {
+      "public": "учёный маг",
+      "secret": "боится темноты и скрывает это"
+     },
+     "14": {
+      "public": "рыцарь Ордена",
+      "secret": ""
+     }
+    },
+    "previous": [
+     {
+      "chronicle": "Башня дремала под низким небом, а на юго-востоке над холмами весь день темнело крыло мельницы, и от него тянуло тревогой."
+     }
+    ],
+    "state": {
+     "schema_version": 2,
+     "mode": "balanced",
+     "locations": [
+      {
+       "id": 1,
+       "name": "Зал башни",
+       "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
+       "difficulty": 0,
+       "objects": [
+        {
+         "key": "statue",
+         "title": "статуя рыцаря",
+         "description": "каменный рыцарь с мечом",
+         "approaches": [
+          {
+           "action": "explore",
+           "title": "осмотреть статую",
+           "attribute": "wits",
+           "skill": "awareness",
+           "difficulty": 1
+          }
+         ]
+        }
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
+      },
+      {
+       "id": 2,
+       "name": "Подвал башни",
+       "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
+       "difficulty": 1,
+       "objects": [
+        {
+         "key": "cellar_door",
+         "title": "дверь подвала",
+         "state": "open",
+         "approaches": [
+          {
+           "action": "interact",
+           "title": "выбить",
+           "attribute": "strength",
+           "difficulty": 2
+          },
+          {
+           "action": "interact",
+           "title": "отпереть",
+           "attribute": "agility",
+           "skill": "thievery",
+           "difficulty": 1
+          },
+          {
+           "action": "explore",
+           "title": "найти потайной рычаг",
+           "attribute": "wits",
+           "skill": "awareness",
+           "difficulty": 3
+          }
+         ]
+        },
+        {
+         "key": "hidden_lever",
+         "title": "потайной рычаг",
+         "hidden_until_revealed": true
+        }
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
+      }
+     ],
+     "characters": [
+      {
+       "id": 11,
+       "nickname": "Вор",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "location_id": 2,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 4,
+        "wits": 3,
+        "will": 3
+       },
+       "skills": {
+        "thievery": 3,
+        "stealth": 2
+       },
+       "inventory": [
+        {
+         "key": "lockpicks",
+         "title": "Отмычки"
+        }
+       ]
+      },
+      {
+       "id": 12,
+       "nickname": "Кузнец",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "location_id": 2,
+       "conditions": [
+        "exhausted"
+       ],
+       "attributes": {
+        "strength": 4,
+        "agility": 2,
+        "wits": 2,
+        "will": 4
+       },
+       "skills": {
+        "melee": 3
+       }
+      },
+      {
+       "id": 13,
+       "nickname": "Маг",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "location_id": 2,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 2,
+        "wits": 4,
+        "will": 4
+       },
+       "skills": {
+        "awareness": 3,
+        "persuasion": 2
+       }
+      },
+      {
+       "id": 14,
+       "nickname": "Паладин",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "location_id": 1,
+       "conditions": [],
+       "attributes": {
+        "strength": 4,
+        "agility": 3,
+        "wits": 2,
+        "will": 3
+       },
+       "skills": {
+        "melee": 2
+       }
+      },
+      {
+       "id": 15,
+       "nickname": "Призрак",
+       "status": "dead",
+       "hp": 0,
+       "max_hp": 6,
+       "location_id": 1,
+       "conditions": []
+      }
+     ]
+    },
+    "speeches": [],
+    "lair": {
+     "faction": "Гильдия теней",
+     "at": {
+      "x": 3,
+      "y": -3
+     },
+     "hidden": true,
+     "name": "Чёрная мельница",
+     "distant_view": "крыло мельницы над холмами"
+    }
+   },
+   "required": [
+    "Вор",
+    "Кузнец",
+    "Маг"
+   ],
+   "forbidden": [
+    "Чёрная мельница",
+    "гильди",
+    "крыло",
+    "логов",
+    "мельниц",
+    "печать",
+    "холм",
+    "шпион",
+    "юго-восток"
    ]
   },
   {

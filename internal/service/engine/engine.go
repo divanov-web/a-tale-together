@@ -108,9 +108,23 @@ func (r *resolver) resolveOne(in model.Intent) {
 	}
 	if len(in.Ambiguities) > 0 && res.Status == model.ResultResolved {
 		// Неоднозначности интерпретатора (в том числе безопасное толкование, G3): действие выполнено, игроку видно, что было непонятно.
-		res.Summary += " (примечание: " + strings.Join(in.Ambiguities, "; ") + ")"
+		res.Summary += " (примечание: " + joinNotes(in.Ambiguities) + ")"
 	}
 	r.results = append(r.results, res)
+}
+
+// joinNotes склеивает примечания интерпретатора через «; »: у каждой части срезаются пробелы и завершающая точка
+// или точка с запятой, чтобы в итоге не было «дымок.; extra: …» (B55); пустые части пропускаются.
+func joinNotes(notes []string) string {
+	parts := make([]string, 0, len(notes))
+	for _, n := range notes {
+		n = strings.TrimSpace(n)
+		n = strings.TrimRight(n, ".; ")
+		if n != "" {
+			parts = append(parts, n)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (r *resolver) resolveSupported(c *model.SnapshotCharacter, in model.Intent, res *model.ActionResult) {

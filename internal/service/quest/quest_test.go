@@ -129,6 +129,16 @@ func TestQuestPlan_Bind(t *testing.T) {
 	if len(got.Bind) != 1 || got.Bind[0].Quest.ID != 1 {
 		t.Fatalf("bind with lair = %+v", got.Bind)
 	}
+	// B54: расстояние 0 — этап там, где персонаж стоит сейчас: Паладин фракции 1 на стартовой площади (0,0), первый
+	// этап «канат» про объект площади привязывается к ней же, не ждёт перехода.
+	st.Characters = append(st.Characters, model.SnapshotCharacter{ID: 13, Nickname: "Паладин", Status: model.CharacterActive, FactionID: 1, LocationID: loc(1)})
+	here := model.Quest{ID: 6, FactionID: 1, Kind: model.QuestStory, Status: model.QuestActive, Stages: []model.QuestStage{stage(1, "rope", 0, model.ConditionFact, model.StagePending, nil)}}
+	in.Quests = []model.Quest{here}
+	in.Factions = []model.Faction{{ID: 1}}
+	got = Plan(in)
+	if len(got.Bind) != 1 || got.Bind[0].Quest.ID != 6 || got.Bind[0].LocationID != 1 {
+		t.Fatalf("bind at distance 0 = %+v", got.Bind)
+	}
 }
 
 // TestQuestCheck_Conditions (S17): `fact` — факт у персонажа фракции (чужая фракция не считается); `object_state` —

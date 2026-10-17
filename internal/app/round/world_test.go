@@ -315,7 +315,8 @@ func TestBegin_Lair(t *testing.T) {
 	if lair.Name != "Чёрная мельница" || lair.Stage != model.StageCard || !lair.Hidden || lair.DistantView != "крыло мельницы над холмами" || lair.Terrain != "ruins" || lair.VisitedAt != nil || lair.Glimpse() != "неизведанная территория (крыло мельницы над холмами)" {
 		t.Fatalf("lair = %+v", lair)
 	}
-	// Первый раунд: рассказчик получает логово фоном — фракция и вид издалека, без имени; у сцены направление.
+	// Первый раунд: рассказчик получает логово фоном — фракция и вид издалека, без имени; направление у сцены в
+	// первом раунде не даётся (B53: каждый третий раунд, `narrator.LairHintEvery`).
 	for _, c := range w.chars {
 		if _, _, err := w.svc.Submit(ctx, w.game, c, "осмотреться"); err != nil {
 			t.Fatal(err)
@@ -323,7 +324,7 @@ func TestBegin_Lair(t *testing.T) {
 	}
 	w.tick(t, 10*time.Minute)
 	last := llm.inputs[len(llm.inputs)-1]
-	if !strings.Contains(last, `"lair":{"faction":"Гильдия","distant_view":"крыло мельницы над холмами"}`) || strings.Contains(last, "Чёрная мельница") || !strings.Contains(last, `"lair":"недалеко на юго-востоке"`) {
+	if !strings.Contains(last, `"lair":{"faction":"Гильдия","distant_view":"крыло мельницы над холмами"}`) || strings.Contains(last, "Чёрная мельница") || strings.Contains(last, `"lair":"недалеко на юго-востоке"`) {
 		t.Fatalf("narrator input lair: %s", last)
 	}
 	// Сброс мира удаляет логово, повторный старт создаёт его заново (шаблон при сбое модели).

@@ -399,6 +399,7 @@ func TestBuildInput_Speeches(t *testing.T) {
 func TestBuildInput_Lair(t *testing.T) {
 	t.Parallel()
 	p := params(model.ModeBalanced)
+	p.RoundNo = 6 // B53: направление логова сцена получает каждый третий раунд
 	p.Lair = &LairInfo{Faction: "Гильдия", At: model.Coord{X: 3, Y: -3}, Hidden: true, Name: "Чёрная мельница", DistantView: "крыло мельницы над холмами"}
 	in := BuildInput(p)
 	if in.World.Lair == nil || in.World.Lair.Faction != "Гильдия" || in.World.Lair.DistantView != "крыло мельницы над холмами" || in.World.Lair.Name != "" {
@@ -416,6 +417,21 @@ func TestBuildInput_Lair(t *testing.T) {
 	}
 	if enc := BuildInput(params(model.ModeBalanced)).Encode(); strings.Contains(enc, `"lair"`) {
 		t.Fatalf("lair without faction lair: %s", enc)
+	}
+	// B53: в остальные раунды `world.lair` остаётся (вид издалека, запрет вести туда квесты), а направления у сцен нет;
+	// рядом с логовом (шаг 1, в том числе по диагонали) направление даётся всегда.
+	p.RoundNo = 7
+	if in = BuildInput(p); in.World.Lair == nil || in.Scenes[0].Lair != "" || in.Scenes[1].Lair != "" || strings.Contains(in.Encode(), `"lair":"`) {
+		t.Fatalf("off-cadence round: scenes = %q, %q", in.Scenes[0].Lair, in.Scenes[1].Lair)
+	}
+	p.Lair.At = model.Coord{X: 1, Y: -2} // по диагонали от подвала (0,-1)
+	if in = BuildInput(p); in.Scenes[0].Lair != "" || in.Scenes[1].Lair != "рядом на юго-востоке" {
+		t.Fatalf("near lair: scenes = %q, %q", in.Scenes[0].Lair, in.Scenes[1].Lair)
+	}
+	for roundNo, want := range map[int]bool{1: false, 2: false, 3: true, 6: true, 7: false, 9: true} {
+		if got := lairHintDue(roundNo, 2); got != want {
+			t.Fatalf("lairHintDue(%d) = %v", roundNo, got)
+		}
 	}
 }
 

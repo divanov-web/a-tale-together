@@ -316,10 +316,12 @@ func validateQuest(q rawQuest, task QuestTask) (GeneratedQuest, []string) {
 			issues = append(issues, fmt.Sprintf("квест «%s»: условие %q не из каталога, взято visited", g.Title, st.Condition))
 			kind = model.ConditionVisited
 		}
+		// Расстояние 0 — этап там, где группа стоит сейчас (B54): для того, что уже лежит перед персонажами.
 		distance := st.Distance
-		if distance < 1 || distance > model.MaxStageDistance {
-			issues = append(issues, fmt.Sprintf("квест «%s»: расстояние %d вне 1–%d, взято 1", g.Title, distance, model.MaxStageDistance))
-			distance = max(1, min(distance, model.MaxStageDistance))
+		if distance < 0 || distance > model.MaxStageDistance {
+			clamped := max(0, min(distance, model.MaxStageDistance))
+			issues = append(issues, fmt.Sprintf("квест «%s»: расстояние %d вне 0–%d, взято %d", g.Title, distance, model.MaxStageDistance, clamped))
+			distance = clamped
 		}
 		g.Stages = append(g.Stages, model.QuestStage{Key: key, Title: title, Summary: clip(st.Summary, model.MaxStageSummaryRunes), Distance: distance,
 			Condition: model.StageCondition{Kind: kind}, Reward: model.StageReward{Fact: clip(st.Reward, model.MaxFactRunes)}})
@@ -344,8 +346,9 @@ func knownCondition(k model.ConditionKind) bool {
 
 // validateStages принимает размещения этапов по заданиям: объекты по правилам пакета мира, ключи не повторяют
 // объекты клетки; условие принимается, только если достижимо подходом клетки (`object_state` — подход ставит
-// объекту это состояние; `fact` — подход даёт этот факт), иначе первое достижимое, иначе `visited`. Пропущенное
-// задание — шаблонный объект «след».
+// объекту это состояние; `fact` — подход даёт этот факт), иначе первое достижимое. Если достижимого условия нет, а
+// этап по заданию не «дойти до» (`visited`), размещение закрывает шаблонный «след» с подходом и фактом (B54): иначе
+// этап закрывался бы простым входом в клетку. Пропущенное задание — тот же шаблон.
 func validateStages(raw []rawStagePlacement, tasks []StageTask, def model.CharacterModelDef) ([]GeneratedStage, []string) {
 	var out []GeneratedStage
 	var issues []string
@@ -376,7 +379,15 @@ func validateStages(raw []rawStagePlacement, tasks []StageTask, def model.Charac
 		all := append(append([]model.LocationObject{}, task.Existing...), objects...)
 		cond, condIssues := validateCondition(p.Condition, all, task)
 		issues = append(issues, condIssues...)
-		out = append(out, GeneratedStage{QuestID: task.QuestID, Stage: task.Stage, LocationID: task.LocationID, Objects: objects, Condition: cond})
+		template := false
+		if cond.Kind == model.ConditionVisited && task.ConditionKind != model.ConditionVisited {
+			issues = append(issues, fmt.Sprintf("этап «%s»: вместо visited добавлен шаблонный след с фактом", task.StageTitle))
+			var more []model.LocationObject
+			more, cond = quest.TemplateStage(task.Stage, all)
+			objects = append(objects, more...)
+			template = true
+		}
+		out = append(out, GeneratedStage{QuestID: task.QuestID, Stage: task.Stage, LocationID: task.LocationID, Objects: objects, Condition: cond, Template: template})
 	}
 	for k := range byKey {
 		if !wanted[k] {

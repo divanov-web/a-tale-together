@@ -203,6 +203,17 @@ type sceneKey struct {
 	party    model.PartyID
 }
 
+// LairHintEvery — раз в сколько раундов сцена получает направление логова `scenes[].lair` (B53): просьба «изредка» в
+// промпте не держала частоту (примета логова звучала почти в каждой хронике, и игроки шли на её направление как на
+// выход), поэтому ритм задаёт код. Рядом с логовом (`Steps` ≤ 1) направление даётся всегда.
+const LairHintEvery = 3
+
+// lairHintDue — давать ли сцене направление логова в этом раунде: каждый `LairHintEvery`-й раунд (3, 6, 9…; раунд 1
+// идёт сразу за завязкой, где логово уже упомянуто) либо логово рядом или здесь.
+func lairHintDue(roundNo, steps int) bool {
+	return steps <= 1 || (roundNo > 0 && roundNo%LairHintEvery == 0)
+}
+
 // BuildInput собирает контекст вызова 2 (docs/llm/round-calls.md): сцены по группам внутри локаций (пункт 19: блок на
 // группу, персонажи без группы одной локации — отдельная сцена без имени группы) с присутствующими персонажами
 // (без выбывших: `inactive` и `dead` в сцены не попадают, уход описывается в раунде статуса `leaving`), их описания как
@@ -281,7 +292,7 @@ func BuildInput(p Params) Input {
 		if pt, ok := p.State.Party(key.party); ok && key.party != 0 {
 			sc.Party = pt.Name
 		}
-		if p.Lair != nil {
+		if p.Lair != nil && lairHintDue(p.RoundNo, model.Coord{X: l.X, Y: l.Y}.Steps(p.Lair.At)) {
 			sc.Lair = model.Coord{X: l.X, Y: l.Y}.Bearing(p.Lair.At)
 		}
 		for _, e := range p.State.Exits(l) {

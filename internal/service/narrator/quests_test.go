@@ -28,7 +28,7 @@ const questResponse = `{"chronicle":"Лес шепчет.","scenes":[{"scene_id"
  "world":{"cells":[],"neighbors":[],
   "quests":[{"faction":"GOOD","title":"Пропавшая коза","summary":"Коза мельника ушла в лес.","stages":[
      {"key":"Goat Trail","title":"Найти следы козы","summary":"Понять, куда ушла коза.","distance":0,"condition":"fact","reward":"Коза у мельницы."},
-     {"key":"goat","title":"Вернуть козу","summary":"Коза дома.","distance":2,"condition":"wish","reward":""},
+     {"key":"goat","title":"Вернуть козу","summary":"Коза дома.","distance":7,"condition":"wish","reward":""},
      {"key":"goat trail","title":"Дубль","summary":"","distance":1,"condition":"visited","reward":""},
      {"key":"a","title":"Четвёртый","summary":"","distance":1,"condition":"visited","reward":""},
      {"key":"b","title":"Пятый лишний","summary":"","distance":1,"condition":"visited","reward":""}]},
@@ -41,8 +41,8 @@ const questResponse = `{"chronicle":"Лес шепчет.","scenes":[{"scene_id"
   "goals":[{"faction":"evil","text":"Груз потерян; теперь Гильдии нужен новый путь на юг.","stage":"после провала"}]}}`
 
 // TestNarrate_QuestPackage: вход содержит активные квесты и задания с лимитами; квест принят по заданию фракции
-// (регистр кода не важен), этапы сверх максимума отброшены, ключи нормализованы и уникальны, расстояние и условие
-// вне каталога заменены; чужой квест отброшен; размещение этапа: объект с занятым ключом отброшен, условие `fact`
+// (регистр кода не важен), этапы сверх максимума отброшены, ключи нормализованы и уникальны, расстояние 0 принято
+// (B54), расстояние сверх предела и условие вне каталога заменены; чужой квест отброшен; размещение этапа: объект с занятым ключом отброшен, условие `fact`
 // принято, потому что его даёт подход нового объекта; цель принята.
 func TestNarrate_QuestPackage(t *testing.T) {
 	t.Parallel()
@@ -65,8 +65,8 @@ func TestNarrate_QuestPackage(t *testing.T) {
 		t.Fatalf("quests = %+v", w.Quests)
 	}
 	stages := w.Quests[0].Stages
-	if len(stages) != 4 || stages[0].Key != "goat_trail" || stages[0].Distance != 1 || stages[0].Condition.Kind != model.ConditionFact || stages[0].Reward.Fact != "Коза у мельницы." ||
-		stages[1].Condition.Kind != model.ConditionVisited || stages[2].Key != "goat_trail_2" || stages[3].Key != "a" {
+	if len(stages) != 4 || stages[0].Key != "goat_trail" || stages[0].Distance != 0 || stages[0].Condition.Kind != model.ConditionFact || stages[0].Reward.Fact != "Коза у мельницы." ||
+		stages[1].Distance != model.MaxStageDistance || stages[1].Condition.Kind != model.ConditionVisited || stages[2].Key != "goat_trail_2" || stages[3].Key != "a" {
 		t.Fatalf("stages = %+v", stages)
 	}
 	if len(w.Stages) != 1 || w.Stages[0].QuestID != 9 || w.Stages[0].LocationID != 2 || w.Stages[0].Stage.Key != "trail" || w.Stages[0].Template {
@@ -82,7 +82,7 @@ func TestNarrate_QuestPackage(t *testing.T) {
 		t.Fatalf("goals = %+v", w.Goals)
 	}
 	joined := strings.Join(res.Issues, "\n")
-	for _, want := range []string{"этапов больше 4", "расстояние 0 вне 1–3", `условие "wish" не из каталога`, "квест фракции «evil» не из задания", "объект «altar» уже есть в клетке"} {
+	for _, want := range []string{"этапов больше 4", "расстояние 7 вне 0–3", `условие "wish" не из каталога`, "квест фракции «evil» не из задания", "объект «altar» уже есть в клетке"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("issues without %q: %s", want, joined)
 		}
@@ -109,6 +109,22 @@ func TestValidateCondition(t *testing.T) {
 	wrongFact := rawCondition{Kind: "fact", Fact: strPtr("Нет такого.")}
 	if c, _ := validateCondition(wrongFact, nil, task); c.Kind != model.ConditionVisited {
 		t.Fatalf("no approaches = %+v", c)
+	}
+	// B54: размещение без достижимого условия у этапа `fact` не закрывается простым входом — добавляется шаблонный
+	// «след» с фактом, этап помечен шаблоном (дозапрос); объекты модели остаются.
+	noApproach := []rawStagePlacement{{QuestID: 9, StageKey: "trail", Condition: rawCondition{Kind: "fact", Fact: strPtr("Нет такого.")},
+		Objects: []rawObject{{Key: "rope", Title: "обрезанный канат"}}}}
+	bare := tasks.Stages[0]
+	bare.Existing = nil // в клетке нет подходов, которые дали бы факт или состояние
+	placed, placedIssues := validateStages(noApproach, []StageTask{bare}, def())
+	if len(placed) != 1 || !placed[0].Template || placed[0].Condition.Kind != model.ConditionFact || len(placed[0].Objects) != 2 || placed[0].Objects[1].Key != "trace_trail" {
+		t.Fatalf("no reachable condition = %+v, %v", placed, placedIssues)
+	}
+	// Этап «дойти до» (`visited` по заданию) шаблона не получает.
+	visitedTasks := []StageTask{tasks.Stages[0]}
+	visitedTasks[0].ConditionKind, visitedTasks[0].Stage.Condition.Kind = model.ConditionVisited, model.ConditionVisited
+	if placed, _ = validateStages([]rawStagePlacement{{QuestID: 9, StageKey: "trail", Condition: rawCondition{Kind: "visited"}}}, visitedTasks, def()); len(placed) != 1 || placed[0].Template || placed[0].Condition.Kind != model.ConditionVisited {
+		t.Fatalf("visited placement = %+v", placed)
 	}
 	out, issues := validateStages(nil, tasks.Stages, def())
 	if len(out) != 1 || !out[0].Template || out[0].Objects[0].Key != "trace_trail" || out[0].Condition.Kind != model.ConditionFact || len(issues) != 1 {
