@@ -179,6 +179,44 @@ func TestInterpret_Rejections(t *testing.T) {
 	}
 }
 
+// TestInterpret_Unsupported: действие каталога, которого движок пока не разрешает, не идёт в дозапрос и не отклоняется
+// (ADR-0036): `persuade` со свободным испытанием — осмотр локации с тем же испытанием; без испытания — запасное
+// действие модели; `attack` без запасного — `wait`. Причина первой строкой `ambiguities`, заявки учтены в Invalid.
+func TestInterpret_Unsupported(t *testing.T) {
+	t.Parallel()
+	snap := cellar()
+	snap.Submissions = []model.SnapshotSubmission{
+		{SubmissionID: 81, CharacterID: 13, Text: "расспрашиваю стражу, кто видел гонца"},
+		{SubmissionID: 82, CharacterID: 11, Text: "уговариваю Кузнеца не шуметь"},
+		{SubmissionID: 83, CharacterID: 12, Text: "бью дверь"},
+	}
+	resp := `{"intents":[
+ {"submission_id":81,"character_id":13,"action_type":"persuade","target":"","approach_idx":null,"attribute":"wits","skill":"awareness","risk":"normal","on_success":{"fact":"Стража видела гонца у башни.","move":null,"reveal":null},"on_fail":{"condition":null,"damage":null,"fact":"Стража отмолчалась."},"push":false,"ambiguities":["стражи в сцене нет"],"fallback":{"action_type":"explore","target":""}},
+ {"submission_id":82,"character_id":11,"action_type":"persuade","target":"Кузнец","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"ambiguities":[],"fallback":{"action_type":"explore","target":"cellar_door"}},
+ {"submission_id":83,"character_id":12,"action_type":"attack","target":"cellar_door","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":true,"ambiguities":[],"fallback":null}
+]}`
+	f := &fakeLLM{responses: []string{resp}}
+	res, err := newService(f).Interpret(context.Background(), snap, def())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Calls != 1 || res.Invalid != 3 || len(res.Intents) != 3 {
+		t.Fatalf("result = %+v", res)
+	}
+	a, b, c := res.Intents[0], res.Intents[1], res.Intents[2]
+	if a.ActionType != model.ActionExplore || a.Target != "" || !a.FreeCheck() || a.Attribute != "wits" || a.Skill != "awareness" || a.Risk != model.RiskNormal ||
+		string(a.OnSuccess) != `{"fact":"Стража видела гонца у башни."}` || string(a.OnFail) != `{"fact":"Стража отмолчалась."}` ||
+		len(a.Ambiguities) != 2 || a.Ambiguities[0] != "действие «убедить» появится в пункте плана 13; расспросы проведены как осмотр с испытанием" || a.Ambiguities[1] != "стражи в сцене нет" {
+		t.Errorf("persuade with check = %+v %s %s", a, a.OnSuccess, a.OnFail)
+	}
+	if b.ActionType != model.ActionExplore || b.Target != "cellar_door" || b.FreeCheck() || len(b.Ambiguities) != 1 || b.Ambiguities[0] != "действие «убедить» появится в пункте плана 13; безопасное толкование" {
+		t.Errorf("persuade without check = %+v", b)
+	}
+	if c.ActionType != model.ActionWait || c.Target != "" || len(c.Ambiguities) != 1 || c.Ambiguities[0] != "действие «атаковать» появится в пункте плана 12; безопасное толкование" {
+		t.Errorf("attack = %+v", c)
+	}
+}
+
 // TestInterpret_ErrorsAndFallback: сбой модели или ответ не по схеме — ошибка вызывающему; Fallback разбирает кодом.
 func TestInterpret_ErrorsAndFallback(t *testing.T) {
 	t.Parallel()
@@ -199,6 +237,13 @@ func TestInterpret_ErrorsAndFallback(t *testing.T) {
 	ints := Fallback(cellar(), "интерпретатор недоступен")
 	if len(ints) != 3 || ints[0].ActionType != model.ActionWait || ints[0].Ambiguities[0] != "интерпретатор недоступен" || ints[2].ActionType != model.ActionMove || ints[2].Target != "вниз" {
 		t.Fatalf("fallback = %+v", ints)
+	}
+	// Типовая команда с действием, которого движок пока не разрешает, — `wait` с причиной, не отказ (ADR-0036).
+	later := cellar()
+	later.Submissions = []model.SnapshotSubmission{{SubmissionID: 71, CharacterID: 11, Text: "крадусь вдоль стены force"}}
+	ints = Fallback(later, "интерпретатор недоступен")
+	if ints[0].ActionType != model.ActionWait || ints[0].Target != "" || ints[0].Push || len(ints[0].Ambiguities) != 1 || ints[0].Ambiguities[0] != "действие «красться» появится в пункте плана 12; безопасное толкование" {
+		t.Fatalf("fallback unsupported = %+v", ints[0])
 	}
 	// Заявка названием подхода (кнопка варианта, ADR-0015) разбирается в этот подход без модели.
 	byTitle := cellar()

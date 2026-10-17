@@ -1,5 +1,6 @@
 // Package interpreter — вызов 1 из 2 на раунд (docs/llm/round-calls.md): все заявки раунда одним запросом к модели →
-// массив намерений по каталогу; валидация по снимку, один повтор с ошибками, безопасное толкование (G3).
+// массив намерений по каталогу; валидация по снимку, один повтор с ошибками, безопасное толкование (G3), в том числе
+// для действий каталога, которых движок пока не разрешает (ADR-0036).
 // Сложность и бросок не назначает; при сбое модели вызывающий переходит на разбор кодом (`rules.ParseTyped`).
 package interpreter
 
@@ -47,7 +48,7 @@ func New(llm LLM, logger *slog.Logger) *Service {
 
 // SystemPrompt — системная часть промпта текущей версии (стабильный префикс для кэширования).
 func SystemPrompt() string {
-	b, err := prompts.FS.ReadFile("interpreter/v3.md")
+	b, err := prompts.FS.ReadFile("interpreter/v4.md")
 	if err != nil {
 		panic("interpreter: prompt: " + err.Error())
 	}
@@ -58,7 +59,7 @@ func SystemPrompt() string {
 type Result struct {
 	Intents   []model.Intent
 	Calls     int // вызовов модели (1 или 2)
-	Invalid   int // заявок, получивших безопасное толкование
+	Invalid   int // заявок, получивших безопасное толкование (невалидных и с действием, которого движок пока не разрешает)
 	TokensIn  int
 	TokensOut int
 	CostUSD   float64 // цена вызовов по таблице тарифов (ADR-0032)
@@ -103,7 +104,9 @@ func (s *Service) Interpret(ctx context.Context, snap model.RoundSnapshot, def m
 		sub := v.subs[is.SubmissionID]
 		valid[is.SubmissionID] = v.safe(sub, v.fallbacks[is.SubmissionID], "безопасное толкование: "+is.Msg)
 		res.Invalid++
+		delete(v.converted, is.SubmissionID)
 	}
+	res.Invalid += len(v.converted) // действия, которых движок пока не разрешает, заменены безопасными (ADR-0036)
 	for _, sub := range snap.Submissions {
 		res.Intents = append(res.Intents, valid[sub.SubmissionID])
 	}
@@ -129,11 +132,15 @@ func (s *Service) call(ctx context.Context, v *validator, input string, res *Res
 
 // Fallback — разбор заявок кодом при недоступной модели: типовые команды через `rules.ParseTyped`, заявка, совпадающая
 // с названием подхода видимого объекта в локации персонажа (кнопка варианта, ADR-0015), — этот подход; остальное —
-// безопасное толкование `wait` с причиной (docs/architecture/round-pipeline.md, сбой шага 2).
+// безопасное толкование `wait` с причиной (docs/architecture/round-pipeline.md, сбой шага 2). Типовая команда с
+// действием, которого движок пока не разрешает, тоже становится `wait` с причиной (ADR-0036).
 func Fallback(snap model.RoundSnapshot, reason string) []model.Intent {
 	out := make([]model.Intent, 0, len(snap.Submissions))
 	for _, sub := range snap.Submissions {
 		in := rules.ParseTyped(model.Submission{ID: sub.SubmissionID, CharacterID: sub.CharacterID, RawText: sub.Text})
+		if e, known := rules.Entry(in.ActionType); known && !e.Supported {
+			in.ActionType, in.Target, in.Push, in.Ambiguities = model.ActionWait, "", false, []string{unsupportedReason(e) + "; безопасное толкование"}
+		}
 		if in.ActionType == "" {
 			if target, idx, action, ok := approachByTitle(snap, sub.CharacterID, sub.Text); ok {
 				in.ActionType, in.Target, in.ApproachIdx, in.Ambiguities = action, target, &idx, nil

@@ -56,7 +56,9 @@
     {"name": "missing-target", "submissions": [{"submission_id": 14, "character_id": 14, "text": "открываю сундук у окна"}],
      "expect": [{"submission_id": 14, "action_type": ["explore", "wait"], "ambiguous": true}]},
     {"name": "unsupported-attack", "submissions": [{"submission_id": 15, "character_id": 14, "text": "нападаю на статую мечом"}],
-     "expect": [{"submission_id": 15, "action_type": ["attack", "interact"], "target": "statue"}]},
+     "expect": [{"submission_id": 15, "action_type": ["explore", "wait", "interact"]}]},
+    {"name": "persuade-safe", "submissions": [{"submission_id": 95, "character_id": 13, "text": "завожу разговор со стражниками у ворот башни, между делом выспрашивая, кто из них видел гонца и куда тот поехал"}],
+     "expect": [{"submission_id": 95, "action_type": ["explore"], "free": true, "attribute": "will", "ambiguous": true}]},
     {"name": "push", "submissions": [{"submission_id": 16, "character_id": 11, "text": "вскрываю замок любой ценой, готов рискнуть и выложиться до конца"}],
      "expect": [{"submission_id": 16, "action_type": ["interact"], "target": "cellar_door", "approach_idx": 1, "push": true}]},
     {"name": "batch-round", "submissions": [

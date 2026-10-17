@@ -96,6 +96,7 @@ func (r *resolver) resolveOne(in model.Intent) {
 		case !known:
 			res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("неизвестное действие %q", in.ActionType)
 		case !entry.Supported:
+			// Защита: интерпретатор такие намерения заменяет безопасными до движка (ADR-0036), сюда попадает только обход.
 			res.Status, res.Reason = model.ResultRejected, fmt.Sprintf("действие «%s» появится в пункте плана %s", entry.Title, entry.Later)
 		default:
 			r.resolveSupported(c, in, &res)

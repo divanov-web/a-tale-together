@@ -23,10 +23,11 @@ type validator struct {
 	def       model.CharacterModelDef
 	subs      map[model.SubmissionID]model.SnapshotSubmission
 	fallbacks map[model.SubmissionID]*rawFallback // запасные действия модели по заявкам из всех ответов
+	converted map[model.SubmissionID]bool         // заявки с действием, которого движок пока не разрешает (ADR-0036)
 }
 
 func newValidator(snap model.RoundSnapshot, def model.CharacterModelDef) *validator {
-	v := &validator{snap: snap, def: def, subs: map[model.SubmissionID]model.SnapshotSubmission{}, fallbacks: map[model.SubmissionID]*rawFallback{}}
+	v := &validator{snap: snap, def: def, subs: map[model.SubmissionID]model.SnapshotSubmission{}, fallbacks: map[model.SubmissionID]*rawFallback{}, converted: map[model.SubmissionID]bool{}}
 	for _, s := range snap.Submissions {
 		v.subs[s.SubmissionID] = s
 	}
@@ -74,8 +75,12 @@ func (v *validator) intent(sub model.SnapshotSubmission, ri rawIntent) (model.In
 	if in.Ambiguities == nil {
 		in.Ambiguities = []string{}
 	}
-	if _, known := rules.Entry(in.ActionType); !known {
+	entry, known := rules.Entry(in.ActionType)
+	if !known {
 		return in, fmt.Errorf("неизвестный action_type %q", ri.ActionType)
+	}
+	if !entry.Supported {
+		return v.unsupported(sub, ri, entry), nil
 	}
 	c, ok := v.snap.Character(sub.CharacterID)
 	if !ok || c.LocationID == nil || c.Status == model.CharacterDead {
@@ -225,6 +230,28 @@ func failEffect(e *failEff) (json.RawMessage, error) {
 	}
 	b, _ := json.Marshal(out)
 	return b, nil
+}
+
+// unsupported — безопасное толкование действия каталога, которого движок пока не разрешает (B46, ADR-0036): отказа игрок
+// не получает. Расспросы (`persuade`) со свободным испытанием идут как осмотр локации с тем же испытанием — успех даёт
+// факт, как и будущий `persuade`; иначе запасное действие модели, иначе `wait`. Причина — первой строкой `ambiguities`.
+func (v *validator) unsupported(sub model.SnapshotSubmission, ri rawIntent, entry rules.CatalogEntry) model.Intent {
+	v.converted[sub.SubmissionID] = true
+	reason := unsupportedReason(entry)
+	if ri.ActionType == string(model.ActionPersuade) && ri.Attribute != nil && *ri.Attribute != "" {
+		as := ri
+		as.ActionType, as.Target, as.ApproachIdx = string(model.ActionExplore), "", nil
+		as.Ambiguities = append([]string{reason + "; расспросы проведены как осмотр с испытанием"}, ri.Ambiguities...)
+		if in, err := v.intent(sub, as); err == nil {
+			return in
+		}
+	}
+	return v.safe(sub, ri.Fallback, reason+"; безопасное толкование")
+}
+
+// unsupportedReason — причина замены для игрока: действие известно, но появится позже.
+func unsupportedReason(entry rules.CatalogEntry) string {
+	return fmt.Sprintf("действие «%s» появится в пункте плана %s", entry.Title, entry.Later)
 }
 
 // safe — безопасное толкование заявки (G3): запасное действие модели, если оно проходит проверку, иначе `wait`.

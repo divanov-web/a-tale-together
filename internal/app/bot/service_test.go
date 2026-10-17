@@ -1081,7 +1081,7 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/replay 1"), "Раунд 1 воспроизведён", "совпадают")
 	mustContain(t, h.send(owner, groupChat, "/replay 9"), "Раунда с таким номером нет")
 	mustContain(t, h.send(owner, groupChat, "/replay 2"), "ещё не разрешён")
-	// Действие каталога без поддержки движком: заявка rejected с причиной, итог у игрока есть.
+	// Действие каталога без поддержки движком: безопасное толкование с причиной вместо отказа (ADR-0036), итог у игрока есть.
 	mustContain(t, h.send(alice, private(alice), "/act крадусь вдоль стены и слушаю"), "Заявка принята: раунд 2")
 	h.send(owner, groupChat, "/next")
 	msgs, _ = h.store.ListOutbox(context.Background(), g.ID)
@@ -1091,7 +1091,10 @@ func TestRound_ResolveTypedCommands(t *testing.T) {
 			last = m
 		}
 	}
-	mustContain(t, last.Text, "отклонена", "действие «красться» появится в пункте плана 12")
+	mustContain(t, last.Text, "ждёт и держится настороже", "действие «красться» появится в пункте плана 12; безопасное толкование")
+	if strings.Contains(last.Text, "отклонена") {
+		t.Errorf("unsupported action rejected: %q", last.Text)
+	}
 }
 
 func TestRound_FinishResetAndDetail(t *testing.T) {
