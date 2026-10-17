@@ -72,6 +72,7 @@ type caseParams struct {
 	Lair     *narrator.LairInfo                 `json:"lair"`     // логово сил зла как фон (B42, ADR-0031)
 	Endless  bool                               `json:"endless"`  // бесконечная игра: цель фракции — горизонт (ADR-0037)
 	Hints    []narrator.HintInfo                `json:"hints"`    // фракции, попросившие подсказку (пункт 35, ADR-0038)
+	Flavors  []narrator.FlavorInfo              `json:"flavors"`  // окраска действий (пункт 38, ADR-0039)
 }
 
 var digits = regexp.MustCompile(`\d`)
@@ -137,7 +138,7 @@ func run() error {
 		}
 		total++
 		p := narrator.Params{Title: set.Title, Tone: set.Tone, Factions: set.Factions, Def: set.CharacterModel,
-			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks, Quests: c.Params.Quests, Speeches: c.Params.Speeches, Lair: c.Params.Lair, Endless: c.Params.Endless, Hints: c.Params.Hints}
+			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks, Quests: c.Params.Quests, Speeches: c.Params.Speeches, Lair: c.Params.Lair, Endless: c.Params.Endless, Hints: c.Params.Hints, Flavors: c.Params.Flavors}
 		started := time.Now()
 		res, err := svc.Narrate(context.Background(), p)
 		elapsed += time.Since(started)

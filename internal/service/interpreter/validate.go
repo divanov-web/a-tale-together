@@ -23,11 +23,24 @@ type validator struct {
 	def       model.CharacterModelDef
 	subs      map[model.SubmissionID]model.SnapshotSubmission
 	fallbacks map[model.SubmissionID]*rawFallback // запасные действия модели по заявкам из всех ответов
+	flavors   map[model.SubmissionID]string       // окраска заявок из всех ответов: сохраняется при безопасном толковании (ADR-0039)
 	converted map[model.SubmissionID]bool         // заявки с действием, которого движок пока не разрешает (ADR-0036)
 }
 
+// FlavorMaxRune — лимит окраски действия (ADR-0039): одна фраза; длиннее обрезается кодом с «…».
+const FlavorMaxRune = 120
+
+// flavorText — окраска из ответа модели: без краёв, не длиннее FlavorMaxRune.
+func flavorText(s string) string {
+	s = strings.TrimSpace(s)
+	if r := []rune(s); len(r) > FlavorMaxRune {
+		return strings.TrimSpace(string(r[:FlavorMaxRune])) + "…"
+	}
+	return s
+}
+
 func newValidator(snap model.RoundSnapshot, def model.CharacterModelDef) *validator {
-	v := &validator{snap: snap, def: def, subs: map[model.SubmissionID]model.SnapshotSubmission{}, fallbacks: map[model.SubmissionID]*rawFallback{}, converted: map[model.SubmissionID]bool{}}
+	v := &validator{snap: snap, def: def, subs: map[model.SubmissionID]model.SnapshotSubmission{}, fallbacks: map[model.SubmissionID]*rawFallback{}, flavors: map[model.SubmissionID]string{}, converted: map[model.SubmissionID]bool{}}
 	for _, s := range snap.Submissions {
 		v.subs[s.SubmissionID] = s
 	}
@@ -53,6 +66,9 @@ func (v *validator) validate(raw json.RawMessage) (map[model.SubmissionID]model.
 		if ri.Fallback != nil {
 			v.fallbacks[id] = ri.Fallback
 		}
+		if f := flavorText(ri.Flavor); f != "" {
+			v.flavors[id] = f
+		}
 		in, err := v.intent(sub, ri)
 		if err != nil {
 			issues = append(issues, issue{SubmissionID: id, Msg: err.Error()})
@@ -71,7 +87,7 @@ func (v *validator) validate(raw json.RawMessage) (map[model.SubmissionID]model.
 // intent превращает сырое намерение в model.Intent, проверяя тип, цель, подход и свободное испытание.
 func (v *validator) intent(sub model.SnapshotSubmission, ri rawIntent) (model.Intent, error) {
 	in := model.Intent{SubmissionID: sub.SubmissionID, CharacterID: sub.CharacterID, ActionType: model.ActionType(ri.ActionType),
-		Target: strings.TrimSpace(ri.Target), Push: ri.Push, Ambiguities: ri.Ambiguities, RawText: sub.Text}
+		Target: strings.TrimSpace(ri.Target), Push: ri.Push, Flavor: flavorText(ri.Flavor), Ambiguities: ri.Ambiguities, RawText: sub.Text}
 	if in.Ambiguities == nil {
 		in.Ambiguities = []string{}
 	}
@@ -246,7 +262,7 @@ func (v *validator) unsupported(sub model.SnapshotSubmission, ri rawIntent, entr
 			return in
 		}
 	}
-	return v.safe(sub, ri.Fallback, reason+"; безопасное толкование")
+	return v.safe(sub, ri.Fallback, ri.Flavor, reason+"; безопасное толкование")
 }
 
 // unsupportedReason — причина замены для игрока: действие известно, но появится позже.
@@ -254,15 +270,16 @@ func unsupportedReason(entry rules.CatalogEntry) string {
 	return fmt.Sprintf("действие «%s» появится в пункте плана %s", entry.Title, entry.Later)
 }
 
-// safe — безопасное толкование заявки (G3): запасное действие модели, если оно проходит проверку, иначе `wait`.
-func (v *validator) safe(sub model.SnapshotSubmission, fb *rawFallback, reason string) model.Intent {
+// safe — безопасное толкование заявки (G3): запасное действие модели, если оно проходит проверку, иначе `wait`;
+// окраска заявки сохраняется (ADR-0039).
+func (v *validator) safe(sub model.SnapshotSubmission, fb *rawFallback, flavor, reason string) model.Intent {
 	if fb != nil {
-		in, err := v.intent(sub, rawIntent{SubmissionID: int64(sub.SubmissionID), ActionType: fb.ActionType, Target: fb.Target, Ambiguities: []string{reason}})
+		in, err := v.intent(sub, rawIntent{SubmissionID: int64(sub.SubmissionID), ActionType: fb.ActionType, Target: fb.Target, Flavor: flavor, Ambiguities: []string{reason}})
 		if err == nil && (in.ActionType == model.ActionExplore || in.ActionType == model.ActionWait || in.ActionType == model.ActionMove) {
 			return in
 		}
 	}
-	return model.Intent{SubmissionID: sub.SubmissionID, CharacterID: sub.CharacterID, ActionType: model.ActionWait, Ambiguities: []string{reason}, RawText: sub.Text}
+	return model.Intent{SubmissionID: sub.SubmissionID, CharacterID: sub.CharacterID, ActionType: model.ActionWait, Flavor: flavorText(flavor), Ambiguities: []string{reason}, RawText: sub.Text}
 }
 
 // findExit — выход клетки по цели модели: направление (`north`, «на север») или имя видимого соседа (имя скрытого

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -172,5 +173,21 @@ func TestOptionRef_RoundTrip(t *testing.T) {
 	}
 	if optionsKeyboard(model.SnapshotCharacter{}, opts, 12) != nil {
 		t.Fatal("keyboard without location")
+	}
+}
+
+// TestTexts_NoticeFlavor (ADR-0039): окраска действия в личном итоге — строка «Рассказчику», а не отброшенное;
+// у отклонённой заявки строки нет.
+func TestTexts_NoticeFlavor(t *testing.T) {
+	t.Parallel()
+	g := model.Game{Title: "Мир", Mode: model.ModeNarrative}
+	res := model.ActionResult{Intent: model.Intent{RawText: "жду и прошу напомнить, что мы ищем", Flavor: "просит спутников напомнить, что они здесь ищут"}, Status: model.ResultResolved, Summary: "ждёт и держится настороже"}
+	want := "«Мир» — раунд 3 — ваш итог\n\nЗаявка «жду и прошу напомнить, что мы ищем»: ждёт и держится настороже\nРассказчику: «просит спутников напомнить, что они здесь ищут»\n\nСледующая заявка: /act <текст> после открытия раунда. Куда можно пойти — /scout."
+	if got := noticeText(g, model.Round{RoundNo: 3}, res, nil, rules.Preset(g.Mode), model.FormattedText{}); got.Text != want {
+		t.Errorf("notice =\n%q\nwant\n%q", got.Text, want)
+	}
+	rejected := model.ActionResult{Intent: model.Intent{RawText: "иду на юг", Flavor: "напевая"}, Status: model.ResultRejected, Reason: "нет выхода"}
+	if got := noticeText(g, model.Round{RoundNo: 3}, rejected, nil, rules.Preset(g.Mode), model.FormattedText{}); strings.Contains(got.Text, "Рассказчику") {
+		t.Errorf("rejected notice shows flavor: %q", got.Text)
 	}
 }

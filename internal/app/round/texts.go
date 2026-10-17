@@ -184,8 +184,8 @@ func rewardFact(ev model.Event) string {
 }
 
 // noticeText — уведомление о заявке игроку (с названием мира: у игрока может быть несколько игр): статус, исход,
-// проверка (числа по режиму), приватные события персонажа, варианты следующего раунда по его локации (B15);
-// ключи строк жирным (B40, ADR-0030).
+// окраска действия строкой «Рассказчику» (ADR-0039: передана, не отброшена), проверка (числа по режиму), приватные
+// события персонажа, варианты следующего раунда по его локации (B15); ключи строк жирным (B40, ADR-0030).
 func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model.Event, preset rules.ModePreset, options model.FormattedText) model.FormattedText {
 	var b model.TextBuilder
 	b.Printf("«%s» — раунд %d — ваш итог\n\n", g.Title, r.RoundNo)
@@ -199,6 +199,11 @@ func noticeText(g model.Game, r model.Round, res model.ActionResult, own []model
 		b.WriteString("не понята — " + res.Reason)
 	default:
 		b.WriteString(string(res.Status) + " — " + res.Reason)
+	}
+	if res.Status == model.ResultResolved && res.Intent.Flavor != "" {
+		b.WriteString("\n")
+		b.Key("Рассказчику")
+		b.Printf("«%s»", res.Intent.Flavor)
 	}
 	if res.Check != nil {
 		b.WriteString("\n")

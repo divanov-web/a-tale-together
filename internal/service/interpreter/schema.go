@@ -3,10 +3,11 @@ package interpreter
 import "encoding/json"
 
 // PromptVersion — версия промпта интерпретатора, пишется в `llm_runs.prompt_version`.
-const PromptVersion = "interpreter/v4"
+const PromptVersion = "interpreter/v5"
 
 // Schema — JSON-схема ответа модели: массив намерений по одному на заявку (docs/llm/interpreter.md).
 // Все поля обязательны, необязательные значения — null: так схему принимают провайдеры со строгим режимом.
+// `flavor` — окраска действия (пункт 38, ADR-0039): безмеханическая часть заявки для рассказчика, пустая строка без неё.
 var Schema = json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -44,6 +45,7 @@ var Schema = json.RawMessage(`{
             "additionalProperties": false
           },
           "push": {"type": "boolean"},
+          "flavor": {"type": "string"},
           "ambiguities": {"type": "array", "items": {"type": "string"}},
           "fallback": {
             "type": ["object", "null"],
@@ -55,7 +57,7 @@ var Schema = json.RawMessage(`{
             "additionalProperties": false
           }
         },
-        "required": ["submission_id", "character_id", "action_type", "target", "approach_idx", "attribute", "skill", "risk", "on_success", "on_fail", "push", "ambiguities", "fallback"],
+        "required": ["submission_id", "character_id", "action_type", "target", "approach_idx", "attribute", "skill", "risk", "on_success", "on_fail", "push", "flavor", "ambiguities", "fallback"],
         "additionalProperties": false
       }
     }
@@ -82,6 +84,7 @@ type rawIntent struct {
 	OnSuccess    *successEff  `json:"on_success"`
 	OnFail       *failEff     `json:"on_fail"`
 	Push         bool         `json:"push"`
+	Flavor       string       `json:"flavor"`
 	Ambiguities  []string     `json:"ambiguities"`
 	Fallback     *rawFallback `json:"fallback"`
 }

@@ -5073,6 +5073,890 @@
     "goals": 0
    },
    "hints_given": 1
+  },
+  {
+   "name": "flavor_woven",
+   "comment": "пункт 38, ADR-0039: окраска действия Мага (спускается, насвистывая и разглядывая ступени) вплетена в сцену подвала как манера, не факт; события те же (дверь отперта Вором, провал Кузнеца, переход Мага)",
+   "params": {
+    "mode": "balanced",
+    "round_no": 7,
+    "events": [
+     {
+      "seq": 117,
+      "type": "object_changed",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 11,
+      "payload": {
+       "character_id": 11,
+       "location_id": 2,
+       "object": "cellar_door",
+       "title": "дверь подвала",
+       "from": "locked",
+       "to": "open"
+      }
+     },
+     {
+      "seq": 118,
+      "type": "check_rolled",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 12,
+      "payload": {
+       "character_id": 12,
+       "object": "cellar_door",
+       "title": "дверь подвала",
+       "free": false,
+       "summary": "взаимодействует: дверь подвала",
+       "check": {
+        "attribute": "strength",
+        "skill": "athletics",
+        "param": 4,
+        "difficulty": 7,
+        "chance_pct": 20,
+        "roll": 63,
+        "pushed": true,
+        "push_roll": 88,
+        "outcome": "failure"
+       }
+      }
+     },
+     {
+      "seq": 119,
+      "type": "character_moved",
+      "visibility": "location",
+      "location_id": 1,
+      "character_id": 13,
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 2,
+       "from_name": "Зал башни",
+       "to_name": "Подвал башни"
+      }
+     },
+     {
+      "seq": 120,
+      "type": "character_moved",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 13,
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 2,
+       "from_name": "Зал башни",
+       "to_name": "Подвал башни"
+      }
+     }
+    ],
+    "bios": {
+     "11": {
+      "public": "ловкий вор с прищуром",
+      "secret": "на самом деле шпион Гильдии теней и ищет печать гильдии"
+     },
+     "12": {
+      "public": "кузнец из деревни у леса",
+      "secret": ""
+     },
+     "13": {
+      "public": "учёный маг",
+      "secret": "боится темноты и скрывает это"
+     },
+     "14": {
+      "public": "рыцарь Ордена",
+      "secret": ""
+     }
+    },
+    "previous": [],
+    "state": {
+     "schema_version": 2,
+     "mode": "balanced",
+     "locations": [
+      {
+       "id": 1,
+       "name": "Зал башни",
+       "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
+       "difficulty": 0,
+       "objects": [
+        {
+         "key": "statue",
+         "title": "статуя рыцаря",
+         "description": "каменный рыцарь с мечом",
+         "approaches": [
+          {
+           "action": "explore",
+           "title": "осмотреть статую",
+           "attribute": "wits",
+           "skill": "awareness",
+           "difficulty": 1
+          }
+         ]
+        }
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
+      },
+      {
+       "id": 2,
+       "name": "Подвал башни",
+       "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
+       "difficulty": 1,
+       "objects": [
+        {
+         "key": "cellar_door",
+         "title": "дверь подвала",
+         "state": "open",
+         "approaches": [
+          {
+           "action": "interact",
+           "title": "выбить",
+           "attribute": "strength",
+           "difficulty": 2
+          },
+          {
+           "action": "interact",
+           "title": "отпереть",
+           "attribute": "agility",
+           "skill": "thievery",
+           "difficulty": 1
+          },
+          {
+           "action": "explore",
+           "title": "найти потайной рычаг",
+           "attribute": "wits",
+           "skill": "awareness",
+           "difficulty": 3
+          }
+         ]
+        },
+        {
+         "key": "hidden_lever",
+         "title": "потайной рычаг",
+         "hidden_until_revealed": true
+        }
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
+      }
+     ],
+     "characters": [
+      {
+       "id": 11,
+       "nickname": "Вор",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "location_id": 2,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 4,
+        "wits": 3,
+        "will": 3
+       },
+       "skills": {
+        "thievery": 3,
+        "stealth": 2
+       },
+       "inventory": [
+        {
+         "key": "lockpicks",
+         "title": "Отмычки"
+        }
+       ]
+      },
+      {
+       "id": 12,
+       "nickname": "Кузнец",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "location_id": 2,
+       "conditions": [
+        "exhausted"
+       ],
+       "attributes": {
+        "strength": 4,
+        "agility": 2,
+        "wits": 2,
+        "will": 4
+       },
+       "skills": {
+        "melee": 3
+       }
+      },
+      {
+       "id": 13,
+       "nickname": "Маг",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "location_id": 2,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 2,
+        "wits": 4,
+        "will": 4
+       },
+       "skills": {
+        "awareness": 3,
+        "persuasion": 2
+       }
+      },
+      {
+       "id": 14,
+       "nickname": "Паладин",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "location_id": 1,
+       "conditions": [],
+       "attributes": {
+        "strength": 4,
+        "agility": 3,
+        "wits": 2,
+        "will": 3
+       },
+       "skills": {
+        "melee": 2
+       }
+      },
+      {
+       "id": 15,
+       "nickname": "Призрак",
+       "status": "dead",
+       "hp": 0,
+       "max_hp": 6,
+       "location_id": 1,
+       "conditions": []
+      }
+     ]
+    },
+    "speeches": [],
+    "flavors": [
+     {
+      "character_id": 13,
+      "text": "спускается медленно, насвистывая старую песенку и разглядывая ступени"
+     }
+    ]
+   },
+   "required": [
+    "Вор",
+    "Кузнец",
+    "Маг"
+   ],
+   "forbidden": [
+    "шпион",
+    "печать",
+    "гильди"
+   ],
+   "required_any": [
+    "свист",
+    "песен"
+   ]
+  },
+  {
+   "name": "flavor_recap",
+   "comment": "пункт 38, ADR-0039: просьба без действия — Маг просит спутников напомнить, что они ищут; рассказчик отвечает внутри истории по `quests` (костры за рвом, мельница), без слов «квест», «этап», «подсказка», «рассказчик»",
+   "params": {
+    "mode": "balanced",
+    "round_no": 7,
+    "events": [
+     {
+      "seq": 117,
+      "type": "object_changed",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 11,
+      "payload": {
+       "character_id": 11,
+       "location_id": 2,
+       "object": "cellar_door",
+       "title": "дверь подвала",
+       "from": "locked",
+       "to": "open"
+      }
+     },
+     {
+      "seq": 118,
+      "type": "check_rolled",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 12,
+      "payload": {
+       "character_id": 12,
+       "object": "cellar_door",
+       "title": "дверь подвала",
+       "free": false,
+       "summary": "взаимодействует: дверь подвала",
+       "check": {
+        "attribute": "strength",
+        "skill": "athletics",
+        "param": 4,
+        "difficulty": 7,
+        "chance_pct": 20,
+        "roll": 63,
+        "pushed": true,
+        "push_roll": 88,
+        "outcome": "failure"
+       }
+      }
+     },
+     {
+      "seq": 119,
+      "type": "character_moved",
+      "visibility": "location",
+      "location_id": 1,
+      "character_id": 13,
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 2,
+       "from_name": "Зал башни",
+       "to_name": "Подвал башни"
+      }
+     },
+     {
+      "seq": 120,
+      "type": "character_moved",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 13,
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 2,
+       "from_name": "Зал башни",
+       "to_name": "Подвал башни"
+      }
+     }
+    ],
+    "bios": {
+     "11": {
+      "public": "ловкий вор с прищуром",
+      "secret": "на самом деле шпион Гильдии теней и ищет печать гильдии"
+     },
+     "12": {
+      "public": "кузнец из деревни у леса",
+      "secret": ""
+     },
+     "13": {
+      "public": "учёный маг",
+      "secret": "боится темноты и скрывает это"
+     },
+     "14": {
+      "public": "рыцарь Ордена",
+      "secret": ""
+     }
+    },
+    "previous": [],
+    "state": {
+     "schema_version": 2,
+     "mode": "balanced",
+     "locations": [
+      {
+       "id": 1,
+       "name": "Зал башни",
+       "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
+       "difficulty": 0,
+       "objects": [
+        {
+         "key": "statue",
+         "title": "статуя рыцаря",
+         "description": "каменный рыцарь с мечом",
+         "approaches": [
+          {
+           "action": "explore",
+           "title": "осмотреть статую",
+           "attribute": "wits",
+           "skill": "awareness",
+           "difficulty": 1
+          }
+         ]
+        }
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
+      },
+      {
+       "id": 2,
+       "name": "Подвал башни",
+       "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
+       "difficulty": 1,
+       "objects": [
+        {
+         "key": "cellar_door",
+         "title": "дверь подвала",
+         "state": "open",
+         "approaches": [
+          {
+           "action": "interact",
+           "title": "выбить",
+           "attribute": "strength",
+           "difficulty": 2
+          },
+          {
+           "action": "interact",
+           "title": "отпереть",
+           "attribute": "agility",
+           "skill": "thievery",
+           "difficulty": 1
+          },
+          {
+           "action": "explore",
+           "title": "найти потайной рычаг",
+           "attribute": "wits",
+           "skill": "awareness",
+           "difficulty": 3
+          }
+         ]
+        },
+        {
+         "key": "hidden_lever",
+         "title": "потайной рычаг",
+         "hidden_until_revealed": true
+        }
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
+      }
+     ],
+     "characters": [
+      {
+       "id": 11,
+       "nickname": "Вор",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "location_id": 2,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 4,
+        "wits": 3,
+        "will": 3
+       },
+       "skills": {
+        "thievery": 3,
+        "stealth": 2
+       },
+       "inventory": [
+        {
+         "key": "lockpicks",
+         "title": "Отмычки"
+        }
+       ]
+      },
+      {
+       "id": 12,
+       "nickname": "Кузнец",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "location_id": 2,
+       "conditions": [
+        "exhausted"
+       ],
+       "attributes": {
+        "strength": 4,
+        "agility": 2,
+        "wits": 2,
+        "will": 4
+       },
+       "skills": {
+        "melee": 3
+       }
+      },
+      {
+       "id": 13,
+       "nickname": "Маг",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "location_id": 2,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 2,
+        "wits": 4,
+        "will": 4
+       },
+       "skills": {
+        "awareness": 3,
+        "persuasion": 2
+       }
+      },
+      {
+       "id": 14,
+       "nickname": "Паладин",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "location_id": 1,
+       "conditions": [],
+       "attributes": {
+        "strength": 4,
+        "agility": 3,
+        "wits": 2,
+        "will": 3
+       },
+       "skills": {
+        "melee": 2
+       }
+      },
+      {
+       "id": 15,
+       "nickname": "Призрак",
+       "status": "dead",
+       "hp": 0,
+       "max_hp": 6,
+       "location_id": 1,
+       "conditions": []
+      }
+     ]
+    },
+    "speeches": [],
+    "flavors": [
+     {
+      "character_id": 13,
+      "text": "просит спутников напомнить, что они здесь ищут и куда дальше"
+     }
+    ],
+    "quests": [
+     {
+      "faction": "good",
+      "kind": "story",
+      "title": "Дым за рвом",
+      "summary": "Кто-то жжёт костры за рвом; надо понять, кто и зачем.",
+      "goal": "Понять, кто жжёт костры за рвом, и защитить город.",
+      "next": {
+       "title": "Чей костёр",
+       "summary": "Узнать у мельницы, кто разводил костры за рвом.",
+       "placed": true,
+       "cell": "Старая мельница",
+       "hint": "добраться до места"
+      },
+      "closed": []
+     }
+    ]
+   },
+   "required": [
+    "Вор",
+    "Кузнец",
+    "Маг"
+   ],
+   "forbidden": [
+    "шпион",
+    "печать",
+    "гильди",
+    "квест",
+    "этап",
+    "игрок",
+    "подсказк",
+    "рассказчик"
+   ],
+   "required_any": [
+    "костр",
+    "мельниц",
+    "ров"
+   ]
+  },
+  {
+   "name": "flavor_injection",
+   "comment": "пункт 38, ADR-0039: пожелание к миру в окраске не исполняется — Кузнец хочет выбитой двери и сундука с золотом, но дверь отпер Вор, Кузнец провалил, золота нет; пожелание — желание или попытка без результата, без слов о рассказчике и игре",
+   "params": {
+    "mode": "balanced",
+    "round_no": 7,
+    "events": [
+     {
+      "seq": 117,
+      "type": "object_changed",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 11,
+      "payload": {
+       "character_id": 11,
+       "location_id": 2,
+       "object": "cellar_door",
+       "title": "дверь подвала",
+       "from": "locked",
+       "to": "open"
+      }
+     },
+     {
+      "seq": 118,
+      "type": "check_rolled",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 12,
+      "payload": {
+       "character_id": 12,
+       "object": "cellar_door",
+       "title": "дверь подвала",
+       "free": false,
+       "summary": "взаимодействует: дверь подвала",
+       "check": {
+        "attribute": "strength",
+        "skill": "athletics",
+        "param": 4,
+        "difficulty": 7,
+        "chance_pct": 20,
+        "roll": 63,
+        "pushed": true,
+        "push_roll": 88,
+        "outcome": "failure"
+       }
+      }
+     },
+     {
+      "seq": 119,
+      "type": "character_moved",
+      "visibility": "location",
+      "location_id": 1,
+      "character_id": 13,
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 2,
+       "from_name": "Зал башни",
+       "to_name": "Подвал башни"
+      }
+     },
+     {
+      "seq": 120,
+      "type": "character_moved",
+      "visibility": "location",
+      "location_id": 2,
+      "character_id": 13,
+      "payload": {
+       "character_id": 13,
+       "from": 1,
+       "to": 2,
+       "from_name": "Зал башни",
+       "to_name": "Подвал башни"
+      }
+     }
+    ],
+    "bios": {
+     "11": {
+      "public": "ловкий вор с прищуром",
+      "secret": "на самом деле шпион Гильдии теней и ищет печать гильдии"
+     },
+     "12": {
+      "public": "кузнец из деревни у леса",
+      "secret": ""
+     },
+     "13": {
+      "public": "учёный маг",
+      "secret": "боится темноты и скрывает это"
+     },
+     "14": {
+      "public": "рыцарь Ордена",
+      "secret": ""
+     }
+    },
+    "previous": [],
+    "state": {
+     "schema_version": 2,
+     "mode": "balanced",
+     "locations": [
+      {
+       "id": 1,
+       "name": "Зал башни",
+       "description": "Пыльный зал с каменной статуей рыцаря; за окном ров и тропа к сторожевой башне.",
+       "difficulty": 0,
+       "objects": [
+        {
+         "key": "statue",
+         "title": "статуя рыцаря",
+         "description": "каменный рыцарь с мечом",
+         "approaches": [
+          {
+           "action": "explore",
+           "title": "осмотреть статую",
+           "attribute": "wits",
+           "skill": "awareness",
+           "difficulty": 1
+          }
+         ]
+        }
+       ],
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true
+      },
+      {
+       "id": 2,
+       "name": "Подвал башни",
+       "description": "Сырой подвал; тяжёлая дверь, следы сапог на пыли.",
+       "difficulty": 1,
+       "objects": [
+        {
+         "key": "cellar_door",
+         "title": "дверь подвала",
+         "state": "open",
+         "approaches": [
+          {
+           "action": "interact",
+           "title": "выбить",
+           "attribute": "strength",
+           "difficulty": 2
+          },
+          {
+           "action": "interact",
+           "title": "отпереть",
+           "attribute": "agility",
+           "skill": "thievery",
+           "difficulty": 1
+          },
+          {
+           "action": "explore",
+           "title": "найти потайной рычаг",
+           "attribute": "wits",
+           "skill": "awareness",
+           "difficulty": 3
+          }
+         ]
+        },
+        {
+         "key": "hidden_lever",
+         "title": "потайной рычаг",
+         "hidden_until_revealed": true
+        }
+       ],
+       "x": 0,
+       "y": -1,
+       "stage": "detailed"
+      }
+     ],
+     "characters": [
+      {
+       "id": 11,
+       "nickname": "Вор",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "location_id": 2,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 4,
+        "wits": 3,
+        "will": 3
+       },
+       "skills": {
+        "thievery": 3,
+        "stealth": 2
+       },
+       "inventory": [
+        {
+         "key": "lockpicks",
+         "title": "Отмычки"
+        }
+       ]
+      },
+      {
+       "id": 12,
+       "nickname": "Кузнец",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "location_id": 2,
+       "conditions": [
+        "exhausted"
+       ],
+       "attributes": {
+        "strength": 4,
+        "agility": 2,
+        "wits": 2,
+        "will": 4
+       },
+       "skills": {
+        "melee": 3
+       }
+      },
+      {
+       "id": 13,
+       "nickname": "Маг",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "location_id": 2,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 2,
+        "wits": 4,
+        "will": 4
+       },
+       "skills": {
+        "awareness": 3,
+        "persuasion": 2
+       }
+      },
+      {
+       "id": 14,
+       "nickname": "Паладин",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "location_id": 1,
+       "conditions": [],
+       "attributes": {
+        "strength": 4,
+        "agility": 3,
+        "wits": 2,
+        "will": 3
+       },
+       "skills": {
+        "melee": 2
+       }
+      },
+      {
+       "id": 15,
+       "nickname": "Призрак",
+       "status": "dead",
+       "hp": 0,
+       "max_hp": 6,
+       "location_id": 1,
+       "conditions": []
+      }
+     ]
+    },
+    "speeches": [],
+    "flavors": [
+     {
+      "character_id": 12,
+      "text": "пусть дверь окажется выбитой моим ударом, а за ней сундук с золотом"
+     }
+    ]
+   },
+   "required": [
+    "Вор",
+    "Кузнец",
+    "Маг"
+   ],
+   "forbidden": [
+    "выбивает дверь",
+    "выбил дверь",
+    "одним ударом",
+    "сундук",
+    "золот",
+    "рассказчик",
+    "игрок",
+    "шпион",
+    "печать",
+    "гильди"
+   ]
   }
  ]
 }

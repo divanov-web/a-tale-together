@@ -45,6 +45,7 @@ type expectation struct {
 	Push         *bool              `json:"push"`
 	Ambiguous    *bool              `json:"ambiguous"`
 	NoApproach   *bool              `json:"no_approach"`
+	Flavor       *bool              `json:"flavor"` // окраска непуста (ADR-0039)
 }
 
 func main() {
@@ -176,6 +177,9 @@ func check(expect []expectation, intents []model.Intent) []string {
 		}
 		if e.NoApproach != nil && *e.NoApproach && in.ApproachIdx != nil {
 			p("approach_idx задан, ожидалось без подхода")
+		}
+		if e.Flavor != nil && (in.Flavor != "") != *e.Flavor {
+			p("flavor=%q, ожидалось непусто=%v", in.Flavor, *e.Flavor)
 		}
 	}
 	return out

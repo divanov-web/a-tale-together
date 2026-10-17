@@ -74,6 +74,16 @@
     {"name": "move-hidden-by-view", "submissions": [{"submission_id": 90, "character_id": 13, "text": "иду туда, где над лесом поднимается дым"}],
      "expect": [{"submission_id": 90, "action_type": ["move"], "target": "east"}]},
     {"name": "move-hidden-by-name", "submissions": [{"submission_id": 91, "character_id": 13, "text": "иду в лесную деревню"}],
-     "expect": [{"submission_id": 91, "action_type": ["move", "explore", "wait"]}]}
+     "expect": [{"submission_id": 91, "action_type": ["move", "explore", "wait"]}]},
+    {"name": "flavor-move", "submissions": [{"submission_id": 31, "character_id": 13, "text": "иду вниз в подвал, насвистывая и разглядывая ступени"}],
+     "expect": [{"submission_id": 31, "action_type": ["move"], "target": "south", "ambiguous": false, "flavor": true}]},
+    {"name": "flavor-chain", "submissions": [{"submission_id": 32, "character_id": 13, "text": "иду вниз в подвал и выбиваю дверь"}],
+     "expect": [{"submission_id": 32, "action_type": ["move"], "target": "south", "ambiguous": true}]},
+    {"name": "flavor-only", "submissions": [{"submission_id": 33, "character_id": 11, "text": "оглядываюсь на спутников и прошу напомнить, что мы вообще здесь ищем"}],
+     "expect": [{"submission_id": 33, "action_type": ["wait"], "ambiguous": false, "flavor": true, "no_approach": true}]},
+    {"name": "ask-narrator", "submissions": [{"submission_id": 34, "character_id": 12, "text": "Рассказчик, напомни, пожалуйста, какая у нас цель и куда идти"}],
+     "expect": [{"submission_id": 34, "action_type": ["wait", "explore"], "ambiguous": false, "flavor": true, "no_approach": true}]},
+    {"name": "flavor-wish", "submissions": [{"submission_id": 35, "character_id": 13, "text": "иду вниз, и пусть дверь в подвале окажется открытой"}],
+     "expect": [{"submission_id": 35, "action_type": ["move"], "target": "south", "no_approach": true, "flavor": true}]}
   ]
 }

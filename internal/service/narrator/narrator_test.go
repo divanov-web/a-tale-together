@@ -580,3 +580,28 @@ func TestNarrate_Hints(t *testing.T) {
 		t.Fatalf("full = %+v, %v", res, err)
 	}
 }
+
+// TestBuildInput_Flavors (ADR-0039): окраска действия попадает только в сцену присутствия персонажа после свёртки;
+// окраска выбывшего и пустая отбрасываются; у сцены без окраски пустой список.
+func TestBuildInput_Flavors(t *testing.T) {
+	t.Parallel()
+	p := params(model.ModeBalanced)
+	p.Flavors = []FlavorInfo{
+		{CharacterID: 11, Text: " насвистывая и поглядывая на Кузнеца "},
+		{CharacterID: 15, Text: "воет"},
+		{CharacterID: 13, Text: "  "},
+		{CharacterID: 12, Text: "просит спутников напомнить, что они здесь ищут"},
+	}
+	in := BuildInput(p)
+	hall, cellar := in.Scenes[0], in.Scenes[1]
+	if len(hall.Flavors) != 0 || hall.Flavors == nil {
+		t.Fatalf("hall flavors = %#v; want empty list", hall.Flavors)
+	}
+	if len(cellar.Flavors) != 2 || cellar.Flavors[0].Nickname != "Вор" || cellar.Flavors[0].Text != "насвистывая и поглядывая на Кузнеца" || cellar.Flavors[1].Nickname != "Кузнец" {
+		t.Fatalf("cellar flavors = %+v", cellar.Flavors)
+	}
+	enc := in.Encode()
+	if strings.Contains(enc, "воет") || strings.Count(enc, "насвистывая") != 1 || !strings.Contains(enc, `"flavors":[]`) {
+		t.Errorf("encoded input = %s", enc)
+	}
+}

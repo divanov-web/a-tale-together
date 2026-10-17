@@ -21,13 +21,14 @@ import (
 // «камень», который сдвигают), цель фракции; сцены по входу, все события упомянуты.
 // Интерпретатор недоступен: заявки разбирает код (`идти north`). Завязка — стартовый пакет из opening.
 type worldLLM struct {
-	opening   string
-	calls     map[model.LLMRole]int
-	generated int // клеток и соседей, выданных моделью
-	quests    int // квестов, выданных моделью
-	placed    int // этапов, размещённых моделью
-	inputs    []string
-	noHints   bool // не отмечать просьбы о подсказке в `hints_given` (ADR-0038): просьба переносится
+	opening    string
+	calls      map[model.LLMRole]int
+	generated  int // клеток и соседей, выданных моделью
+	quests     int // квестов, выданных моделью
+	placed     int // этапов, размещённых моделью
+	inputs     []string
+	noHints    bool // не отмечать просьбы о подсказке в `hints_given` (ADR-0038): просьба переносится
+	echoFlavor bool // интерпретатор отвечает: каждая заявка — `wait` с окраской, равной её тексту (ADR-0039); иначе сбой
 }
 
 // questBlock — задания по квестам во входе рассказчика.
@@ -91,7 +92,25 @@ func (w *worldLLM) Complete(_ context.Context, call applm.Call, req model.LLMReq
 		}
 		return model.LLMResponse{JSON: json.RawMessage(w.opening), Usage: model.LLMUsage{Input: 10, Output: 5}}, nil
 	case model.RoleInterpreter:
-		return model.LLMResponse{}, errors.New("interpreter down")
+		if !w.echoFlavor {
+			return model.LLMResponse{}, errors.New("interpreter down")
+		}
+		var in struct {
+			Submissions []struct {
+				SubmissionID int64  `json:"submission_id"`
+				CharacterID  int64  `json:"character_id"`
+				Text         string `json:"text"`
+			} `json:"submissions"`
+		}
+		if err := json.Unmarshal([]byte(req.Input), &in); err != nil {
+			return model.LLMResponse{}, err
+		}
+		intents := []map[string]any{}
+		for _, s := range in.Submissions {
+			intents = append(intents, map[string]any{"submission_id": s.SubmissionID, "character_id": s.CharacterID, "action_type": "wait", "target": "", "approach_idx": nil, "attribute": nil, "skill": nil, "risk": nil, "on_success": nil, "on_fail": nil, "push": false, "flavor": s.Text, "ambiguities": []string{}, "fallback": nil})
+		}
+		b, _ := json.Marshal(map[string]any{"intents": intents})
+		return model.LLMResponse{JSON: b, Usage: model.LLMUsage{Input: 10, Output: 5}}, nil
 	}
 	var in struct {
 		Scenes []struct {

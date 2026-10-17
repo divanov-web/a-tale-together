@@ -497,3 +497,18 @@ func TestScenario_S15_SpecialistAndWeak(t *testing.T) {
 		})
 	}
 }
+
+// TestResolve_FlavorIgnored (ADR-0039): окраска действия не меняет статус, итог, события и примечание; она лишь
+// лежит в намерении итога.
+func TestResolve_FlavorIgnored(t *testing.T) {
+	t.Parallel()
+	plain := model.Intent{SubmissionID: 1, CharacterID: 14, ActionType: model.ActionWait}
+	flavored := plain
+	flavored.Flavor = "просит спутников напомнить, что они здесь ищут"
+	a := Resolve(cellar(model.ModeBalanced), []model.Intent{plain}, 7)
+	b := Resolve(cellar(model.ModeBalanced), []model.Intent{flavored}, 7)
+	ra, rb := a.Results[0], b.Results[0]
+	if rb.Status != ra.Status || rb.Summary != ra.Summary || rb.Summary != "ждёт и держится настороже" || len(b.Events) != len(a.Events) || rb.Intent.Flavor != flavored.Flavor {
+		t.Fatalf("flavored = %+v (events %d), plain = %+v (events %d)", rb, len(b.Events), ra, len(a.Events))
+	}
+}

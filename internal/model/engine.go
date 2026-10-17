@@ -48,7 +48,7 @@ type Intent struct {
 	OnSuccess    json.RawMessage `json:"on_success,omitempty"`   // свободное испытание: {"fact": …} | {"reveal": key} | {"move": выход}
 	OnFail       json.RawMessage `json:"on_fail,omitempty"`      // свободное испытание: {"condition": …} | {"damage": N} | {"fact": …}
 	Push         bool            `json:"push,omitempty"`         // форсировать бросок при провале
-	How          string          `json:"how,omitempty"`          // свободное описание способа
+	Flavor       string          `json:"flavor,omitempty"`       // окраска действия (ADR-0039): безмеханическая часть заявки рассказчику — манера, деталь, просьба к спутникам или рассказчику; движок не читает
 	Ambiguities  []string        `json:"ambiguities,omitempty"`  // что непонятно в заявке; при пустом ActionType → ambiguous
 	RawText      string          `json:"raw_text,omitempty"`     // исходный текст игрока (данные)
 }

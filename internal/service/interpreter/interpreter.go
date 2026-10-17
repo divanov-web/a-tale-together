@@ -1,6 +1,7 @@
 // Package interpreter — вызов 1 из 2 на раунд (docs/llm/round-calls.md): все заявки раунда одним запросом к модели →
 // массив намерений по каталогу; валидация по снимку, один повтор с ошибками, безопасное толкование (G3), в том числе
-// для действий каталога, которых движок пока не разрешает (ADR-0036).
+// для действий каталога, которых движок пока не разрешает (ADR-0036). Безмеханическая часть заявки — окраска
+// `Intent.Flavor` для рассказчика (пункт 38, ADR-0039), обрезается кодом до FlavorMaxRune.
 // Сложность и бросок не назначает; при сбое модели вызывающий переходит на разбор кодом (`rules.ParseTyped`).
 package interpreter
 
@@ -48,7 +49,7 @@ func New(llm LLM, logger *slog.Logger) *Service {
 
 // SystemPrompt — системная часть промпта текущей версии (стабильный префикс для кэширования).
 func SystemPrompt() string {
-	b, err := prompts.FS.ReadFile("interpreter/v4.md")
+	b, err := prompts.FS.ReadFile("interpreter/v5.md")
 	if err != nil {
 		panic("interpreter: prompt: " + err.Error())
 	}
@@ -102,7 +103,7 @@ func (s *Service) Interpret(ctx context.Context, snap model.RoundSnapshot, def m
 	}
 	for _, is := range issues {
 		sub := v.subs[is.SubmissionID]
-		valid[is.SubmissionID] = v.safe(sub, v.fallbacks[is.SubmissionID], "безопасное толкование: "+is.Msg)
+		valid[is.SubmissionID] = v.safe(sub, v.fallbacks[is.SubmissionID], v.flavors[is.SubmissionID], "безопасное толкование: "+is.Msg)
 		res.Invalid++
 		delete(v.converted, is.SubmissionID)
 	}

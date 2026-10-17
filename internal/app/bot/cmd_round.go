@@ -148,6 +148,9 @@ func roundCard(g model.Game, d round.Detail, now time.Time) string {
 			} else if res.Reason != "" {
 				b.WriteString(": " + res.Reason)
 			}
+			if res.Intent.Flavor != "" {
+				fmt.Fprintf(&b, " [окраска: «%s»]", truncate(res.Intent.Flavor, 60))
+			}
 		}
 	}
 	for _, sp := range d.Speeches {

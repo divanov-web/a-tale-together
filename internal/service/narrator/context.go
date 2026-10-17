@@ -51,6 +51,13 @@ type Params struct {
 	Lair     *LairInfo                 `json:"lair"`     // логово сил зла (ADR-0031): фон повествования; nil — логова нет
 	Endless  bool                      `json:"endless"`  // у истории нет границы (`model.Game.Endless`, ADR-0037): цель фракции — горизонт
 	Hints    []HintInfo                `json:"hints"`    // фракции, попросившие подсказку (пункт 35, ADR-0038): намёк в сценах их персонажей
+	Flavors  []FlavorInfo              `json:"flavors"`  // окраска действий раунда (пункт 38, ADR-0039): безмеханическая часть заявок, в сцену присутствия персонажа
+}
+
+// FlavorInfo — окраска действия персонажа для контекста рассказчика (ADR-0039): из намерения итога `resolved`.
+type FlavorInfo struct {
+	CharacterID model.CharacterID `json:"character_id"`
+	Text        string            `json:"text"`
 }
 
 // HintInfo — просьба фракции о подсказке для контекста рассказчика (ADR-0038): фракция по id и коду; никнеймы её
@@ -140,12 +147,19 @@ type scene struct {
 	Objects     []sceneObject       `json:"objects"`
 	Characters  []sceneCharacter    `json:"characters"`
 	Speeches    []sceneSpeech       `json:"speeches"`            // слова персонажей сцены в этом раунде (ADR-0027): данные, не события
+	Flavors     []sceneFlavor       `json:"flavors"`             // окраска действий персонажей сцены (ADR-0039): как делают и о чём просят; данные, не события
 	Lair        string              `json:"lair,omitempty"`      // где логово сил зла относительно сцены словами (ADR-0031); пусто — логова нет
 	Exhausted   bool                `json:"exhausted,omitempty"` // в клетке не осталось подходов (`Options` пуст): сцену надо закончить зацепкой наружу (B45, ADR-0035)
 }
 
 // sceneSpeech — реплика персонажа сцены: цитата или пересказ в хронике, не действие и не факт.
 type sceneSpeech struct {
+	Nickname string `json:"nickname"`
+	Text     string `json:"text"`
+}
+
+// sceneFlavor — окраска действия персонажа сцены (ADR-0039): манера, деталь или просьба; вплетается, фактов не создаёт.
+type sceneFlavor struct {
 	Nickname string `json:"nickname"`
 	Text     string `json:"text"`
 }
@@ -233,7 +247,7 @@ func lairHintDue(roundNo, steps int) bool {
 // группу, персонажи без группы одной локации — отдельная сцена без имени группы) с присутствующими персонажами
 // (без выбывших: `inactive` и `dead` в сцены не попадают, уход описывается в раунде статуса `leaving`), их описания как
 // данные, видимые объекты и выходы, реплики присутствующих (ADR-0027: только в своей сцене, реплика выбывшего
-// отбрасывается); события только public и location, числа броска — в режиме «механика»; подходы следующего раунда
+// отбрасывается) и окраску их действий (ADR-0039: так же, только в своей сцене); события только public и location, числа броска — в режиме «механика»; подходы следующего раунда
 // без шансов (их код припишет сам); сцена клетки без подходов помечена `exhausted` (B45). Сцена без персонажей не
 // нужна; лидер группы не передаётся.
 func BuildInput(p Params) Input {
@@ -254,8 +268,15 @@ func BuildInput(p Params) Input {
 			said[sp.CharacterID] = append(said[sp.CharacterID], text)
 		}
 	}
+	flavored := map[model.CharacterID][]string{}
+	for _, f := range p.Flavors {
+		if text := strings.TrimSpace(f.Text); text != "" {
+			flavored[f.CharacterID] = append(flavored[f.CharacterID], text)
+		}
+	}
 	present := map[sceneKey][]sceneCharacter{}
 	speeches := map[sceneKey][]sceneSpeech{}
+	flavors := map[sceneKey][]sceneFlavor{}
 	members := map[model.FactionID][]string{}
 	var keys []sceneKey
 	for _, c := range p.State.Characters {
@@ -281,6 +302,9 @@ func BuildInput(p Params) Input {
 		for _, text := range said[c.ID] {
 			speeches[key] = append(speeches[key], sceneSpeech{Nickname: c.Nickname, Text: text})
 		}
+		for _, text := range flavored[c.ID] {
+			flavors[key] = append(flavors[key], sceneFlavor{Nickname: c.Nickname, Text: text})
+		}
 	}
 	for _, h := range p.Hints {
 		in.Hints = append(in.Hints, hintIn{Faction: string(h.Faction), Characters: append([]string{}, members[h.FactionID]...)})
@@ -305,9 +329,12 @@ func BuildInput(p Params) Input {
 		if !ok {
 			continue
 		}
-		sc := scene{SceneID: len(in.Scenes) + 1, LocationID: l.ID, Name: l.Name, Description: l.Description, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain, Exits: []sceneExit{}, Objects: []sceneObject{}, Characters: present[key], Speeches: []sceneSpeech{}, Exhausted: !hasOptions[l.ID]}
+		sc := scene{SceneID: len(in.Scenes) + 1, LocationID: l.ID, Name: l.Name, Description: l.Description, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain, Exits: []sceneExit{}, Objects: []sceneObject{}, Characters: present[key], Speeches: []sceneSpeech{}, Flavors: []sceneFlavor{}, Exhausted: !hasOptions[l.ID]}
 		if sp := speeches[key]; sp != nil {
 			sc.Speeches = sp
+		}
+		if fl := flavors[key]; fl != nil {
+			sc.Flavors = fl
 		}
 		if pt, ok := p.State.Party(key.party); ok && key.party != 0 {
 			sc.Party = pt.Name

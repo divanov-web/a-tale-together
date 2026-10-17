@@ -301,3 +301,47 @@ func TestBuildInput_HiddenExit(t *testing.T) {
 		t.Fatalf("move by direction = %+v, %v", got, err)
 	}
 }
+
+// TestInterpret_Flavor (ADR-0039): окраска из ответа обрезается до FlavorMaxRune и попадает в намерение; заявка без
+// механического действия — `wait` с окраской и без сомнений; при безопасном толковании после повтора окраска
+// заявки сохраняется; у неподдержанного действия с запасным — тоже.
+func TestInterpret_Flavor(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("ю", FlavorMaxRune+10)
+	first := `{"intents":[
+ {"submission_id":71,"character_id":11,"action_type":"interact","target":"cellar_door","approach_idx":1,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"flavor":"  насвистывая и поглядывая на Кузнеца ","ambiguities":[],"fallback":null},
+ {"submission_id":72,"character_id":12,"action_type":"wait","target":"","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"flavor":"просит спутников напомнить, что они здесь ищут","ambiguities":[],"fallback":null},
+ {"submission_id":73,"character_id":13,"action_type":"move","target":"north","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"flavor":"` + long + `","ambiguities":[],"fallback":null}
+]}`
+	retry := `{"intents":[
+ {"submission_id":73,"character_id":13,"action_type":"move","target":"north","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"flavor":"","ambiguities":[],"fallback":null}
+]}`
+	f := &fakeLLM{responses: []string{first, retry}}
+	res, err := newService(f).Interpret(context.Background(), cellar(), def())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b, c := res.Intents[0], res.Intents[1], res.Intents[2]
+	if a.Flavor != "насвистывая и поглядывая на Кузнеца" || a.ActionType != model.ActionInteract {
+		t.Errorf("flavor intent = %+v", a)
+	}
+	if b.ActionType != model.ActionWait || b.Flavor != "просит спутников напомнить, что они здесь ищут" || len(b.Ambiguities) != 0 {
+		t.Errorf("flavor-only intent = %+v", b)
+	}
+	if c.ActionType != model.ActionWait || len(c.Ambiguities) == 0 || c.Flavor != strings.Repeat("ю", FlavorMaxRune)+"…" {
+		t.Errorf("safe intent keeps trimmed flavor: %+v", c)
+	}
+	// Неподдержанное действие с запасным: окраска переходит в безопасное толкование.
+	sneak := `{"intents":[
+ {"submission_id":71,"character_id":11,"action_type":"sneak","target":"","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"flavor":"крадётся вдоль стены","ambiguities":[],"fallback":{"action_type":"explore","target":""}},
+ {"submission_id":72,"character_id":12,"action_type":"wait","target":"","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"flavor":"","ambiguities":[],"fallback":null},
+ {"submission_id":73,"character_id":13,"action_type":"wait","target":"","approach_idx":null,"attribute":null,"skill":null,"risk":null,"on_success":null,"on_fail":null,"push":false,"flavor":"","ambiguities":[],"fallback":null}
+]}`
+	res, err = newService(&fakeLLM{responses: []string{sneak}}).Interpret(context.Background(), cellar(), def())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := res.Intents[0]; s.ActionType != model.ActionExplore || s.Flavor != "крадётся вдоль стены" || res.Intents[1].Flavor != "" {
+		t.Errorf("unsupported with flavor = %+v", s)
+	}
+}

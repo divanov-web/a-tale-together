@@ -9,3 +9,4 @@
 - Правило: новая команда или механика игрока → фича в `Features` (с командой бота: тест `TestFeatures_CommandsKnown` шлёт её боту и отвергает «Неизвестная команда», B52) и в расписании `sim/runs/*.json` (решение руководителя В3); промпт игрока версионируется как остальные (`assets/prompts/player/vN.md`).
 - Тесты: `scenario_test.go` (сценарий репозитория, проверка, адресные фичи), `service_test.go` (сквозной прогон на `postgres/fake`, `telegram/fake` и сценарном фейке игрока без сети: три игрока, три раунда, финал; команды фич в реестре бота; `SIM_DUMP=1` печатает отчёт).
 - Связи: `cmd/simulate`, `cmd/internal/stack`, [docs/dev/simulation.md](../../../docs/dev/simulation.md), `/tale-sim`, `.claude/rules/sim.md`.
+- Фичи окраски действия (пункт 38, [ADR-0039](../../../docs/decisions/0039-action-flavor.md)): `flavor` — заявка с безмеханической деталью, `ask_narrator` — просьба к спутникам или рассказчику без действия; в `basic.json` по одному игроку (раунды 3 и 7).

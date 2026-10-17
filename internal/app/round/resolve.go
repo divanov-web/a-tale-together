@@ -131,7 +131,7 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 	tasks.StoryTemplate = genre.Template.StoryQuest
 	var pkg narrator.WorldPackage
 	var hintsGiven []model.FactionCode
-	r.Narration, pkg, hintsGiven = s.narrate(ctx, g, chat, r, genre, def, &state, chars, result.Events, tasks, questContext(&qs), m)
+	r.Narration, pkg, hintsGiven = s.narrate(ctx, g, chat, r, genre, def, &state, chars, result.Events, result.Results, tasks, questContext(&qs), m)
 	m.NarrateMS, step = s.lap(step)
 	generated, err := s.applyWorld(ctx, g, r, &state, pkg, now)
 	if err != nil {
@@ -247,13 +247,18 @@ func (s *Service) lairInfo(ctx context.Context, g model.Game, factions []model.F
 // провайдера, при сбое, утечке или превышении бюджета — nil и шаблонный пакет: публикуется шаблонная хроника,
 // клетки получают шаблон, раунд не откатывается. Третий результат — фракции, получившие подсказку (`hints_given`,
 // ADR-0038); при шаблонной хронике подсказок нет, просьбы ждут следующей.
-func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, state *model.RoundSnapshot, chars []model.Character, events []model.Event, tasks narrator.Tasks, quests []narrator.QuestInfo, m *model.RoundMetrics) (*model.Narration, narrator.WorldPackage, []model.FactionCode) {
+func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, state *model.RoundSnapshot, chars []model.Character, events []model.Event, results []model.ActionResult, tasks narrator.Tasks, quests []narrator.QuestInfo, m *model.RoundMetrics) (*model.Narration, narrator.WorldPackage, []model.FactionCode) {
 	if s.LLM == nil {
 		m.NarratorFallback = true
 		s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"fallback": "рассказчик не настроен: шаблонная хроника", "world_template": !tasks.Empty()})
 		return nil, narrator.TemplateWorld(tasks), nil
 	}
 	p := narrator.Params{Title: g.Title, Tone: genre.Template.Tone, Mode: g.Mode, RoundNo: r.RoundNo, Opening: g.OpeningScene, State: state, Bios: map[model.CharacterID]narrator.Bio{}, Events: visibility.Public(events), Def: def, Tasks: tasks, Quests: quests, Endless: g.Endless()}
+	for _, res := range results {
+		if res.Status == model.ResultResolved && res.Intent.Flavor != "" {
+			p.Flavors = append(p.Flavors, narrator.FlavorInfo{CharacterID: res.CharacterID, Text: res.Intent.Flavor}) // окраска действия (ADR-0039)
+		}
+	}
 	if r.Snapshot != nil {
 		p.Speeches = r.Snapshot.Speeches
 		for _, h := range r.Snapshot.Hints {

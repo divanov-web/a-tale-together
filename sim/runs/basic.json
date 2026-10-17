@@ -31,10 +31,11 @@
     }
   ],
   "features": {
+    "3": ["flavor@marta_sim"],
     "4": ["scout"],
     "5": ["say", "hint@nina_sim"],
     "6": ["quests", "party"],
-    "7": ["bio", "secret"],
+    "7": ["bio", "secret", "ask_narrator@gleb_sim"],
     "8": ["away@gleb_sim", "character"],
     "9": ["back@gleb_sim", "status"],
     "10": ["knowledge", "group_act"]
