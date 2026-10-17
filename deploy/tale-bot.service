@@ -1,0 +1,25 @@
+# Сервис бота A Tale Together на прод-сервере (docs/dev/server.md, ADR-0040).
+# Устанавливается deploy/deploy.sh в /etc/systemd/system/tale-bot.service.
+[Unit]
+Description=A Tale Together Telegram bot
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User=divanov
+Group=divanov
+WorkingDirectory=/home/divanov/Go/a-tale-together
+EnvironmentFile=/home/divanov/Go/a-tale-together/.env
+Environment=HOME=/home/divanov
+Environment=PATH=/home/divanov/.local/bin:/home/divanov/.local/go/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/divanov/Go/a-tale-together/bin/bot
+Restart=on-failure
+RestartSec=5s
+# Лог в тот же файл, что и make start дома: make logs и /tale-debug работают без изменений.
+StandardOutput=append:/home/divanov/Go/a-tale-together/logs/bot.log
+StandardError=append:/home/divanov/Go/a-tale-together/logs/bot.log
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

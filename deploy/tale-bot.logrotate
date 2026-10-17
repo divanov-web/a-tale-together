@@ -1,0 +1,13 @@
+# Ротация лога бота на прод-сервере; ставится deploy/deploy.sh в /etc/logrotate.d/tale-bot.
+# copytruncate: файл держит открытым systemd (StandardOutput=append), переоткрывать некому.
+/home/divanov/Go/a-tale-together/logs/bot.log {
+    su divanov divanov
+    weekly
+    rotate 8
+    size 50M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}

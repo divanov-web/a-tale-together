@@ -1,6 +1,6 @@
 # Среда разработки
 
-Windows 11 → WSL Ubuntu 24.04. Всё запускается из WSL. Для Claude: скилл `/tale-env`.
+Windows 11 → WSL Ubuntu 24.04. Всё запускается из WSL. Для Claude: скилл `/tale-env`. Прод-сервер: [server.md](server.md).
 
 ## Go
 Установлен без sudo в `~/.local/go` (1.27). Проверка: `go version`. PATH добавлен в `~/.bashrc`.
