@@ -130,9 +130,9 @@ type realClock struct{}
 
 func (realClock) Now() time.Time { return time.Now() }
 
-// TestRunner_ThreeRounds: полный прогон на фейках без сети — три игрока входят по расписанию, три раунда
-// закрываются по /next, игра доигрывается до финала по max_rounds, отчёт содержит раунды и заявки.
-func TestRunner_ThreeRounds(t *testing.T) {
+// runScenario собирает стек на фейках (бот, раунды, outbox, планировщик, фейковый игрок) и ведёт прогон сценария.
+func runScenario(t *testing.T, sc Scenario) (Report, *fake.Store, *scriptedPlayer, error) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
 	clock := realClock{}
@@ -157,14 +157,6 @@ func TestRunner_ThreeRounds(t *testing.T) {
 	outbox := delivery.New(store, tr, clock, delivery.Settings{Interval: 20 * time.Millisecond}, logger)
 	sched := scheduler.New(rounds, clock, 20*time.Millisecond, logger)
 
-	sc := Scenario{Name: "test", Rounds: 3, RoundMinutes: 2, Profile: "sim-test", PlayerModel: "fake-player", MaxActions: 4,
-		Players: []Persona{
-			{Name: "Марта", Username: "marta", JoinsRound: 0, Persona: "p", Character: "c"},
-			{Name: "Глеб", Username: "gleb", JoinsRound: 2, Persona: "p", Character: "c"},
-			{Name: "Нина", Username: "nina", JoinsRound: 3, Persona: "p", Character: "c"},
-		},
-		Features: map[string][]string{"2": {"scout"}, "3": {"say@gleb"}},
-		Budget:   Budget{MaxCalls: 500}}
 	if err := sc.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -179,6 +171,22 @@ func TestRunner_ThreeRounds(t *testing.T) {
 	if os.Getenv("SIM_DUMP") != "" {
 		t.Log(rep.Transcript + "\n" + rep.Summary)
 	}
+	return rep, store, player, err
+}
+
+// TestRunner_ThreeRounds: полный прогон на фейках без сети — три игрока входят по расписанию, три раунда
+// закрываются по /next, игра доигрывается до финала по max_rounds, отчёт содержит раунды и заявки.
+func TestRunner_ThreeRounds(t *testing.T) {
+	sc := Scenario{Name: "test", Rounds: 3, RoundMinutes: 2, Profile: "sim-test", PlayerModel: "fake-player", MaxActions: 4,
+		Players: []Persona{
+			{Name: "Марта", Username: "marta", JoinsRound: 0, Persona: "p", Character: "c"},
+			{Name: "Глеб", Username: "gleb", JoinsRound: 2, Persona: "p", Character: "c"},
+			{Name: "Нина", Username: "nina", JoinsRound: 3, Persona: "p", Character: "c"},
+		},
+		Features: map[string][]string{"2": {"scout"}, "3": {"say@gleb"}},
+		Budget:   Budget{MaxCalls: 500}}
+	rep, store, player, err := runScenario(t, sc)
+	ctx := context.Background()
 	if err != nil {
 		t.Fatalf("прогон: %v\n%s", err, rep.Transcript)
 	}
@@ -224,5 +232,35 @@ func TestRunner_ThreeRounds(t *testing.T) {
 	}
 	if strings.Contains(rep.Summary, "Сводка неполна") {
 		t.Errorf("сводка неполна:\n%s", rep.Summary)
+	}
+}
+
+// TestRunner_Endless: бесконечная игра (ADR-0037) — `max_rounds 0`, после последнего раунда расписания администратор
+// завершает игру `/finish yes`, прогон доигран до финала без досрочной остановки, сводка отмечает режим.
+func TestRunner_Endless(t *testing.T) {
+	sc := Scenario{Name: "endless", Rounds: 2, Endless: true, RoundMinutes: 2, Profile: "sim-test", PlayerModel: "fake-player", MaxActions: 4,
+		Players: []Persona{
+			{Name: "Марта", Username: "marta", JoinsRound: 0, Persona: "p", Character: "c"},
+			{Name: "Глеб", Username: "gleb", JoinsRound: 2, Persona: "p", Character: "c"},
+		},
+		Budget: Budget{MaxCalls: 500}}
+	rep, store, _, err := runScenario(t, sc)
+	if err != nil {
+		t.Fatalf("прогон: %v\n%s", err, rep.Transcript)
+	}
+	if rep.Status != model.GameFinished || rep.Rounds != 2 || rep.Stopped != "" {
+		t.Fatalf("итог: статус %s, раундов %d, остановка %q\n%s", rep.Status, rep.Rounds, rep.Stopped, rep.Summary)
+	}
+	g, err := store.GetGame(context.Background(), rep.GameID)
+	if err != nil || !g.Endless() || g.Settings.MaxRounds != 0 {
+		t.Fatalf("игра не бесконечная: %+v, %v", g.Settings, err)
+	}
+	for _, want := range []string{"/finish yes", "бесконечная игра: после раунда 2", "история завершена", "игра завершена"} {
+		if !strings.Contains(rep.Transcript, want) {
+			t.Errorf("в транскрипте нет %q", want)
+		}
+	}
+	if !strings.Contains(rep.Summary, "Бесконечная игра") || !strings.Contains(rep.Summary, "Партия доиграна до финала") {
+		t.Errorf("сводка без отметки режима:\n%s", rep.Summary)
 	}
 }

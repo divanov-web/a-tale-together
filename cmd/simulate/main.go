@@ -41,6 +41,7 @@ func run() error {
 	modelInterpreter := flag.String("model-interpreter", "", "модель интерпретатора вместо модели профиля")
 	modelPlayer := flag.String("model-player", "", "модель ИИ-игрока вместо указанной в сценарии")
 	rounds := flag.Int("rounds", 0, "число раундов вместо указанного в сценарии (короткий дымовой прогон)")
+	endless := flag.Bool("endless", false, "бесконечная игра: без границы рассказа, после последнего раунда администратор завершает её /finish yes (ADR-0037)")
 	out := flag.String("out", "logs/sim", "корень папок прогонов")
 	dsn := flag.String("db", "", "DSN БД прогона вместо DATABASE_URL_SIM")
 	flag.Parse()
@@ -68,6 +69,9 @@ func run() error {
 	if *modelPlayer != "" {
 		sc.PlayerModel = *modelPlayer
 	}
+	if *endless {
+		sc.Endless = true
+	}
 	if *rounds > 0 {
 		sc.Rounds = *rounds
 		for i := range sc.Players {
@@ -88,7 +92,11 @@ func run() error {
 	}
 	defer logFile.Close()
 	logger := slog.New(slog.NewTextHandler(logFile, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	fmt.Printf("прогон «%s»: %d раундов, профиль %s, игрок %s; папка %s\n", sc.Name, sc.Rounds, sc.Profile, sc.PlayerModel, dir)
+	kind := "конечная игра"
+	if sc.Endless {
+		kind = "бесконечная игра"
+	}
+	fmt.Printf("прогон «%s»: %d раундов, %s, профиль %s, игрок %s; папка %s\n", sc.Name, sc.Rounds, kind, sc.Profile, sc.PlayerModel, dir)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

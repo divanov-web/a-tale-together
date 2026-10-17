@@ -37,6 +37,10 @@ const (
 	GameFinished  GameStatus = "finished"
 )
 
+// Endless — у истории нет границы: ни предела раундов, ни даты окончания (ADR-0037). Цель фракции в такой игре —
+// горизонт: квесты приближают к ней, но рассказчик её достигнутой не объявляет; закончить игру может только `/finish`.
+func (g Game) Endless() bool { return g.Settings.MaxRounds == 0 && g.Settings.EndsAt == nil }
+
 // GameSettings — необязательные настройки мира в `games.settings` (jsonb).
 type GameSettings struct {
 	SchemaVersion       int        `json:"schema_version"`

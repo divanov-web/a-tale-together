@@ -135,6 +135,9 @@ func (r *Runner) summary(ctx context.Context, rep *Report) string {
 
 	fmt.Fprintf(&b, "# Сводка прогона «%s»\n\n", r.sc.Name)
 	fmt.Fprintf(&b, "- Игра: %d «%s», статус `%s`, раундов закрыто: %d из %d.\n", g.ID, g.Title, g.Status, rep.Rounds, r.sc.Rounds)
+	if r.sc.Endless {
+		fmt.Fprintf(&b, "- Бесконечная игра: границы рассказа нет (`max_rounds 0`), после раунда %d администратор завершил её командой `/finish yes` (ADR-0037).\n", r.sc.Rounds)
+	}
 	fmt.Fprintf(&b, "- Профиль `%s`, модель игрока `%s`; вызовов LLM: %d, стоимость по тарифам: $%.4f.\n", r.sc.Profile, r.sc.PlayerModel, rep.Calls, rep.CostUSD)
 	if rep.Stopped != "" {
 		fmt.Fprintf(&b, "- Остановка: %s.\n", rep.Stopped)

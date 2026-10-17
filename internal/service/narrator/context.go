@@ -49,6 +49,7 @@ type Params struct {
 	Quests   []QuestInfo               `json:"quests"`   // активные квесты фракций для подсказок (пункт 28)
 	Speeches []model.SnapshotSpeech    `json:"speeches"` // реплики раунда из снимка (пункт 32, ADR-0027): в сцену присутствия персонажа
 	Lair     *LairInfo                 `json:"lair"`     // логово сил зла (ADR-0031): фон повествования; nil — логова нет
+	Endless  bool                      `json:"endless"`  // у истории нет границы (`model.Game.Endless`, ADR-0037): цель фракции — горизонт
 }
 
 // LairInfo — логово сил зла для контекста рассказчика (ADR-0031): фракция, координаты, скрытость, имя и вид издалека
@@ -79,6 +80,7 @@ type world struct {
 	Factions []Faction `json:"factions"`
 	Previous []string  `json:"previous"`
 	Lair     *lairIn   `json:"lair,omitempty"` // логово сил зла (ADR-0031): фон, не цель
+	Endless  bool      `json:"endless"`        // бесконечная игра (ADR-0037): цель фракции не достигается
 }
 
 // lairIn — логово во входе рассказчика: чьё, что видно издалека, имя только у открытой клетки.
@@ -210,7 +212,7 @@ type sceneKey struct {
 // нужна; лидер группы не передаётся.
 func BuildInput(p Params) Input {
 	in := Input{Scenes: []scene{}, Events: []event{}, Approaches: []approachIn{}, Quests: nonNilQuests(p.Quests)}
-	in.World = world{Title: p.Title, Tone: p.Tone, Mode: string(p.Mode), RoundNo: p.RoundNo, Factions: nonNilFactions(p.Factions), Previous: digest(p.Opening, p.Previous)}
+	in.World = world{Title: p.Title, Tone: p.Tone, Mode: string(p.Mode), RoundNo: p.RoundNo, Factions: nonNilFactions(p.Factions), Previous: digest(p.Opening, p.Previous), Endless: p.Endless}
 	if l := p.Lair; l != nil {
 		in.World.Lair = &lairIn{Faction: l.Faction, DistantView: l.DistantView}
 		if !l.Hidden {

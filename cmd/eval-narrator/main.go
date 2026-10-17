@@ -69,6 +69,7 @@ type caseParams struct {
 	Quests   []narrator.QuestInfo               `json:"quests"`   // активные квесты для подсказок (пункт 28)
 	Speeches []model.SnapshotSpeech             `json:"speeches"` // реплики персонажей (пункт 32, ADR-0027)
 	Lair     *narrator.LairInfo                 `json:"lair"`     // логово сил зла как фон (B42, ADR-0031)
+	Endless  bool                               `json:"endless"`  // бесконечная игра: цель фракции — горизонт (ADR-0037)
 }
 
 var digits = regexp.MustCompile(`\d`)
@@ -134,7 +135,7 @@ func run() error {
 		}
 		total++
 		p := narrator.Params{Title: set.Title, Tone: set.Tone, Factions: set.Factions, Def: set.CharacterModel,
-			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks, Quests: c.Params.Quests, Speeches: c.Params.Speeches, Lair: c.Params.Lair}
+			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks, Quests: c.Params.Quests, Speeches: c.Params.Speeches, Lair: c.Params.Lair, Endless: c.Params.Endless}
 		started := time.Now()
 		res, err := svc.Narrate(context.Background(), p)
 		elapsed += time.Since(started)

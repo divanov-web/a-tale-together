@@ -16,7 +16,8 @@ import (
 // Scenario — сценарий прогона из `sim/runs/<имя>.json`.
 type Scenario struct {
 	Name         string              `json:"name"`
-	Rounds       int                 `json:"rounds"`          // граница рассказа `max_rounds`
+	Rounds       int                 `json:"rounds"`          // раундов в прогоне: граница рассказа `max_rounds`, в бесконечной игре — раунд, после которого администратор завершает игру
+	Endless      bool                `json:"endless"`         // бесконечная игра (ADR-0037): `max_rounds 0`, финал командой `/finish yes` после раунда `rounds`
 	RoundMinutes int                 `json:"round_minutes"`   // страховочный дедлайн раунда (dev: от 2)
 	Profile      string              `json:"profile"`         // профиль LLM прогона, глобальный по умолчанию в БД прогона
 	PlayerModel  string              `json:"player_model"`    // модель ИИ-игрока (псевдоним провайдера профиля)

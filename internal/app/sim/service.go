@@ -175,6 +175,10 @@ func (r *Runner) run(ctx context.Context) error {
 	}
 	// Кворум 1: игроки входят по расписанию, и первые раунды играет один персонаж; сценарий может переопределить.
 	setup := map[string]string{"round_minutes": strconv.Itoa(r.sc.RoundMinutes), "max_rounds": strconv.Itoa(r.sc.Rounds), "min_answers": "1"}
+	if r.sc.Endless {
+		// Бесконечная игра (ADR-0037): границы рассказа нет, после раунда `rounds` администратор завершает игру сам.
+		setup["max_rounds"] = "0"
+	}
 	for k, v := range r.sc.Setup {
 		setup[k] = v
 	}
@@ -265,6 +269,20 @@ func (r *Runner) rounds(ctx context.Context) error {
 				return err
 			}
 		}
+		if r.sc.Endless && n >= r.sc.Rounds {
+			// Бесконечная игра: вместо `/next` последнего раунда — `/finish yes`: тик разыгрывает раунд и публикует финал.
+			r.note(nil, fmt.Sprintf("бесконечная игра: после раунда %d администратор завершает её командой /finish yes", n))
+			if _, _, err := r.send(ctx, admin, r.group, model.ChatSupergroup, "/finish yes"); err != nil {
+				return err
+			}
+			if err := r.until(ctx, r.settings.PhaseTimeout, "завершение бесконечной игры", func(ctx context.Context) (bool, error) {
+				g, err := r.refresh(ctx)
+				return err == nil && g.Status == model.GameFinished, nil
+			}); err != nil {
+				return err
+			}
+			continue // финал читает начало цикла: отметка и доставка outbox
+		}
 		if _, _, err := r.send(ctx, admin, r.group, model.ChatSupergroup, "/next"); err != nil {
 			return err
 		}
@@ -294,10 +312,13 @@ func (r *Runner) rounds(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			return r.until(ctx, r.settings.PhaseTimeout, "завершение игры", func(ctx context.Context) (bool, error) {
+			if err := r.until(ctx, r.settings.PhaseTimeout, "завершение игры", func(ctx context.Context) (bool, error) {
 				g, err := r.refresh(ctx)
 				return err == nil && g.Status == model.GameFinished, nil
-			})
+			}); err != nil {
+				return err
+			}
+			continue // финал читает начало цикла: отметка и доставка outbox
 		}
 	}
 }

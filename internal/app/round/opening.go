@@ -64,7 +64,7 @@ func (s *Service) opening(ctx context.Context, g model.Game, chat model.Chat, ge
 	}
 	p := narrator.OpeningParams{Title: g.Title, Genre: genre.Title, Tone: tone, Premise: premise, Mode: g.Mode, Def: def, Neighbors: tasks,
 		Start:  narrator.OpeningStart{LocationID: start.ID, Name: start.Name, Description: start.Description, Terrain: start.Terrain, Objects: []string{}},
-		Quests: questTasks, Goals: goalTasks, Template: genre.Template.StoryQuest, Lair: lair}
+		Quests: questTasks, Goals: goalTasks, Template: genre.Template.StoryQuest, Lair: lair, Endless: g.Endless()}
 	for _, o := range start.Objects {
 		p.Start.Objects = append(p.Start.Objects, o.Title)
 	}

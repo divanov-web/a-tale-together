@@ -419,6 +419,27 @@ func TestBuildInput_Lair(t *testing.T) {
 	}
 }
 
+// TestBuildInput_Endless: признак бесконечной игры (ADR-0037) идёт во вход рассказчика и завязки как `world.endless`,
+// у конечной игры он `false`.
+func TestBuildInput_Endless(t *testing.T) {
+	t.Parallel()
+	p := params(model.ModeBalanced)
+	if enc := BuildInput(p).Encode(); !strings.Contains(enc, `"endless":false`) {
+		t.Fatalf("finite encoded = %s", enc)
+	}
+	p.Endless = true
+	if in := BuildInput(p); !in.World.Endless || !strings.Contains(in.Encode(), `"endless":true`) {
+		t.Fatalf("endless encoded = %s", in.Encode())
+	}
+	op := BuildOpeningInput(OpeningParams{Title: "Мир", Endless: true})
+	if !op.World.Endless {
+		t.Fatalf("opening world = %+v", op.World)
+	}
+	if b, _ := json.Marshal(op); !strings.Contains(string(b), `"endless":true`) {
+		t.Fatalf("opening encoded = %s", b)
+	}
+}
+
 // TestRepeatsOpening: зачин повторяет прошлый, если первое предложение состоит в основном из тех же значимых слов
 // (B45): одинаковые и почти одинаковые зачины прогона имитатора ловятся, разные начала и короткие фразы — нет.
 func TestRepeatsOpening(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 )
 
 // OpeningPromptVersion — версия промпта завязки, пишется в `llm_runs.prompt_version`.
-const OpeningPromptVersion = "narrator/opening-v7"
+const OpeningPromptVersion = "narrator/opening-v8"
 
 // Границы текста завязки в рунах: короче — не завязка, длиннее — не влезает в сообщение; в выжимку для хроник
 // уходит начало до openingDigestRune.
@@ -98,6 +98,7 @@ type OpeningParams struct {
 	Goals      []GoalTask           // цель каждой фракции
 	Template   *model.QuestTemplate // сюжетный квест шаблона жанра при сбое
 	Lair       *LairTask            // логово сил зла (ADR-0031): координаты выбрал код, модель даёт имя, карточку и вид издалека; nil — логова нет
+	Endless    bool                 // у истории нет границы (ADR-0037): цель фракции — горизонт, не финиш
 }
 
 // LairTask — задание на карточку логова сил зла (ADR-0031): координаты и направление от стартовой клетки словами,
@@ -143,6 +144,7 @@ type openingWorld struct {
 	Premise  string    `json:"premise,omitempty"`
 	Mode     string    `json:"mode"`
 	Factions []Faction `json:"factions"`
+	Endless  bool      `json:"endless"` // бесконечная игра (ADR-0037)
 }
 
 // BuildOpeningInput собирает вход завязки; срезы всегда не nil, чтобы JSON был стабильным.
@@ -156,7 +158,7 @@ func BuildOpeningInput(p OpeningParams) OpeningInput {
 		neighbors = []NeighborTask{}
 	}
 	in := OpeningInput{
-		World:      openingWorld{Title: p.Title, Genre: p.Genre, Tone: p.Tone, Premise: p.Premise, Mode: string(p.Mode), Factions: nonNilFactions(p.Factions)},
+		World:      openingWorld{Title: p.Title, Genre: p.Genre, Tone: p.Tone, Premise: p.Premise, Mode: string(p.Mode), Factions: nonNilFactions(p.Factions), Endless: p.Endless},
 		Start:      start,
 		Characters: []OpeningCharacter{},
 		Generate:   generate{Cells: []CellTask{}, Neighbors: neighbors, Limits: generationLimits(), CharacterModel: modelKeys(p.Def), Quests: questTasks(Tasks{Quests: p.Quests, Goals: p.Goals}), Lair: p.Lair},
@@ -176,7 +178,7 @@ func (in OpeningInput) Encode() string {
 
 // OpeningSystemPrompt — системная часть промпта завязки текущей версии.
 func OpeningSystemPrompt() string {
-	b, err := prompts.FS.ReadFile("narrator/opening-v7.md")
+	b, err := prompts.FS.ReadFile("narrator/opening-v8.md")
 	if err != nil {
 		panic("narrator: opening prompt: " + err.Error())
 	}

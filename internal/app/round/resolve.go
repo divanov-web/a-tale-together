@@ -246,7 +246,7 @@ func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r 
 		s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"fallback": "рассказчик не настроен: шаблонная хроника", "world_template": !tasks.Empty()})
 		return nil, narrator.TemplateWorld(tasks)
 	}
-	p := narrator.Params{Title: g.Title, Tone: genre.Template.Tone, Mode: g.Mode, RoundNo: r.RoundNo, Opening: g.OpeningScene, State: state, Bios: map[model.CharacterID]narrator.Bio{}, Events: visibility.Public(events), Def: def, Tasks: tasks, Quests: quests}
+	p := narrator.Params{Title: g.Title, Tone: genre.Template.Tone, Mode: g.Mode, RoundNo: r.RoundNo, Opening: g.OpeningScene, State: state, Bios: map[model.CharacterID]narrator.Bio{}, Events: visibility.Public(events), Def: def, Tasks: tasks, Quests: quests, Endless: g.Endless()}
 	if r.Snapshot != nil {
 		p.Speeches = r.Snapshot.Speeches
 	}
