@@ -1,6 +1,6 @@
 # 35. Подсказка рассказчика по просьбе фракции
 
-- Статус: план
+- Статус: готово (2026-10-17, [ADR-0038](../../decisions/0038-faction-hint.md), миграция `00040`, промпт `narrator/v14`)
 - Этап концепта: 2
 - Зависит от: 09 (рассказчик), 34 (перезарядки), B29 (кнопки в личке)
 - Было: B35 в [бэклоге](../backlog.md) (2026-10-13)
@@ -14,11 +14,11 @@
 ## Шаги
 | № | Шаг | Слой / пакеты | Артефакты | Статус |
 |---|---|---|---|---|
-| 1 | Модель: флаг запроса подсказки у фракции на раунд (поле или строка), снимок раунда `Hints`; перезарядка `hint` пункта 34 — уже есть: `model.CooldownHint` с владельцем `model.CooldownFaction`, длительность 5 в `rules.CooldownRounds`, `ListCooldowns` / `SetCooldown`, проверка `rules.CheckCooldown` по `LastRound` (ADR-0033) | `model`, `adapter/postgres`, миграция | тесты хранилища | план |
-| 2 | `/hint` и кнопка: сценарий в `app/round` (раунд открыт, персонаж в игре, перезарядка), ответы игроку; фича `hint` в `sim.Features` и `sim/runs/basic.json` (снята в B52 до появления команды) | `app/round`, `app/bot`, реестр команд, `app/sim` | тесты сценариев | план |
-| 3 | Промпт рассказчика: блок «просят подсказку» с фракциями, только публичный контекст; поле ответа `hints_given`; новая версия промпта, eval-кейс (подсказка есть, секрет не раскрыт) | `service/narrator`, `assets/prompts/narrator` | `docs/llm/`, eval | план |
-| 4 | Закрытие раунда: снять флаг, записать событие подсказки; сбой модели — флаг остаётся на следующий раунд, перезарядка не сгорает | `app/round` | тесты | план |
-| 5 | Документы: `docs/game/round.md`, реестр команд, `guide/commands.md` | docs, guide | | план |
+| 1 | Модель: флаг запроса подсказки у фракции на раунд (поле или строка), снимок раунда `Hints`; перезарядка `hint` пункта 34 — уже есть: `model.CooldownHint` с владельцем `model.CooldownFaction`, длительность 5 в `rules.CooldownRounds`, `ListCooldowns` / `SetCooldown`, проверка `rules.CheckCooldown` по `LastRound` (ADR-0033) | `model`, `adapter/postgres`, миграция | тесты хранилища | готово: `factions.hint_round` (`00040`), `Faction.HintRound`, `SetFactionHint` в `postgres` и `fake`, `RoundSnapshot.Hints` (v6), `ResetWorld` снимает флаг |
+| 2 | `/hint` и кнопка: сценарий в `app/round` (раунд открыт, персонаж в игре, перезарядка), ответы игроку; фича `hint` в `sim.Features` и `sim/runs/basic.json` (снята в B52 до появления команды) | `app/round`, `app/bot`, реестр команд, `app/sim` | тесты сценариев | готово: `round.Hint` (`hint.go`), `ErrHintPending`, `HintCooldownError`; `/hint` в личке и группе (решение руководителя 2026-10-17), кнопка «Подсказка» третьим рядом; фича `hint@nina_sim` в раунде 5 `basic.json`; `TestHint_Validation`, `TestHint_Command` |
+| 3 | Промпт рассказчика: блок «просят подсказку» с фракциями, только публичный контекст; поле ответа `hints_given`; новая версия промпта, eval-кейс (подсказка есть, секрет не раскрыт) | `service/narrator`, `assets/prompts/narrator` | `docs/llm/`, eval | готово: `Params.Hints` → вход `hints` (код фракции, никнеймы), ответ `hints_given`, `checkHints` с дозапросом, `Result.HintsGiven`; промпт `narrator/v14`; eval `faction_hint` прогнан на `haiku` — 1/1 |
+| 4 | Закрытие раунда: снять флаг, записать событие подсказки; сбой модели — флаг остаётся на следующий раунд, перезарядка не сгорает | `app/round` | тесты | готово: `applyHints` — флаг снят, перезарядка переписана раундом хроники, событие `hint_given` (public); `TestHint_GivenAndCooldown`, `TestHint_CarriedOnFailure` |
+| 5 | Документы: `docs/game/round.md`, реестр команд, `guide/commands.md` | docs, guide | | готово: `round.md`, сценарий S23, глоссарий, `character.md`, реестр команд, `guide/commands.md`, `data-model.md`, `docs/llm/narrator.md`, `round-calls.md`, readme пакетов |
 
 ## Проверка
 `make test`, eval рассказчика; песочница: подсказка из лички → в хронике следующего раунда намёк для фракции; повтор раньше 5 раундов — отказ.

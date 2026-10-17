@@ -167,7 +167,7 @@ func lairColumns(l *model.Coord) (x, y *int) {
 
 // ListFactions возвращает фракции игры: стартовые good, evil, затем созданные по сюжету по id.
 func (s *Store) ListFactions(ctx context.Context, game model.GameID) ([]model.Faction, error) {
-	const q = `SELECT id, game_id, code, title, description, tone, relations, explored_since_reset, lair_x, lair_y FROM factions WHERE game_id = $1
+	const q = `SELECT id, game_id, code, title, description, tone, relations, explored_since_reset, lair_x, lair_y, hint_round FROM factions WHERE game_id = $1
 ORDER BY array_position(ARRAY['good', 'evil'], code), id`
 	rows, err := s.db(ctx).Query(ctx, q, game)
 	if err != nil {
@@ -178,7 +178,7 @@ ORDER BY array_position(ARRAY['good', 'evil'], code), id`
 	for rows.Next() {
 		var f model.Faction
 		var x, y *int
-		if err := rows.Scan(&f.ID, &f.GameID, &f.Code, &f.Title, &f.Description, &f.Tone, &f.Relations, &f.ExploredSinceReset, &x, &y); err != nil {
+		if err := rows.Scan(&f.ID, &f.GameID, &f.Code, &f.Title, &f.Description, &f.Tone, &f.Relations, &f.ExploredSinceReset, &x, &y, &f.HintRound); err != nil {
 			return nil, fmt.Errorf("postgres.ListFactions: scan: %w", err)
 		}
 		if x != nil && y != nil {
@@ -187,6 +187,14 @@ ORDER BY array_position(ARRAY['good', 'evil'], code), id`
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+// SetFactionHint ставит или снимает (nil) просьбу фракции о подсказке рассказчика: раунд просьбы (пункт 35, ADR-0038).
+func (s *Store) SetFactionHint(ctx context.Context, game model.GameID, faction model.FactionID, round *int) error {
+	if _, err := s.db(ctx).Exec(ctx, `UPDATE factions SET hint_round = $3 WHERE game_id = $1 AND id = $2`, game, faction, round); err != nil {
+		return fmt.Errorf("postgres.SetFactionHint: %w", err)
+	}
+	return nil
 }
 
 // AddMember добавляет участника; повторный вход возвращает статус active с прежней ролью.

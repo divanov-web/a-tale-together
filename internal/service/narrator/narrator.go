@@ -64,7 +64,7 @@ func New(llm LLM, logger *slog.Logger) *Service {
 
 // SystemPrompt — системная часть промпта текущей версии (стабильный префикс для кэширования).
 func SystemPrompt() string {
-	b, err := prompts.FS.ReadFile("narrator/v13.md")
+	b, err := prompts.FS.ReadFile("narrator/v14.md")
 	if err != nil {
 		panic("narrator: prompt: " + err.Error())
 	}
@@ -73,14 +73,15 @@ func SystemPrompt() string {
 
 // Result — хроника, пакет мира и учёт вызова.
 type Result struct {
-	Narration model.Narration
-	World     WorldPackage // клетки и карточки по заданиям (пункт 27); пустой без заданий
-	Calls     int          // вызовов модели (1 или 2)
-	Patched   int          // событий, дописанных кодом после дозапроса
-	Issues    []string     // замечания к ответам модели (для лога и eval)
-	TokensIn  int
-	TokensOut int
-	CostUSD   float64 // цена вызовов по таблице тарифов (ADR-0032)
+	Narration  model.Narration
+	World      WorldPackage        // клетки и карточки по заданиям (пункт 27); пустой без заданий
+	Calls      int                 // вызовов модели (1 или 2)
+	Patched    int                 // событий, дописанных кодом после дозапроса
+	Issues     []string            // замечания к ответам модели (для лога и eval)
+	HintsGiven []model.FactionCode // фракции из `Params.Hints`, которым модель дала намёк (`hints_given`, ADR-0038)
+	TokensIn   int
+	TokensOut  int
+	CostUSD    float64 // цена вызовов по таблице тарифов (ADR-0032)
 }
 
 // Narrate пишет хронику раунда одним вызовом; при пропущенных событиях, раскрытых секретах, числах в режиме
@@ -120,6 +121,7 @@ func (s *Service) Narrate(ctx context.Context, p Params) (Result, error) {
 	res.Narration = cur.narration
 	res.Narration.PromptVersion = PromptVersion
 	res.World = cur.world
+	res.HintsGiven = cur.hints
 	res.Issues = append(res.Issues, cur.world.Issues...)
 	res.Patched = len(cur.missing)
 	if len(cur.missing) > 0 {

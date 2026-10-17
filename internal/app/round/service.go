@@ -47,6 +47,9 @@ type Store interface {
 	CreateFactionGoal(ctx context.Context, g model.FactionGoal) (model.FactionGoal, error)
 	ListFactionGoals(ctx context.Context, game model.GameID) ([]model.FactionGoal, error)
 	SetFactionExplored(ctx context.Context, game model.GameID, faction model.FactionID, n int) error
+	SetFactionHint(ctx context.Context, game model.GameID, faction model.FactionID, round *int) error
+	ListCooldowns(ctx context.Context, game model.GameID, owner model.CooldownOwner, ownerID int64) ([]model.Cooldown, error)
+	SetCooldown(ctx context.Context, c model.Cooldown) error
 	SaveCharacterState(ctx context.Context, game model.GameID, c model.Character) error
 	SaveCharacterKnowledge(ctx context.Context, game model.GameID, id model.CharacterID, knowledge []string) error
 	NextEventSeq(ctx context.Context, game model.GameID) (int64, error)
@@ -882,7 +885,12 @@ func (s *Service) freeze(ctx context.Context, g model.Game, chat model.Chat, r m
 	if err != nil {
 		return err
 	}
+	factions, err := s.store.ListFactions(ctx, g.ID)
+	if err != nil {
+		return err
+	}
 	snap := snapshot(g, chars, locations, discoveries, subs, speeches, cm.Definition)
+	snap.Hints = snapshotHints(factions)
 	for i := range snap.Characters {
 		snap.Characters[i].Entry = entries[snap.Characters[i].ID]
 	}

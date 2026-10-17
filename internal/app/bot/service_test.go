@@ -574,11 +574,11 @@ func TestReplyKeyboard_PlayerStatus(t *testing.T) {
 	mustContain(t, card, "Персонаж создан")
 	sent := h.tg.sent[private(alice)]
 	mustContain(t, sent[len(sent)-2], "Кнопки под полем ввода")
-	want := model.ReplyKeyboard{Rows: [][]string{{"Персонаж", "Описание", "Знания"}, {"Группа", "Квесты", "Разведка"}}, Placeholder: "Опишите действие…"}
+	want := model.ReplyKeyboard{Rows: [][]string{{"Персонаж", "Описание", "Знания"}, {"Группа", "Квесты", "Разведка"}, {"Подсказка"}}, Placeholder: "Опишите действие…"}
 	if rk := h.tg.lastReply(private(alice)); !reflect.DeepEqual(rk, want) {
 		t.Fatalf("player keyboard = %+v", rk)
 	}
-	for label, command := range map[string]string{"Персонаж": "/character", "Описание": "/bio", "Знания": "/knowledge", "Группа": "/party", "Квесты": "/quests", "Разведка": "/scout"} {
+	for label, command := range map[string]string{"Персонаж": "/character", "Описание": "/bio", "Знания": "/knowledge", "Группа": "/party", "Квесты": "/quests", "Разведка": "/scout", "Подсказка": "/hint"} {
 		if got, want := h.send(alice, private(alice), label), h.send(alice, private(alice), command); got != want {
 			t.Fatalf("button %q = %q, command %s = %q", label, got, command, want)
 		}
@@ -737,10 +737,10 @@ func TestCommands_MenuByContext(t *testing.T) {
 		t.Fatalf("private menu = %s", privateMenu)
 	}
 	// B20: меню группы для всех — только команды игры здесь и сейчас; /help по-прежнему перечисляет всё.
-	if groupMenu != "[help status act say scout]" {
+	if groupMenu != "[help status act say scout hint]" {
 		t.Fatalf("group menu = %s", groupMenu)
 	}
-	if adminMenu := names(h.svc.Menu(ctxGroup, true)); adminMenu != "[help chat mod owner create begin pause finish status act say scout next replay round reset]" {
+	if adminMenu := names(h.svc.Menu(ctxGroup, true)); adminMenu != "[help chat mod owner create begin pause finish status act say scout hint next replay round reset]" {
 		t.Fatalf("admin menu = %s", adminMenu)
 	}
 	mustContain(t, h.send(alice, private(alice), "/help"), "в личке", "/join", "/cancel", "/ping")
@@ -754,7 +754,7 @@ func TestCommands_MenuByContext(t *testing.T) {
 func TestCommands_ManagerMenu(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	admin := "[help chat mod owner create begin pause finish status act say scout next replay round reset]"
+	admin := "[help chat mod owner create begin pause finish status act say scout hint next replay round reset]"
 	h.addBot(owner)
 	if got := fmt.Sprint(h.tg.memberMenu(groupChat, owner.ID)); got != admin {
 		t.Fatalf("owner menu after add = %s", got)
@@ -1718,4 +1718,23 @@ func TestCharacter_BioCooldown(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/bio Пятое"), "сохранено")
 	mustContain(t, h.send(alice, private(alice), "/bio"), "Открытое описание: Пятое", "Перезарядка: открытое описание — через 10 раундов (с раунда 21).")
 	mustContain(t, h.send(alice, private(alice), "/secret Третья"), "сохранено")
+}
+
+// TestHint_Command (пункт 35, ADR-0038): `/hint` и кнопка «Подсказка» в личке, `/hint` в группе с ответом по нику;
+// до старта и без персонажа — отказ; повторная просьба той же фракции — «уже просили».
+func TestHint_Command(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	code := h.createGame()
+	mustContain(t, h.send(alice, private(alice), "/hint"), "Игры нет")
+	h.joinAndCreate(alice, code, "1", "Элис", "ж", "1", "-", "-", "-")
+	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-", "-")
+	mustContain(t, h.send(alice, private(alice), "/hint"), "Игра не запущена")
+	h.begin()
+	mustContain(t, h.send(alice, private(alice), "Подсказка"), "Подсказка появится в тексте рассказчика в следующем раунде (по итогам раунда 1). Следующую можно попросить через 5 раундов.")
+	mustContain(t, h.send(alice, private(alice), "/hint"), "Подсказку уже просили: появится в ближайшей хронике")
+	mustContain(t, h.send(bob, groupChat, "/hint"), "Боб: подсказка появится в тексте рассказчика в следующем раунде (по итогам раунда 1)") // Боб в другой фракции; B50: ответ в группе адресован по нику
+	mustContain(t, h.send(bob, groupChat, "/hint"), "Боб: подсказку уже просили: появится в ближайшей хронике")
+	mustContain(t, h.send(owner, groupChat, "/hint"), "Персонажа ещё нет")
+	mustContain(t, h.send(alice, private(alice), "/help"), "/hint — попросить у рассказчика подсказку")
 }

@@ -130,9 +130,14 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 	tasks.Quests, tasks.Stages, tasks.Goals = s.questTasks(g, &qs, &state)
 	tasks.StoryTemplate = genre.Template.StoryQuest
 	var pkg narrator.WorldPackage
-	r.Narration, pkg = s.narrate(ctx, g, chat, r, genre, def, &state, chars, result.Events, tasks, questContext(&qs), m)
+	var hintsGiven []model.FactionCode
+	r.Narration, pkg, hintsGiven = s.narrate(ctx, g, chat, r, genre, def, &state, chars, result.Events, tasks, questContext(&qs), m)
 	m.NarrateMS, step = s.lap(step)
 	generated, err := s.applyWorld(ctx, g, r, &state, pkg, now)
+	if err != nil {
+		return err
+	}
+	hintEvents, err := s.applyHints(ctx, g, r, &state, hintsGiven)
 	if err != nil {
 		return err
 	}
@@ -149,6 +154,7 @@ func (s *Service) resolve(ctx context.Context, g model.Game, chat model.Chat, r 
 	result.Events = append(result.Events, closed...)
 	result.Events = append(result.Events, questEvents...)
 	result.Events = append(result.Events, closedAfter...)
+	result.Events = append(result.Events, hintEvents...)
 	if r.Narration != nil {
 		relabel(r.Narration, &state)
 	}
@@ -239,16 +245,20 @@ func (s *Service) lairInfo(ctx context.Context, g model.Game, factions []model.F
 // описания персонажей как данные, выжимка прошлых хроник, задания на достройку мира (пункт 27) и по квестам с
 // активными квестами для подсказок (пункт 28) → хроника по сценам и пакет мира через `app/llm.Complete` с ролью `narrator` (ответ сохраняется по ключу задания, ADR-0019). Без
 // провайдера, при сбое, утечке или превышении бюджета — nil и шаблонный пакет: публикуется шаблонная хроника,
-// клетки получают шаблон, раунд не откатывается.
-func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, state *model.RoundSnapshot, chars []model.Character, events []model.Event, tasks narrator.Tasks, quests []narrator.QuestInfo, m *model.RoundMetrics) (*model.Narration, narrator.WorldPackage) {
+// клетки получают шаблон, раунд не откатывается. Третий результат — фракции, получившие подсказку (`hints_given`,
+// ADR-0038); при шаблонной хронике подсказок нет, просьбы ждут следующей.
+func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r model.Round, genre model.Genre, def model.CharacterModelDef, state *model.RoundSnapshot, chars []model.Character, events []model.Event, tasks narrator.Tasks, quests []narrator.QuestInfo, m *model.RoundMetrics) (*model.Narration, narrator.WorldPackage, []model.FactionCode) {
 	if s.LLM == nil {
 		m.NarratorFallback = true
 		s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"fallback": "рассказчик не настроен: шаблонная хроника", "world_template": !tasks.Empty()})
-		return nil, narrator.TemplateWorld(tasks)
+		return nil, narrator.TemplateWorld(tasks), nil
 	}
 	p := narrator.Params{Title: g.Title, Tone: genre.Template.Tone, Mode: g.Mode, RoundNo: r.RoundNo, Opening: g.OpeningScene, State: state, Bios: map[model.CharacterID]narrator.Bio{}, Events: visibility.Public(events), Def: def, Tasks: tasks, Quests: quests, Endless: g.Endless()}
 	if r.Snapshot != nil {
 		p.Speeches = r.Snapshot.Speeches
+		for _, h := range r.Snapshot.Hints {
+			p.Hints = append(p.Hints, narrator.HintInfo{FactionID: h.FactionID, Faction: h.Faction})
+		}
 	}
 	for _, c := range chars {
 		p.Bios[c.ID] = narrator.Bio{Public: c.PublicBio, Secret: c.SecretBio}
@@ -279,17 +289,17 @@ func (s *Service) narrate(ctx context.Context, g model.Game, chat model.Chat, r 
 		s.logger.Warn("narrator unavailable, template chronicle", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)), slog.Any("err", err))
 		m.NarratorFallback = true
 		s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"fallback": "шаблонная хроника", "error": err.Error(), "world_template": !tasks.Empty()})
-		return nil, narrator.TemplateWorld(tasks)
+		return nil, narrator.TemplateWorld(tasks), nil
 	}
 	s.logger.Info("round narrated", slog.Int64("game_id", int64(g.ID)), slog.Int64("round_id", int64(r.ID)),
 		slog.Int("scenes", len(res.Narration.Scenes)), slog.Int("calls", res.Calls), slog.Int("patched", res.Patched), slog.Int("issues", len(res.Issues)),
 		slog.Int("cells", len(res.World.Cells)), slog.Int("neighbors", len(res.World.Neighbors)), slog.Int("templated", res.World.Templated()),
 		slog.Int("quests", len(res.World.Quests)), slog.Int("stages", len(res.World.Stages)), slog.Int("goals", len(res.World.Goals)),
 		slog.Int("tokens_in", res.TokensIn), slog.Int("tokens_out", res.TokensOut), slog.Float64("cost_usd", res.CostUSD))
-	s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"calls": res.Calls, "patched": res.Patched, "issues": res.Issues, "cost_usd": res.CostUSD, "narration": res.Narration, "world": res.World})
+	s.journal(ctx, g, chat.TelegramChatID, r, "narrated", map[string]any{"calls": res.Calls, "patched": res.Patched, "issues": res.Issues, "cost_usd": res.CostUSD, "narration": res.Narration, "world": res.World, "hints_given": res.HintsGiven})
 	m.LLMCalls, m.TokensIn, m.TokensOut, m.Patched, m.Issues = m.LLMCalls+res.Calls, m.TokensIn+res.TokensIn, m.TokensOut+res.TokensOut, res.Patched, len(res.Issues)
 	m.CostUSD += res.CostUSD
-	return &res.Narration, res.World
+	return &res.Narration, res.World, res.HintsGiven
 }
 
 // countStagesDone — число закрытых этапов среди событий квестов.

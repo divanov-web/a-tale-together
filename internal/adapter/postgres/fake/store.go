@@ -666,6 +666,19 @@ func (s *Store) ListFactions(_ context.Context, game model.GameID) ([]model.Fact
 	return out, nil
 }
 
+// SetFactionHint — см. postgres.Store.
+func (s *Store) SetFactionHint(_ context.Context, game model.GameID, faction model.FactionID, round *int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, ok := s.facts[faction]
+	if !ok || f.GameID != game {
+		return model.ErrNotFound
+	}
+	f.HintRound = round
+	s.facts[faction] = f
+	return nil
+}
+
 // AddMember — см. postgres.Store.
 func (s *Store) AddMember(_ context.Context, m model.GameMember) error {
 	s.mu.Lock()

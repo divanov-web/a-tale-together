@@ -27,6 +27,7 @@ type worldLLM struct {
 	quests    int // квестов, выданных моделью
 	placed    int // этапов, размещённых моделью
 	inputs    []string
+	noHints   bool // не отмечать просьбы о подсказке в `hints_given` (ADR-0038): просьба переносится
 }
 
 // questBlock — задания по квестам во входе рассказчика.
@@ -104,9 +105,18 @@ func (w *worldLLM) Complete(_ context.Context, call applm.Call, req model.LLMReq
 			Neighbors []narrator.NeighborTask `json:"neighbors"`
 			Quests    *questBlock             `json:"quests"`
 		} `json:"generate"`
+		Hints []struct {
+			Faction string `json:"faction"`
+		} `json:"hints"`
 	}
 	if err := json.Unmarshal([]byte(req.Input), &in); err != nil {
 		return model.LLMResponse{}, err
+	}
+	hintsGiven := []string{}
+	if !w.noHints {
+		for _, h := range in.Hints {
+			hintsGiven = append(hintsGiven, h.Faction)
+		}
 	}
 	seqs := []int64{}
 	for _, e := range in.Events {
@@ -135,7 +145,7 @@ func (w *worldLLM) Complete(_ context.Context, call applm.Call, req model.LLMReq
 			neighbors = append(neighbors, map[string]any{"x": n.X, "y": n.Y, "name": fmt.Sprintf("Клетка %d,%d", n.X, n.Y), "terrain": "forest", "card": "Лес шумит.", "visible": n.Direction != model.West, "distant_view": "шум листвы"})
 		}
 	}
-	raw, _ := json.Marshal(map[string]any{"chronicle": "Ветер.", "scenes": scenes, "world": map[string]any{"cells": cells, "neighbors": neighbors, "quests": quests, "stages": stages, "goals": goals}})
+	raw, _ := json.Marshal(map[string]any{"chronicle": "Ветер.", "scenes": scenes, "world": map[string]any{"cells": cells, "neighbors": neighbors, "quests": quests, "stages": stages, "goals": goals}, "hints_given": hintsGiven})
 	return model.LLMResponse{JSON: raw, Usage: model.LLMUsage{Input: 100, Output: 50}}, nil
 }
 

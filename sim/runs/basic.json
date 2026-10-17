@@ -32,7 +32,7 @@
   ],
   "features": {
     "4": ["scout"],
-    "5": ["say"],
+    "5": ["say", "hint@nina_sim"],
     "6": ["quests", "party"],
     "7": ["bio", "secret"],
     "8": ["away@gleb_sim", "character"],

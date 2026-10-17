@@ -95,10 +95,18 @@ type RoundSnapshot struct {
 	PartyNames    []string             `json:"party_names,omitempty"`   // имена для новых групп из шаблона жанра
 	Submissions   []SnapshotSubmission `json:"submissions"`
 	Speeches      []SnapshotSpeech     `json:"speeches,omitempty"` // реплики раунда (ADR-0027); в сценах рассказчика по присутствию персонажа
+	Hints         []SnapshotHint       `json:"hints,omitempty"`    // фракции, попросившие подсказку рассказчика (пункт 35, ADR-0038)
 }
 
 // SnapshotSchemaVersion — текущая версия снимка.
-const SnapshotSchemaVersion = 5
+const SnapshotSchemaVersion = 6
+
+// SnapshotHint — просьба фракции о подсказке в снимке: фракция и раунд просьбы.
+type SnapshotHint struct {
+	FactionID FactionID   `json:"faction_id"`
+	Faction   FactionCode `json:"faction"`
+	Round     int         `json:"round"`
+}
 
 // Party возвращает группу снимка по id.
 func (s *RoundSnapshot) Party(id PartyID) (*SnapshotParty, bool) {

@@ -185,7 +185,7 @@ func (s *Store) ResetWorld(ctx context.Context, game model.GameID) error {
 		`DELETE FROM faction_goals WHERE game_id = $1`,
 		`DELETE FROM quests WHERE game_id = $1`,
 		`DELETE FROM location_discoveries WHERE game_id = $1`,
-		`UPDATE factions SET explored_since_reset = 0 WHERE game_id = $1`,
+		`UPDATE factions SET explored_since_reset = 0, hint_round = NULL WHERE game_id = $1`,
 		`DELETE FROM generation_jobs WHERE game_id = $1`,
 		`UPDATE characters SET location_id = (SELECT id FROM locations WHERE game_id = $1 AND start LIMIT 1) WHERE game_id = $1`,
 		`UPDATE parties SET location_id = NULL WHERE game_id = $1`,

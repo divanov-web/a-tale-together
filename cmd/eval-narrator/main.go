@@ -43,6 +43,7 @@ type evalCase struct {
 	NoDigits     bool       `json:"no_digits"`     // в тексте нет цифр
 	FreshOpening bool       `json:"fresh_opening"` // зачин хроники не повторяет прошлые хроники случая (`narrator.RepeatsOpening`, B45)
 	World        *caseWorld `json:"world"`         // ожидания к пакету мира (пункт 27); nil — пакет не проверяется
+	HintsGiven   int        `json:"hints_given"`   // сколько фракций должны получить подсказку (`Result.HintsGiven`; пункт 35, ADR-0038)
 }
 
 // caseWorld — ожидания к пакету мира: число клеток и карточек от модели, минимум объектов в клетке, без шаблонов;
@@ -70,6 +71,7 @@ type caseParams struct {
 	Speeches []model.SnapshotSpeech             `json:"speeches"` // реплики персонажей (пункт 32, ADR-0027)
 	Lair     *narrator.LairInfo                 `json:"lair"`     // логово сил зла как фон (B42, ADR-0031)
 	Endless  bool                               `json:"endless"`  // бесконечная игра: цель фракции — горизонт (ADR-0037)
+	Hints    []narrator.HintInfo                `json:"hints"`    // фракции, попросившие подсказку (пункт 35, ADR-0038)
 }
 
 var digits = regexp.MustCompile(`\d`)
@@ -135,7 +137,7 @@ func run() error {
 		}
 		total++
 		p := narrator.Params{Title: set.Title, Tone: set.Tone, Factions: set.Factions, Def: set.CharacterModel,
-			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks, Quests: c.Params.Quests, Speeches: c.Params.Speeches, Lair: c.Params.Lair, Endless: c.Params.Endless}
+			Mode: c.Params.Mode, RoundNo: c.Params.RoundNo, Events: c.Params.Events, Bios: c.Params.Bios, Previous: c.Params.Previous, State: c.Params.State, Tasks: c.Params.Tasks, Quests: c.Params.Quests, Speeches: c.Params.Speeches, Lair: c.Params.Lair, Endless: c.Params.Endless, Hints: c.Params.Hints}
 		started := time.Now()
 		res, err := svc.Narrate(context.Background(), p)
 		elapsed += time.Since(started)
@@ -213,6 +215,9 @@ func check(c evalCase, res narrator.Result) []string {
 	}
 	if c.NoDigits && digits.MatchString(text) {
 		out = append(out, "есть цифры")
+	}
+	if len(res.HintsGiven) != c.HintsGiven {
+		out = append(out, fmt.Sprintf("подсказок дано %d, ожидалось %d", len(res.HintsGiven), c.HintsGiven))
 	}
 	if c.FreshOpening {
 		var previous []string

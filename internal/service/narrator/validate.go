@@ -48,8 +48,9 @@ type checked struct {
 	missing   []int64 // ключи групп событий без упоминания
 	leak      bool
 	suspect   string
-	world     WorldPackage // пакет мира по заданиям; замечания к качеству пакета дозапроса не вызывают
-	undone    []string     // задания `generate`, которые модель не выполнила: замечания для дозапроса (B45, ADR-0035)
+	world     WorldPackage        // пакет мира по заданиям; замечания к качеству пакета дозапроса не вызывают
+	undone    []string            // задания `generate`, которые модель не выполнила: замечания для дозапроса (B45, ADR-0035)
+	hints     []model.FactionCode // фракции из `hints` входа, отмеченные в `hints_given` (ADR-0038)
 }
 
 func (c checked) needsRetry() bool { return len(c.issues)+len(c.undone) > 0 }
@@ -157,7 +158,26 @@ func (v *validator) validate(raw json.RawMessage) (checked, error) {
 	out.suspect = v.suspectOutcome(out.narration)
 	out.world = validateWorld(resp.World, v.tasks, v.def)
 	out.undone = undoneTasks(out.world, v.tasks)
+	out.hints, out.undone = checkHints(v.in.Hints, resp.Hints, out.undone)
 	return out, nil
+}
+
+// checkHints сверяет `hints_given` ответа с просьбами входа (ADR-0038): выполненные — по кодам фракций, порядок входа;
+// фракция без подсказки — замечание для дозапроса; коды, которых не просили, отбрасываются.
+func checkHints(asked []hintIn, given []string, undone []string) ([]model.FactionCode, []string) {
+	marked := map[string]bool{}
+	for _, code := range given {
+		marked[strings.TrimSpace(code)] = true
+	}
+	var done []model.FactionCode
+	for _, h := range asked {
+		if marked[h.Faction] {
+			done = append(done, model.FactionCode(h.Faction))
+			continue
+		}
+		undone = append(undone, fmt.Sprintf("подсказка фракции «%s» не дана: в сцене её персонажей (%s) намекни, куда двигаться, только по данным входа, и добавь «%s» в hints_given", h.Faction, strings.Join(h.Characters, ", "), h.Faction))
+	}
+	return done, undone
 }
 
 // RepeatsOpening — зачин хроники повторяет начало одной из прошлых (`world.previous`): первое предложение состоит

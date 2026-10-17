@@ -528,3 +528,55 @@ func TestBuildInput_Exhausted(t *testing.T) {
 		t.Fatalf("encoded = %s", encoded)
 	}
 }
+
+// TestBuildInput_Hints (пункт 35, ADR-0038): просьба фракции о подсказке уходит блоком `hints` с кодом фракции и
+// никнеймами её присутствующих персонажей (выбывшие не считаются); без просьб блока нет.
+func TestBuildInput_Hints(t *testing.T) {
+	t.Parallel()
+	p := params(model.ModeBalanced)
+	p.State.Characters[0].FactionID, p.State.Characters[1].FactionID, p.State.Characters[2].FactionID, p.State.Characters[3].FactionID = 1, 2, 1, 1
+	p.Hints = []HintInfo{{FactionID: 1, Faction: "good"}, {FactionID: 3, Faction: "neutral"}}
+	in := BuildInput(p)
+	if len(in.Hints) != 2 || in.Hints[0].Faction != "good" || strings.Join(in.Hints[0].Characters, ",") != "Вор,Маг" || len(in.Hints[1].Characters) != 0 {
+		t.Fatalf("hints = %+v", in.Hints)
+	}
+	if enc := in.Encode(); !strings.Contains(enc, `"hints":[{"faction":"good","characters":["Вор","Маг"]},{"faction":"neutral","characters":[]}]`) {
+		t.Errorf("encoded = %s", enc)
+	}
+	if plain := BuildInput(params(model.ModeBalanced)).Encode(); strings.Contains(plain, `"hints"`) {
+		t.Errorf("hints without requests: %s", plain)
+	}
+}
+
+// TestNarrate_Hints (ADR-0038): фракция без кода в `hints_given` — замечание и дозапрос; после него выполненные
+// подсказки попадают в `HintsGiven` по кодам входа, лишние коды отбрасываются; невыполненная после дозапроса не
+// считается выполненной, но хроника принимается.
+func TestNarrate_Hints(t *testing.T) {
+	t.Parallel()
+	p := params(model.ModeBalanced)
+	p.Hints = []HintInfo{{FactionID: 1, Faction: "good"}, {FactionID: 2, Faction: "evil"}}
+	body := strings.TrimSuffix(goodResponse, "]}")
+	without := body + `],"hints_given":[]}`
+	partial := body + `],"hints_given":["good","dragons"]}`
+	f := &fakeLLM{responses: []string{without, partial}}
+	res, err := newService(f).Narrate(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Calls != 2 || len(res.HintsGiven) != 1 || res.HintsGiven[0] != "good" {
+		t.Fatalf("result = %+v", res)
+	}
+	retry := f.requests[1].Input
+	if !strings.Contains(retry, "подсказка фракции «good» не дана") || !strings.Contains(retry, "добавь «evil» в hints_given") {
+		t.Errorf("retry input = %s", retry[len(retry)-400:])
+	}
+	if joined := strings.Join(res.Issues, "\n"); !strings.Contains(joined, "подсказка фракции «evil» не дана") {
+		t.Errorf("issues = %v", res.Issues)
+	}
+	// Все подсказки даны с первого ответа — один вызов, замечаний нет.
+	full := &fakeLLM{responses: []string{body + `],"hints_given":["good","evil"]}`}}
+	res, err = newService(full).Narrate(context.Background(), p)
+	if err != nil || res.Calls != 1 || len(res.Issues) != 0 || len(res.HintsGiven) != 2 {
+		t.Fatalf("full = %+v, %v", res, err)
+	}
+}

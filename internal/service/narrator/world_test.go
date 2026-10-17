@@ -133,7 +133,7 @@ func TestNarrate_WorldPackage(t *testing.T) {
 	}
 	// Схема ответа содержит пакет мира обязательным полем.
 	var schema map[string]any
-	if err := json.Unmarshal(Schema, &schema); err != nil || !strings.Contains(string(Schema), `"required": ["chronicle", "scenes", "world"]`) {
+	if err := json.Unmarshal(Schema, &schema); err != nil || !strings.Contains(string(Schema), `"required": ["chronicle", "scenes", "world", "hints_given"]`) {
 		t.Fatalf("schema = %v", err)
 	}
 }

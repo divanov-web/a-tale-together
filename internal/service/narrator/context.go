@@ -50,6 +50,20 @@ type Params struct {
 	Speeches []model.SnapshotSpeech    `json:"speeches"` // реплики раунда из снимка (пункт 32, ADR-0027): в сцену присутствия персонажа
 	Lair     *LairInfo                 `json:"lair"`     // логово сил зла (ADR-0031): фон повествования; nil — логова нет
 	Endless  bool                      `json:"endless"`  // у истории нет границы (`model.Game.Endless`, ADR-0037): цель фракции — горизонт
+	Hints    []HintInfo                `json:"hints"`    // фракции, попросившие подсказку (пункт 35, ADR-0038): намёк в сценах их персонажей
+}
+
+// HintInfo — просьба фракции о подсказке для контекста рассказчика (ADR-0038): фракция по id и коду; никнеймы её
+// присутствующих персонажей подставляет `BuildInput`.
+type HintInfo struct {
+	FactionID model.FactionID   `json:"faction_id"`
+	Faction   model.FactionCode `json:"faction"`
+}
+
+// hintIn — просьба о подсказке во входе рассказчика: код фракции (из `world.factions`) и никнеймы её персонажей в сценах.
+type hintIn struct {
+	Faction    string   `json:"faction"`
+	Characters []string `json:"characters"`
 }
 
 // LairInfo — логово сил зла для контекста рассказчика (ADR-0031): фракция, координаты, скрытость, имя и вид издалека
@@ -69,6 +83,7 @@ type Input struct {
 	Events     []event      `json:"events"`
 	Approaches []approachIn `json:"approaches"`
 	Quests     []QuestInfo  `json:"quests"`             // пункт 28: активные квесты, ближайший этап, закрытые этапы
+	Hints      []hintIn     `json:"hints,omitempty"`    // пункт 35: фракции, которым нужен намёк, куда двигаться; ответ — `hints_given`
 	Generate   *generate    `json:"generate,omitempty"` // пункт 27: что достроить; nil — заданий нет
 }
 
@@ -241,11 +256,13 @@ func BuildInput(p Params) Input {
 	}
 	present := map[sceneKey][]sceneCharacter{}
 	speeches := map[sceneKey][]sceneSpeech{}
+	members := map[model.FactionID][]string{}
 	var keys []sceneKey
 	for _, c := range p.State.Characters {
 		if c.LocationID == nil || c.Status.Absent() {
 			continue
 		}
+		members[c.FactionID] = append(members[c.FactionID], c.Nickname)
 		conds := []string{}
 		for _, cond := range c.Conditions {
 			conds = append(conds, ConditionWords(cond))
@@ -264,6 +281,9 @@ func BuildInput(p Params) Input {
 		for _, text := range said[c.ID] {
 			speeches[key] = append(speeches[key], sceneSpeech{Nickname: c.Nickname, Text: text})
 		}
+	}
+	for _, h := range p.Hints {
+		in.Hints = append(in.Hints, hintIn{Faction: string(h.Faction), Characters: append([]string{}, members[h.FactionID]...)})
 	}
 	options := Options(p.State, p.Def, p.Mode)
 	hasOptions := map[model.LocationID]bool{}

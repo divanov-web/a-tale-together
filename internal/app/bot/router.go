@@ -71,6 +71,7 @@ func (s *Service) registry() []command {
 		{name: "act", contexts: ctxAny, description: "<текст> — заявка на текущий раунд", groupDesc: "<текст> — открытая заявка на текущий раунд", run: s.act, needsChat: true},
 		{name: "say", contexts: ctxAny, description: "<текст> — реплика персонажа в этом раунде", groupDesc: "<текст> — открытая реплика персонажа в этом раунде", run: s.say, needsChat: true},
 		{name: "scout", contexts: ctxAny, description: "разведка: что в соседних клетках", run: s.scout, needsChat: true},
+		{name: "hint", contexts: ctxAny, description: "попросить у рассказчика подсказку для своей фракции", run: s.hint, needsChat: true},
 		{name: "away", contexts: ctxPrivate, description: "вывести персонажа из истории; вернуться — /back", run: s.away},
 		{name: "back", contexts: ctxPrivate, description: "вернуть персонажа в историю", run: s.back},
 		{name: "set", contexts: ctxPrivate, description: "<параметр> <значение> — настройка игры", run: s.gameSet},

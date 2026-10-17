@@ -4815,6 +4815,264 @@
     "stages": 0,
     "goals": 0
    }
+  },
+  {
+   "name": "faction_hint",
+   "comment": "пункт 35, ADR-0038: Орден попросил подсказку (`hints`: good — Маг, Паладин); следующий этап уже в «Старой мельнице» на востоке. Ожидание: в сцене Мага и Паладина ясный намёк, куда двигаться (мельница или восток) внутри истории, без обращения к игрокам и списка вариантов; код фракции в `hints_given`; слова «квест», «этап», «подсказка» не звучат; секретов нет.",
+   "params": {
+    "mode": "balanced",
+    "round_no": 6,
+    "events": [
+     {
+      "seq": 401,
+      "type": "check_rolled",
+      "visibility": "location",
+      "location_id": 3,
+      "character_id": 14,
+      "payload": {
+       "character_id": 14,
+       "object": "fire_pit",
+       "title": "костровище",
+       "free": false,
+       "summary": "осматривает: костровище",
+       "check": {
+        "attribute": "wits",
+        "skill": "awareness",
+        "param": 5,
+        "difficulty": 4,
+        "chance_pct": 60,
+        "roll": 22,
+        "pushed": false,
+        "outcome": "success"
+       }
+      }
+     }
+    ],
+    "bios": {
+     "13": {
+      "public": "молчаливый маг",
+      "secret": ""
+     },
+     "14": {
+      "public": "паладин Ордена",
+      "secret": ""
+     }
+    },
+    "previous": [
+     {
+      "chronicle": "Утро над башней по-прежнему тихо, ров молчит, а дым за деревьями не редеет. Маг и Паладин всё ещё на опушке и разбирают угли."
+     },
+     {
+      "chronicle": "Утро над башней по-прежнему тихо, ров молчит, а дым за деревьями не редеет. Отряд вышел к опушке за рвом."
+     },
+     {
+      "chronicle": "Утро над башней тихо, ров молчит, дым за деревьями не редеет. Башня проводила отряд молчанием."
+     }
+    ],
+    "state": {
+     "schema_version": 4,
+     "mode": "balanced",
+     "locations": [
+      {
+       "id": 1,
+       "name": "Зал башни",
+       "description": "Пыльный зал с каменной статуей рыцаря.",
+       "difficulty": 0,
+       "x": 0,
+       "y": 0,
+       "stage": "detailed",
+       "start": true,
+       "visited": true,
+       "objects": [
+        {
+         "key": "statue",
+         "title": "статуя рыцаря",
+         "description": "каменный рыцарь",
+         "approaches": [
+          {
+           "action": "explore",
+           "title": "осмотреть статую",
+           "attribute": "wits",
+           "skill": "awareness",
+           "difficulty": 1
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": 3,
+       "name": "Опушка",
+       "description": "Кромка леса за рвом; у тропы остывшее костровище, за деревьями виден дым.",
+       "difficulty": 0,
+       "x": 0,
+       "y": 1,
+       "stage": "detailed",
+       "terrain": "forest",
+       "visited": true,
+       "discovered_by": [
+        1
+       ],
+       "objects": [
+        {
+         "key": "fire_pit",
+         "title": "костровище",
+         "description": "остывшие угли у тропы",
+         "state": "examined",
+         "approaches": [
+          {
+           "action": "explore",
+           "title": "Осмотреть костровище",
+           "attribute": "wits",
+           "skill": "awareness",
+           "difficulty": 4,
+           "on_success": {
+            "state": "examined",
+            "fact": "Костёр жгли люди с мельницы: в углях щепа от мельничного колеса."
+           }
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": 4,
+       "name": "Старая мельница",
+       "description": "Мельница без крыла над ручьём; дверь подпёрта колом.",
+       "difficulty": 0,
+       "x": 1,
+       "y": 1,
+       "stage": "card",
+       "terrain": "ruins",
+       "objects": []
+      },
+      {
+       "id": 5,
+       "name": "Гарь",
+       "description": "Выжженная поляна.",
+       "difficulty": 0,
+       "x": 0,
+       "y": 2,
+       "stage": "card",
+       "terrain": "forest",
+       "hidden": true,
+       "distant_view": "над деревьями поднимается дым",
+       "objects": []
+      }
+     ],
+     "characters": [
+      {
+       "id": 13,
+       "nickname": "Маг",
+       "status": "active",
+       "hp": 6,
+       "max_hp": 6,
+       "faction_id": 1,
+       "party_id": 1,
+       "location_id": 3,
+       "conditions": [],
+       "attributes": {
+        "strength": 2,
+        "agility": 2,
+        "wits": 4,
+        "will": 4
+       },
+       "skills": {
+        "awareness": 3
+       },
+       "knowledge": [
+        "Костёр жгли люди с мельницы: в углях щепа от мельничного колеса."
+       ]
+      },
+      {
+       "id": 14,
+       "nickname": "Паладин",
+       "status": "active",
+       "hp": 8,
+       "max_hp": 8,
+       "faction_id": 1,
+       "party_id": 1,
+       "location_id": 3,
+       "conditions": [],
+       "attributes": {
+        "strength": 4,
+        "agility": 3,
+        "wits": 2,
+        "will": 3
+       },
+       "skills": {
+        "melee": 2
+       },
+       "knowledge": [
+        "Костёр жгли люди с мельницы: в углях щепа от мельничного колеса."
+       ]
+      }
+     ],
+     "parties": [
+      {
+       "id": 1,
+       "name": "Ночной дозор"
+      }
+     ]
+    },
+    "quests": [
+     {
+      "faction": "good",
+      "kind": "story",
+      "title": "Дым за рвом",
+      "summary": "Кто-то жжёт костры за рвом; надо понять, кто и зачем.",
+      "goal": "Понять, кто жжёт костры за рвом, и защитить город.",
+      "next": {
+       "title": "Чей костёр",
+       "summary": "Узнать у мельницы, кто разводил костры за рвом.",
+       "placed": true,
+       "cell": "Старая мельница",
+       "hint": "добраться до места"
+      },
+      "closed": [
+       "Найти источник дыма"
+      ]
+     }
+    ],
+    "hints": [
+     {
+      "faction_id": 1,
+      "faction": "good"
+     }
+    ]
+   },
+   "required": [
+    "Маг",
+    "Паладин"
+   ],
+   "required_any": [
+    "мельниц",
+    "восток"
+   ],
+   "forbidden": [
+    "вариант",
+    "всё так же",
+    "движок",
+    "игрок",
+    "квест",
+    "координат",
+    "лидер",
+    "модель",
+    "по-прежнему тихо",
+    "подсказк",
+    "этап"
+   ],
+   "fresh_opening": true,
+   "no_digits": true,
+   "world": {
+    "cells": 0,
+    "neighbors": 0,
+    "min_objects": 0,
+    "quests": 0,
+    "stages": 0,
+    "goals": 0
+   },
+   "hints_given": 1
   }
  ]
 }

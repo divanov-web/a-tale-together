@@ -93,6 +93,7 @@ const (
 	EventQuestStageDone    EventType = "quest_stage_done"   // условие этапа выполнено; награда `reward.fact` → знания адресатов (private)
 	EventQuestDone         EventType = "quest_done"         // последний этап закрыт (private)
 	EventGoalRevised       EventType = "goal_revised"       // новая версия цели фракции (private)
+	EventHintGiven         EventType = "hint_given"         // рассказчик дал фракции подсказку в хронике (пункт 35, ADR-0038, public)
 )
 
 // GenerationEvents — события сценария раунда вне движка: пакет мира после вызова рассказчика и квесты (пункт 28);

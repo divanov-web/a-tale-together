@@ -189,7 +189,7 @@ func (s *Store) ResetWorld(_ context.Context, game model.GameID) error {
 	}
 	for id, f := range s.facts {
 		if f.GameID == game {
-			f.ExploredSinceReset = 0
+			f.ExploredSinceReset, f.HintRound = 0, nil
 			s.facts[id] = f
 		}
 	}
