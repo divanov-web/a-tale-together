@@ -6,7 +6,7 @@ argument-hint: "[check | setup | apply | migrate | reset-db]"
 
 # Среда разработки
 
-Пошаговая установка для человека: `docs/dev/environment.md`. Здесь факты и действия для Claude. Прод-сервер (ssh `fornex-dev`, сервис `tale-bot`, `deploy/deploy.sh`): `docs/dev/server.md`, ADR-0040; доступы и состояние машины — проект «Дом», карточка `fornex`.
+Пошаговая установка для человека: `docs/dev/environment.md`. Здесь факты и действия для Claude. Прод-сервер (ssh `fornex-dev`, сервис `tale-bot`): `docs/dev/server.md`, ADR-0040; релиз туда — только `/tale-release` по команде руководителя (ADR-0041); доступы и состояние машины — проект «Дом», карточка `fornex`.
 
 ## Факты
 

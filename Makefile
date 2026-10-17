@@ -10,7 +10,7 @@ export
 PID := bin/bot.pid
 LOG := logs/bot.log
 
-.PHONY: build run start stop restart logs test test-integration lint fmt migrate migrate-down migrate-status tools check eval-interpreter eval-narrator wipe sim migrate-sim
+.PHONY: build run start stop restart logs test test-integration lint fmt migrate migrate-down migrate-status tools check eval-interpreter eval-narrator wipe sim migrate-sim release
 
 build: ## Сборка бота
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o $(BIN) ./cmd/bot
@@ -78,6 +78,9 @@ migrate-down: ## Откатить последнюю миграцию
 
 migrate-status: ## Статус миграций
 	$(GOOSE) -dir migrations postgres "$(DATABASE_URL)" status
+
+release: ## Релиз на прод с домашней машины (RELEASE_ARGS="all" | "check" | "check build upload stop migrate" ...; /tale-release, только по команде руководителя)
+	deploy/release.sh $(RELEASE_ARGS)
 
 check: ## Проверка окружения: Go, Postgres, .env, токен бота
 	@$(GO) version

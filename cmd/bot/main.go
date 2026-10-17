@@ -1,8 +1,11 @@
 // Команда bot: сборка зависимостей и запуск бота A Tale Together.
+// Флаги -migrate и -migrate-status применяют или показывают встроенные миграции на DATABASE_URL и выходят
+// (релиз на прод без goose на сервере, ADR-0041).
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,6 +17,7 @@ import (
 
 	"taletogether/cmd/internal/stack"
 	"taletogether/internal/adapter/chatlog"
+	"taletogether/internal/adapter/postgres"
 	"taletogether/internal/adapter/telegram"
 	"taletogether/internal/config"
 	"taletogether/internal/model"
@@ -22,7 +26,13 @@ import (
 // version подставляется при сборке: -ldflags "-X main.version=...".
 var version = "dev"
 
+var (
+	flagMigrate       = flag.Bool("migrate", false, "применить встроенные миграции к DATABASE_URL и выйти")
+	flagMigrateStatus = flag.Bool("migrate-status", false, "показать статус встроенных миграций на DATABASE_URL и выйти")
+)
+
 func main() {
+	flag.Parse()
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "ошибка:", err)
 		os.Exit(1)
@@ -34,6 +44,9 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
+	}
+	if *flagMigrate || *flagMigrateStatus {
+		return migrate(cfg, *flagMigrate)
 	}
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("конфигурация: %w", err)
@@ -84,4 +97,37 @@ func run() error {
 	err = g.Wait()
 	logger.Info("bot stopped")
 	return err
+}
+
+// migrate применяет встроенные миграции (apply) и печатает их статус; токен бота не нужен.
+func migrate(cfg config.Config, apply bool) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	lvl, _ := cfg.SlogLevel()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl}))
+	store, err := postgres.New(ctx, postgres.Settings{DSN: cfg.DatabaseURL}, logger)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	if apply {
+		if err := store.Migrate(ctx); err != nil {
+			return err
+		}
+	}
+	states, err := store.MigrationStatus(ctx)
+	if err != nil {
+		return err
+	}
+	pending := 0
+	for _, st := range states {
+		mark := "применена " + st.AppliedAt.Local().Format("2006-01-02 15:04")
+		if !st.Applied {
+			mark = "ожидает"
+			pending++
+		}
+		fmt.Printf("%-40s %s\n", st.Path, mark)
+	}
+	fmt.Printf("миграций: %d, ожидают: %d, версия бота: %s\n", len(states), pending, version)
+	return nil
 }

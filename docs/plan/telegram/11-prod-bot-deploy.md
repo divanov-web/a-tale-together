@@ -1,6 +1,6 @@
 # 11. Развёртывание прод-бота
 
-- Статус: план
+- Статус: план (инфраструктура поднята 2026-10-17: ADR-0040, ADR-0041; критерий «выполнена дважды» и восстановление из бэкапа не проверены)
 - Этап концепта: 4
 - Зависит от: 14 (закрытая альфа на тестовом боте; можно начать раньше для проверки инфраструктуры)
 
@@ -13,14 +13,14 @@
 ## Шаги
 | № | Шаг | Слой / пакеты | Артефакты | Статус |
 |---|---|---|---|---|
-| 1 | Выбор хостинга и способа запуска (VPS + Docker Compose, либо systemd) — ADR | ADR | | план |
-| 2 | Второй бот в BotFather (без суффикса), отдельная группа; токен только на хостинге | руководитель | | план |
-| 3 | `Dockerfile` (multi-stage, scratch/alpine), `docker-compose.prod.yml` с Postgres и ботом | devops | | план |
-| 4 | Конфигурация окружений: `APP_ENV=dev|prod`, dev-команды отключены в prod | `config` | | план |
-| 5 | Миграции при выкате: `MIGRATE_ON_START` или шаг в скрипте выката | devops | | план |
-| 6 | Бэкапы Postgres по расписанию и проверка восстановления | devops | скрипт | план |
-| 7 | Логи: JSON-формат в prod, ротация, просмотр; алерт на падение бота | `cmd/bot`, devops | | план |
-| 8 | Процедура выката и отката: `docs/dev/deploy.md`, скрипт `deploy.sh` | docs, devops | | план |
+| 1 | Выбор хостинга и способа запуска (VPS + Docker Compose, либо systemd) — ADR | ADR | ADR-0040: VPS Fornex, systemd от `divanov` | готово |
+| 2 | Второй бот в BotFather (без суффикса), отдельная группа; токен только на хостинге | руководитель | `@a_tale_together_bot`, токен в `.env` сервера | готово (группа — план) |
+| 3 | `Dockerfile` (multi-stage, scratch/alpine), `docker-compose.prod.yml` с Postgres и ботом | devops | отклонено ADR-0040: не помещается в 1 ГБ ОЗУ, Postgres из apt | снято |
+| 4 | Конфигурация окружений: `APP_ENV=dev|prod`, dev-команды отключены в prod | `config` | `APP_ENV=prod` на сервере | готово |
+| 5 | Миграции при выкате: `MIGRATE_ON_START` или шаг в скрипте выката | devops | шаг `migrate` в `deploy/release.sh`, флаг `bot -migrate` (ADR-0041) | готово |
+| 6 | Бэкапы Postgres по расписанию и проверка восстановления | devops | `deploy/tale-backup.sh` в cron.daily; восстановление не проверялось | в работе |
+| 7 | Логи: JSON-формат в prod, ротация, просмотр; алерт на падение бота | `cmd/bot`, devops | ротация `deploy/tale-bot.logrotate`; JSON и алерт — план | в работе |
+| 8 | Процедура выката и отката: `docs/dev/deploy.md`, скрипт `deploy.sh` | docs, devops | `deploy/release.sh`, скилл `/tale-release`, `docs/dev/server.md`, журнал `docs/dev/releases.md` | готово |
 | 9 | Webhook вместо long polling — ADR при необходимости | ADR | | план |
 
 ## Проверка
