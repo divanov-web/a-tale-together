@@ -986,9 +986,9 @@ func TestRound_StatusTransitionsAndWindow(t *testing.T) {
 		if err := h.rounds.Tick(context.Background(), h.clock.Now()); err != nil {
 			t.Fatal(err)
 		}
-		want := "waiting"
+		want := "Статус: выжидает"
 		if i == 2 {
-			want = "leaving"
+			want = "Статус: уходит из истории"
 		}
 		mustContain(t, h.send(bob, private(bob), "/character"), want)
 	}
@@ -999,7 +999,7 @@ func TestRound_StatusTransitionsAndWindow(t *testing.T) {
 	if err := h.rounds.Tick(context.Background(), h.clock.Now()); err != nil {
 		t.Fatal(err)
 	}
-	mustContain(t, h.send(bob, private(bob), "/character"), "active")
+	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: в игре")
 	mustContain(t, h.send(alice, groupChat, "/status"), "Предыдущий раунд: 4 разрешён, заявок 2", "Следующий раунд: в 11.10 13:00")
 }
 
@@ -1390,7 +1390,7 @@ func TestParty_Card(t *testing.T) {
 
 	h.begin()
 	reply := h.send(bob, private(bob), "/party")
-	mustContain(t, reply, "Ваша группа\nЛокация: Рыночная площадь", "Участники:\n• Элис — active\n• Боб — active", "Группы ведёт рассказчик")
+	mustContain(t, reply, "Ваша группа\nЛокация: Рыночная площадь", "Участники:\n• Элис — в игре\n• Боб — в игре", "Группы ведёт рассказчик")
 	// Лидер и название группы не показываются (решения руководителя 2026-10-11 и 2026-10-13).
 	if strings.Contains(strings.ToLower(reply), "лидер") || strings.Contains(reply, "Ночной дозор") || len(h.tg.lastKeyboard(private(bob))) != 0 {
 		t.Fatalf("party card leaks leader or name or has buttons: %q", reply)
@@ -1402,7 +1402,7 @@ func TestParty_Card(t *testing.T) {
 	mustContain(t, h.send(alice, private(alice), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 	mustContain(t, h.send(alice, private(alice), "/character"), "Локация: Зал Серой башни", "Группа: только вы (/party)")
-	mustContain(t, h.send(bob, private(bob), "/party"), "Ваша группа", "• Боб — waiting", "Другие группы:\n• Элис — Зал Серой башни (0, 1)")
+	mustContain(t, h.send(bob, private(bob), "/party"), "Ваша группа", "• Боб — выжидает", "Другие группы:\n• Элис — Зал Серой башни (0, 1)")
 }
 
 // TestParty_NewcomerInRunningGame (пункт 19): новичок в идущей игре входит в группу своей стартовой локации; если
@@ -1419,7 +1419,7 @@ func TestParty_NewcomerInRunningGame(t *testing.T) {
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 	// Группа ушла в башню; Боб появляется на площади и получает свою группу.
 	h.joinAndCreate(bob, code, "2", "Боб", "3", "2", "-", "-", "-")
-	mustContain(t, h.send(bob, private(bob), "/party"), "Ваша группа\nЛокация: Рыночная площадь", "• Боб — active", "Другие группы:\n• Элис — Зал Серой башни (0, 1)")
+	mustContain(t, h.send(bob, private(bob), "/party"), "Ваша группа\nЛокация: Рыночная площадь", "• Боб — в игре", "Другие группы:\n• Элис — Зал Серой башни (0, 1)")
 	// Лимит занят: следующий новичок идёт в ближайшую группу и входит в историю в её локации.
 	c, _ := h.store.GetChatByTelegramID(context.Background(), groupChat)
 	g, _ := h.store.UnfinishedGameOfChat(context.Background(), c.ID)
@@ -1430,7 +1430,7 @@ func TestParty_NewcomerInRunningGame(t *testing.T) {
 	mustContain(t, h.send(bob, private(bob), "/act идти к башне"), "Заявка принята")
 	mustContain(t, h.send(owner, groupChat, "/next"), "следующий открыт")
 	h.joinAndCreate(nobody, code, "1", "Никто", "1", "1", "-", "-", "-")
-	mustContain(t, h.send(nobody, private(nobody), "/party"), "Ваша группа", "Локация: Зал Серой башни", "• Никто — active")
+	mustContain(t, h.send(nobody, private(nobody), "/party"), "Ваша группа", "Локация: Зал Серой башни", "• Никто — в игре")
 	mustContain(t, h.send(nobody, private(nobody), "/character"), "Локация: Зал Серой башни")
 }
 
@@ -1559,14 +1559,14 @@ func TestAway_Command(t *testing.T) {
 		t.Fatalf("back button = %v", got)
 	}
 	mustContain(t, h.send(bob, private(bob), "/away"), "Персонаж уже уходит")
-	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: active (уходит из истории; вернуться — /back)")
+	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: в игре (пометка ухода; вернуться — /back)")
 	mustContain(t, h.send(owner, groupChat, "/round"), "Заявок: 0")
 
 	// Заморозка 1 только с заявкой Элис: Боб leaving; личное «раунд 2 открыт» ему не приходит, Элис — приходит.
 	mustContain(t, h.send(alice, private(alice), "/act иду"), "Заявка принята: раунд 1")
 	h.clock.advance(15 * time.Minute)
 	h.tick()
-	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: leaving (уходит из истории")
+	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: уходит из истории (пометка ухода")
 	got := h.privateOutbox(private(bob), model.OutboxPrivateOpen)
 	mustContain(t, got, "раунд 1 открыт")
 	if strings.Contains(got, "раунд 2 открыт") {
@@ -1575,10 +1575,10 @@ func TestAway_Command(t *testing.T) {
 
 	// /back при открытом раунде 2: заявка «жду», после заморозки Боб active.
 	mustContain(t, h.send(bob, private(bob), "/back"), "Боб возвращается: заявка «жду» принята на раунд 2")
-	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: leaving\n") // пометка снята, статус сменит заморозка
+	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: уходит из истории\n") // пометка снята, статус сменит заморозка
 	h.clock.advance(15 * time.Minute)
 	h.tick()
-	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: active\n")
+	mustContain(t, h.send(bob, private(bob), "/character"), "Статус: в игре\n")
 	mustContain(t, h.send(bob, private(bob), "/back"), "Персонаж в истории")
 }
 

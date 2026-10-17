@@ -99,7 +99,7 @@ func (s *Service) renderStatus(ctx context.Context, g model.Game) (model.Formatt
 		if c.Gender != "" {
 			gender = c.Gender.Word()
 		}
-		chars = append(chars, charRow{Nickname: c.Nickname, Archetype: c.Archetype, Gender: gender, Faction: titles[c.FactionID], Status: string(c.Status)})
+		chars = append(chars, charRow{Nickname: c.Nickname, Archetype: c.Archetype, Gender: gender, Faction: titles[c.FactionID], Status: c.Status.Word()})
 	}
 	window := "без окна"
 	if g.PlayFrom != "" {

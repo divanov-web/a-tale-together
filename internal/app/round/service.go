@@ -773,7 +773,7 @@ func (s *Service) announceSkipped(ctx context.Context, g *model.Game, chat model
 // boundary — причина завершения игры по границам рассказа после раунда closed; пусто, если игра продолжается.
 func boundary(g model.Game, closed int, now time.Time) string {
 	if g.Settings.MaxRounds > 0 && closed >= g.Settings.MaxRounds {
-		return fmt.Sprintf("сыграно %d раундов из %d", closed, g.Settings.MaxRounds)
+		return "достигнут предел раундов" // число раундов печатает финал (B48)
 	}
 	if g.Settings.EndsAt != nil && !now.Before(*g.Settings.EndsAt) {
 		return "наступила дата окончания " + g.Settings.EndsAt.In(location(g.Timezone)).Format("02.01.2006")

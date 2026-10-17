@@ -147,17 +147,27 @@ func (s *Service) planTasks(ctx context.Context, g model.Game, state *model.Roun
 // «Логово»; клетка с такими координатами уже есть (повторный старт) — обновляется. Событий нет: игра ещё без
 // раундов, стартовый мир — нулевой снимок.
 func (s *Service) startPackage(ctx context.Context, g model.Game, start model.Location, res narrator.OpeningResult, tasks []narrator.NeighborTask, lair *narrator.LairTask, locs []model.Location) error {
-	if res.Start != nil {
+	if start.ID != 0 {
+		// Персонажи стоят на стартовой клетке с начала истории: она посещена с момента старта (B49), открытием
+		// фракции при этом не считается (`docs/game/world.md`).
 		loc := start
-		loc.Name, loc.Description, loc.Difficulty = res.Start.Name, res.Start.Description, res.Start.Difficulty
-		if res.Start.Terrain != "" {
-			loc.Terrain = res.Start.Terrain
+		if loc.VisitedAt == nil {
+			now := s.clock.Now()
+			loc.VisitedAt = &now
+		}
+		if res.Start != nil {
+			loc.Name, loc.Description, loc.Difficulty = res.Start.Name, res.Start.Description, res.Start.Difficulty
+			if res.Start.Terrain != "" {
+				loc.Terrain = res.Start.Terrain
+			}
 		}
 		if err := s.store.UpdateLocation(ctx, loc); err != nil {
 			return err
 		}
-		if err := s.store.ReplaceObjects(ctx, g.ID, loc.ID, res.Start.Objects); err != nil {
-			return err
+		if res.Start != nil {
+			if err := s.store.ReplaceObjects(ctx, g.ID, loc.ID, res.Start.Objects); err != nil {
+				return err
+			}
 		}
 	}
 	neighbors := res.Neighbors

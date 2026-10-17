@@ -116,6 +116,24 @@ const (
 	CharacterDead     CharacterStatus = "dead"
 )
 
+// Word — статус словами для карточек `/character`, `/party`, `/status` (B47): коды игроку не показываются.
+// Формулировки рассказчика для подписи сцены — `narrator.StatusWords`.
+func (s CharacterStatus) Word() string {
+	switch s {
+	case CharacterActive:
+		return "в игре"
+	case CharacterWaiting:
+		return "выжидает"
+	case CharacterLeaving:
+		return "уходит из истории"
+	case CharacterInactive:
+		return "вне истории"
+	case CharacterDead:
+		return "выбыл"
+	}
+	return string(s)
+}
+
 // Absent — персонаж вне повествования: выведен за пропуски или выбыл по смерти; в сцены рассказчика не попадает.
 func (s CharacterStatus) Absent() bool { return s == CharacterInactive || s == CharacterDead }
 

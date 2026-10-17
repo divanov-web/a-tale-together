@@ -79,14 +79,19 @@ func roundFailedText(g model.Game, r model.Round) string {
 	return fmt.Sprintf("%s не удалось разрешить\nСбой на стороне бота. Заявки перенесены в следующий раунд.", header(g, r.RoundNo))
 }
 
-// finishedText — финальная хроника шаблоном: причина, число раундов, итог каждого персонажа.
+// finishedText — финальная хроника шаблоном (G13: эпилог рассказчика отложен): причина, число раундов и предел,
+// если он задан (B48: причина число не повторяет), итог каждого персонажа.
 func finishedText(g model.Game, rounds int, reason string, chars []model.Character, locations []model.Location, def model.CharacterModelDef) string {
 	names := map[model.LocationID]string{}
 	for _, l := range locations {
 		names[l.ID] = l.Name
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "«%s» — история завершена\n\n%s. Раундов сыграно: %d.", g.Title, upperFirst(reason), rounds)
+	fmt.Fprintf(&b, "«%s» — история завершена\n\n%s. Раундов сыграно: %d", g.Title, upperFirst(reason), rounds)
+	if g.Settings.MaxRounds > 0 {
+		fmt.Fprintf(&b, " из %d", g.Settings.MaxRounds)
+	}
+	b.WriteString(".")
 	if len(chars) > 0 {
 		b.WriteString("\n\nПерсонажи:")
 	}

@@ -50,7 +50,7 @@ func (s *Service) party(ctx context.Context, req *request) error {
 		}
 		b.Header("Участники")
 		for _, m := range mine.Members {
-			b.Printf("\n• %s — %s", m.Nickname, m.Status)
+			b.Printf("\n• %s — %s", m.Nickname, m.Status.Word()) // статус словами (B47)
 		}
 	case g.Status == model.GameDraft:
 		b.WriteString("Группы соберутся при старте игры: все персонажи войдут в одну группу.")

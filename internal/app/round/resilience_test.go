@@ -237,7 +237,7 @@ func TestBoundary_MaxRounds(t *testing.T) {
 		t.Fatalf("last round = %+v", last)
 	}
 	msgs := w.outbox(t)
-	if final := msgs[len(msgs)-1]; !strings.Contains(final.Text, "Сыграно 2 раундов из 2. Раундов сыграно: 2.") {
+	if final := msgs[len(msgs)-1]; !strings.Contains(final.Text, "Достигнут предел раундов. Раундов сыграно: 2 из 2.") {
 		t.Fatalf("final = %q", final.Text)
 	}
 }

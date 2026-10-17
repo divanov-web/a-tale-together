@@ -71,4 +71,10 @@ func TestBegin_OpeningFallback(t *testing.T) {
 	if msgs := w.outbox(t); msgs[0].Text != "«Мир» — начало истории\n\nВ Мир наступает осень." {
 		t.Fatalf("scene message = %q", msgs[0].Text)
 	}
+	// B49: и при шаблонном старте стартовая клетка помечена посещённой.
+	for _, l := range w.locations(t) {
+		if l.Start && l.VisitedAt == nil {
+			t.Fatalf("start not visited after template begin: %+v", l)
+		}
+	}
 }

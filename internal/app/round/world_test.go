@@ -248,6 +248,10 @@ func TestBegin_StartPackage(t *testing.T) {
 	if len(locs) != 5 || locs[0].Name != "Площадь у колодца" || locs[0].Stage != model.StageDetailed || len(locs[0].Objects) != 1 || locs[0].Objects[0].Key != "well" || locs[0].Terrain != "town" {
 		t.Fatalf("start after package = %+v", locs[0])
 	}
+	// B49: стартовая клетка посещена с момента старта, карточки соседей — нет.
+	if locs[0].VisitedAt == nil {
+		t.Fatalf("start not visited after begin: %+v", locs[0])
+	}
 	if n := w.at(t, 0, 1); n.Name != "Опушка" || n.Stage != model.StageCard || n.Terrain != "forest" || n.Description != "Кромка леса." || n.VisitedAt != nil {
 		t.Fatalf("north card = %+v", n)
 	}
