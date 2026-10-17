@@ -161,3 +161,27 @@ func TestOpening_Quests(t *testing.T) {
 		t.Fatal("opening schema without factions")
 	}
 }
+
+// TestNarrate_UndoneTasksRetry: пустой пакет при заданиях на квест, этап и цель — замечания о невыполненных заданиях
+// и дозапрос (B45, ADR-0035); повторный ответ с пакетом принят без шаблонов. Если и повтор пуст — шаблоны, как раньше.
+func TestNarrate_UndoneTasksRetry(t *testing.T) {
+	t.Parallel()
+	st := gridState()
+	empty := `{"chronicle":"Лес шепчет.","scenes":[{"scene_id":1,"text":"Вор входит под ели.","event_seqs":[]}],"world":{"cells":[],"neighbors":[],"quests":[],"stages":[],"goals":[]}}`
+	f := &fakeLLM{responses: []string{empty, questResponse}}
+	res, err := newService(f).Narrate(context.Background(), Params{Title: "Мир", Mode: model.ModeBalanced, RoundNo: 2, State: &st, Def: def(), Tasks: questTaskSet()})
+	if err != nil || res.Calls != 2 || res.World.Templated() != 0 || len(res.World.Stages) != 1 || res.World.Stages[0].Template {
+		t.Fatalf("result = %+v, %v", res, err)
+	}
+	retry := f.requests[1].Input
+	for _, want := range []string{"квест фракции «good» не предложен", "этап «Найти след» квеста 9 не размещён", "условием вида fact", "цель фракции «evil» не сформулирована"} {
+		if !strings.Contains(retry, want) {
+			t.Fatalf("retry input without %q: %s", want, retry[len(retry)-600:])
+		}
+	}
+	still := &fakeLLM{responses: []string{empty, empty}}
+	res, err = newService(still).Narrate(context.Background(), Params{Title: "Мир", Mode: model.ModeBalanced, RoundNo: 2, State: &st, Def: def(), Tasks: questTaskSet()})
+	if err != nil || res.Calls != 2 || res.World.Templated() != 2 || len(res.World.Quests) != 0 || !res.World.Stages[0].Template || !res.World.Goals[0].Template {
+		t.Fatalf("templated result = %+v, %v", res, err)
+	}
+}

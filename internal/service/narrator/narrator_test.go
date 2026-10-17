@@ -418,3 +418,76 @@ func TestBuildInput_Lair(t *testing.T) {
 		t.Fatalf("lair without faction lair: %s", enc)
 	}
 }
+
+// TestRepeatsOpening: зачин повторяет прошлый, если первое предложение состоит в основном из тех же значимых слов
+// (B45): одинаковые и почти одинаковые зачины прогона имитатора ловятся, разные начала и короткие фразы — нет.
+func TestRepeatsOpening(t *testing.T) {
+	t.Parallel()
+	prev := []string{
+		"Утро в Ольхах всё так же тихо, пасека молчит, и над опушкой по-прежнему тянется тонкий дымок с северо-запада. В роще Агата разглядела траву.",
+		"Башня молчала всю ночь; к утру за рвом потянуло дымом.",
+	}
+	cases := []struct {
+		name      string
+		chronicle string
+		want      bool
+	}{
+		{"same", "Утро в Ольхах всё так же тихо, пасека молчит, а дымок с северо-запада не редеет. Дальше иначе.", true},
+		{"paraphrase", "Утро в Ольхах по-прежнему тихо, пасека молчит, а дымок с северо-запада над опушкой не редеет.", true},
+		{"fresh", "Агата первой разобрала зарубки у корней, и тишина рощи перестала казаться пустой.", false},
+		{"short", "Тихо в Ольхах.", false},
+		{"no previous", "Утро в Ольхах всё так же тихо, пасека молчит.", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			previous := prev
+			if c.name == "no previous" {
+				previous = nil
+			}
+			if got := RepeatsOpening(c.chronicle, previous); got != c.want {
+				t.Fatalf("RepeatsOpening(%q) = %v, want %v", c.chronicle, got, c.want)
+			}
+		})
+	}
+}
+
+// TestNarrate_RepeatedOpening: хроника, начатая словами прошлой, получает замечание и дозапрос; исправленный зачин
+// принимается без дописывания кодом (B45).
+func TestNarrate_RepeatedOpening(t *testing.T) {
+	t.Parallel()
+	p := params(model.ModeBalanced)
+	p.Previous = []model.Narration{{Chronicle: "Над башней седьмой вечер без луны, и ров молчит. Вор ждал."}}
+	fresh := strings.Replace(goodResponse, "Над башней седьмой вечер без луны.", "Дверь подвала наконец подалась, и башня перестала быть запертой.", 1)
+	f := &fakeLLM{responses: []string{goodResponse, fresh}}
+	res, err := newService(f).Narrate(context.Background(), p)
+	if err != nil || res.Calls != 2 || res.Patched != 0 || !strings.HasPrefix(res.Narration.Chronicle, "Дверь подвала") {
+		t.Fatalf("result = %+v, %v", res, err)
+	}
+	if retry := f.requests[1].Input; !strings.Contains(retry, "зачин хроники повторяет прошлые раунды") {
+		t.Errorf("retry input = %s", retry[len(retry)-300:])
+	}
+	if len(res.Issues) != 1 {
+		t.Errorf("issues = %v", res.Issues)
+	}
+}
+
+// TestBuildInput_Exhausted: сцена клетки, где все подходы исчерпаны (факт известен каждому присутствующему),
+// помечена `exhausted`; сцена с живыми подходами — нет (B45).
+func TestBuildInput_Exhausted(t *testing.T) {
+	t.Parallel()
+	st := tower()
+	fact := "Костёр жгли люди с мельницы."
+	st.Locations = append(st.Locations, model.SnapshotLocation{ID: 3, Name: "Опушка", X: 0, Y: 1, Stage: model.StageDetailed,
+		Objects: []model.LocationObject{{Key: "fire_pit", Title: "костровище", Approaches: []model.Approach{{Action: model.ActionExplore, Title: "осмотреть костровище", Attribute: "wits", OnSuccess: json.RawMessage(`{"fact":"` + fact + `"}`)}}}}})
+	st.Characters = append(st.Characters, model.SnapshotCharacter{ID: 16, Nickname: "Паладин", Status: model.CharacterActive, LocationID: loc(3), Knowledge: []string{fact}})
+	p := params(model.ModeBalanced)
+	p.State = &st
+	in := BuildInput(p)
+	if len(in.Scenes) != 3 || in.Scenes[0].Exhausted || in.Scenes[1].Exhausted || !in.Scenes[2].Exhausted || in.Scenes[2].Name != "Опушка" {
+		t.Fatalf("scenes = %+v", in.Scenes)
+	}
+	encoded := in.Encode()
+	if strings.Count(encoded, `"exhausted":true`) != 1 {
+		t.Fatalf("encoded = %s", encoded)
+	}
+}

@@ -64,7 +64,7 @@ func New(llm LLM, logger *slog.Logger) *Service {
 
 // SystemPrompt — системная часть промпта текущей версии (стабильный префикс для кэширования).
 func SystemPrompt() string {
-	b, err := prompts.FS.ReadFile("narrator/v10.md")
+	b, err := prompts.FS.ReadFile("narrator/v11.md")
 	if err != nil {
 		panic("narrator: prompt: " + err.Error())
 	}
@@ -84,8 +84,9 @@ type Result struct {
 }
 
 // Narrate пишет хронику раунда одним вызовом; при пропущенных событиях, раскрытых секретах, числах в режиме
-// «повествование» или лишних сценах — один дозапрос с замечаниями. Оставшиеся пропуски дописываются кодом,
-// оставшаяся утечка — ErrLeak. Ошибка возвращается при сбое вызова, ответе не по схеме, утечке или превышении бюджета.
+// «повествование», лишних сценах, повторе зачина прошлых хроник или невыполненном задании `generate` (B45,
+// ADR-0035) — один дозапрос с замечаниями. Оставшиеся пропуски дописываются кодом, оставшееся невыполненное
+// задание закрывает шаблон, оставшаяся утечка — ErrLeak. Ошибка возвращается при сбое вызова, ответе не по схеме, утечке или превышении бюджета.
 func (s *Service) Narrate(ctx context.Context, p Params) (Result, error) {
 	if s.llm == nil {
 		return Result{}, ErrNoLLM
@@ -102,14 +103,14 @@ func (s *Service) Narrate(ctx context.Context, p Params) (Result, error) {
 		return res, err
 	}
 	for attempt := 0; cur.needsRetry() && attempt < s.Retries; attempt++ {
-		s.logger.Warn("narrator: issues in chronicle, retrying", slog.Int("issues", len(cur.issues)), slog.Int("missing", len(cur.missing)))
-		retryInput := input + "\n\nЗамечания к прошлому ответу — верни полный исправленный ответ по той же схеме:\n- " + strings.Join(cur.issues, "\n- ")
+		s.logger.Warn("narrator: issues in chronicle, retrying", slog.Int("issues", len(cur.issues)), slog.Int("missing", len(cur.missing)), slog.Int("undone", len(cur.undone)))
+		retryInput := input + "\n\nЗамечания к прошлому ответу — верни полный исправленный ответ по той же схеме:\n- " + strings.Join(cur.remarks(), "\n- ")
 		again, err := s.call(ctx, v, retryInput, &res)
 		if err != nil {
 			s.logger.Warn("narrator: retry failed, keeping first answer", slog.Any("err", err))
 			break
 		}
-		res.Issues = append(res.Issues, cur.issues...)
+		res.Issues = append(res.Issues, cur.remarks()...)
 		cur = again
 	}
 	res.Issues = append(res.Issues, cur.issues...)

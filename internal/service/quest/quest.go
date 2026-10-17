@@ -322,9 +322,14 @@ func TemplateGoal(f model.Faction, text string) model.FactionGoal {
 	return model.FactionGoal{GameID: f.GameID, FactionID: f.ID, Text: text, Stage: "начало"}
 }
 
-// TemplateStage — размещение этапа без модели: объект «след» с подходом без броска, который даёт факт этапа;
-// условие — этот факт. Ключ объекта не повторяет ключи клетки.
+// TemplateStage — размещение этапа без модели. Этап с условием `visited` закрывается самим приходом и объектов не
+// получает (B45, ADR-0035): шаблонный «след» давал бы единственный скучный вариант «разобраться на месте». Иначе —
+// объект «след» с подходом без броска, который даёт факт этапа; условие — этот факт. Ключ объекта не повторяет
+// ключи клетки.
 func TemplateStage(st model.QuestStage, existing []model.LocationObject) ([]model.LocationObject, model.StageCondition) {
+	if st.Condition.Kind == model.ConditionVisited {
+		return []model.LocationObject{}, model.StageCondition{Kind: model.ConditionVisited}
+	}
 	key := model.TemplateStageObjectPrefix + st.Key
 	taken := map[string]bool{}
 	for _, o := range existing {

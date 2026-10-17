@@ -55,3 +55,20 @@ func TestCheck_GoalsForbidden(t *testing.T) {
 		t.Fatalf("problems = %v", problems)
 	}
 }
+
+// TestCheck_RequiredAnyAndFreshOpening: `required_any` требует хотя бы одну подстроку без учёта регистра, `fresh_opening`
+// ловит зачин, повторяющий прошлые хроники случая (B45).
+func TestCheck_RequiredAnyAndFreshOpening(t *testing.T) {
+	t.Parallel()
+	c := evalCase{RequiredAny: []string{"мельниц", "восток"}, FreshOpening: true}
+	c.Params.Previous = []model.Narration{{Chronicle: "Утро над башней по-прежнему тихо, ров молчит, а дым за деревьями не редеет."}}
+	res := narrator.Result{Narration: model.Narration{Chronicle: "Утро над башней по-прежнему тихо, ров молчит, дым за деревьями не редеет.", Scenes: []model.NarrationScene{{Text: "Маг и Паладин сидят у костровища."}}}}
+	problems := check(c, res)
+	if len(problems) != 2 || !strings.Contains(problems[0], "нет ни одной из «мельниц», «восток»") || problems[1] != "зачин хроники повторяет прошлые раунды" {
+		t.Fatalf("problems = %v", problems)
+	}
+	res.Narration = model.Narration{Chronicle: "Угли костровища рассказали, откуда шёл дым.", Scenes: []model.NarrationScene{{Text: "Маг и Паладин смотрят на Старую Мельницу за ручьём."}}}
+	if problems := check(c, res); len(problems) != 0 {
+		t.Fatalf("problems = %v", problems)
+	}
+}

@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"taletogether/internal/model"
 )
@@ -13,7 +15,17 @@ import (
 // MaxOutputRunes — верхняя граница текста хроники с блоками; больше — замечание и дозапрос (сообщение всё равно делится).
 const MaxOutputRunes = 6000
 
-var digits = regexp.MustCompile(`\d`)
+// Порог повтора зачина (B45): первое предложение хроники из не меньше чем repeatMinWords значимых слов, из которых
+// доля repeatShare и больше есть в первом предложении одной из прошлых хроник.
+const (
+	repeatMinWords = 4
+	repeatShare    = 0.6
+)
+
+var (
+	digits      = regexp.MustCompile(`\d`)
+	sentenceEnd = regexp.MustCompile(`[.!?…]`)
+)
 
 // validator — проверка ответа по входу: сцены, события (пара событий перехода считается одним), скрытые описания.
 type validator struct {
@@ -36,10 +48,14 @@ type checked struct {
 	missing   []int64 // ключи групп событий без упоминания
 	leak      bool
 	suspect   string
-	world     WorldPackage // пакет мира по заданиям; замечания к нему дозапроса не вызывают
+	world     WorldPackage // пакет мира по заданиям; замечания к качеству пакета дозапроса не вызывают
+	undone    []string     // задания `generate`, которые модель не выполнила: замечания для дозапроса (B45, ADR-0035)
 }
 
-func (c checked) needsRetry() bool { return len(c.issues) > 0 }
+func (c checked) needsRetry() bool { return len(c.issues)+len(c.undone) > 0 }
+
+// remarks — все замечания для дозапроса: к хронике и к невыполненным заданиям.
+func (c checked) remarks() []string { return append(append([]string{}, c.issues...), c.undone...) }
 
 func newValidator(in Input, p Params) *validator {
 	v := &validator{in: in, mode: p.Mode, tasks: p.Tasks, def: p.Def, scenes: map[int]scene{}, groups: map[int64]int64{}, required: map[int64]bool{}, events: map[int64]event{}, secrets: map[string]string{}, failed: map[int64]string{}}
@@ -135,9 +151,100 @@ func (v *validator) validate(raw json.RawMessage) (checked, error) {
 	if n := len([]rune(all.String())); n > MaxOutputRunes {
 		out.issues = append(out.issues, fmt.Sprintf("текст слишком длинный (%d символов): сократи до %d", n, MaxOutputRunes))
 	}
+	if RepeatsOpening(out.narration.Chronicle, v.in.World.Previous) {
+		out.issues = append(out.issues, "зачин хроники повторяет прошлые раунды (world.previous): начни с того, что произошло в этом раунде, не с того же времени суток, той же тишины и того же дыма")
+	}
 	out.suspect = v.suspectOutcome(out.narration)
 	out.world = validateWorld(resp.World, v.tasks, v.def)
+	out.undone = undoneTasks(out.world, v.tasks)
 	return out, nil
+}
+
+// RepeatsOpening — зачин хроники повторяет начало одной из прошлых (`world.previous`): первое предложение состоит
+// в основном из тех же значимых слов (B45). Слова — буквы и дефис, от трёх символов, без учёта регистра.
+func RepeatsOpening(chronicle string, previous []string) bool {
+	cur := sentenceWords(chronicle)
+	if len(cur) < repeatMinWords {
+		return false
+	}
+	for _, prev := range previous {
+		old := sentenceWords(prev)
+		common := 0
+		for w := range cur {
+			if old[w] {
+				common++
+			}
+		}
+		if float64(common) >= repeatShare*float64(len(cur)) {
+			return true
+		}
+	}
+	return false
+}
+
+// sentenceWords — значимые слова первого предложения текста.
+func sentenceWords(text string) map[string]bool {
+	text = strings.TrimSpace(text)
+	if i := sentenceEnd.FindStringIndex(text); i != nil {
+		text = text[:i[0]]
+	}
+	out := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && r != '-' }) {
+		if utf8.RuneCountInString(w) >= 3 {
+			out[w] = true
+		}
+	}
+	return out
+}
+
+// undoneTasks — задания `generate`, которые модель пропустила (закрыты шаблоном или перенесены): замечания для
+// дозапроса наравне с пропущенными событиями (B45, ADR-0035). Клетки сверх лимита (`Tasks.Overflow`) заданием
+// модели не были и не считаются.
+func undoneTasks(w WorldPackage, tasks Tasks) []string {
+	var out []string
+	asked := map[model.LocationID]CellTask{}
+	for _, task := range tasks.Cells {
+		asked[task.LocationID] = task
+	}
+	for _, c := range w.Cells {
+		if task, ok := asked[c.LocationID]; ok && c.Template {
+			out = append(out, fmt.Sprintf("клетка location_id=%d («%s») не описана: верни её в world.cells с описанием и объектами", task.LocationID, task.Name))
+		}
+	}
+	for i, n := range w.Neighbors {
+		if n.Template && i < len(tasks.Neighbors) {
+			task := tasks.Neighbors[i]
+			out = append(out, fmt.Sprintf("сосед (%d, %d) %s от «%s» без карточки: верни его в world.neighbors", task.X, task.Y, task.Direction.Toward(), task.OfName))
+		}
+	}
+	proposed := map[model.FactionID]bool{}
+	for _, q := range w.Quests {
+		if !q.Template {
+			proposed[q.FactionID] = true
+		}
+	}
+	for _, task := range tasks.Quests {
+		if !proposed[task.FactionID] {
+			out = append(out, fmt.Sprintf("квест фракции «%s» не предложен: верни его в world.quests с этапами", task.Faction))
+		}
+	}
+	for _, st := range w.Stages {
+		if st.Template {
+			out = append(out, fmt.Sprintf("этап «%s» квеста %d не размещён: верни его в world.stages с условием вида %s и объектами клетки", st.Stage.Title, st.QuestID, st.Stage.Condition.Kind))
+		}
+	}
+	for _, g := range w.Goals {
+		if g.Template {
+			faction := ""
+			for _, task := range tasks.Goals {
+				if task.FactionID == g.FactionID {
+					faction = task.Faction
+				}
+			}
+			out = append(out, fmt.Sprintf("цель фракции «%s» не сформулирована: верни её в world.goals", faction))
+		}
+	}
+	return out
 }
 
 // suspectOutcome — выборочная проверка исхода по ключевым словам: сцена с провалами без слов неудачи. Только для лога.

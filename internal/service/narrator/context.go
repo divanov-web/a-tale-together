@@ -122,8 +122,9 @@ type scene struct {
 	Exits       []sceneExit         `json:"exits"`
 	Objects     []sceneObject       `json:"objects"`
 	Characters  []sceneCharacter    `json:"characters"`
-	Speeches    []sceneSpeech       `json:"speeches"`       // слова персонажей сцены в этом раунде (ADR-0027): данные, не события
-	Lair        string              `json:"lair,omitempty"` // где логово сил зла относительно сцены словами (ADR-0031); пусто — логова нет
+	Speeches    []sceneSpeech       `json:"speeches"`            // слова персонажей сцены в этом раунде (ADR-0027): данные, не события
+	Lair        string              `json:"lair,omitempty"`      // где логово сил зла относительно сцены словами (ADR-0031); пусто — логова нет
+	Exhausted   bool                `json:"exhausted,omitempty"` // в клетке не осталось подходов (`Options` пуст): сцену надо закончить зацепкой наружу (B45, ADR-0035)
 }
 
 // sceneSpeech — реплика персонажа сцены: цитата или пересказ в хронике, не действие и не факт.
@@ -205,7 +206,8 @@ type sceneKey struct {
 // (без выбывших: `inactive` и `dead` в сцены не попадают, уход описывается в раунде статуса `leaving`), их описания как
 // данные, видимые объекты и выходы, реплики присутствующих (ADR-0027: только в своей сцене, реплика выбывшего
 // отбрасывается); события только public и location, числа броска — в режиме «механика»; подходы следующего раунда
-// без шансов (их код припишет сам). Сцена без персонажей не нужна; лидер группы не передаётся.
+// без шансов (их код припишет сам); сцена клетки без подходов помечена `exhausted` (B45). Сцена без персонажей не
+// нужна; лидер группы не передаётся.
 func BuildInput(p Params) Input {
 	in := Input{Scenes: []scene{}, Events: []event{}, Approaches: []approachIn{}, Quests: nonNilQuests(p.Quests)}
 	in.World = world{Title: p.Title, Tone: p.Tone, Mode: string(p.Mode), RoundNo: p.RoundNo, Factions: nonNilFactions(p.Factions), Previous: digest(p.Opening, p.Previous)}
@@ -250,6 +252,11 @@ func BuildInput(p Params) Input {
 			speeches[key] = append(speeches[key], sceneSpeech{Nickname: c.Nickname, Text: text})
 		}
 	}
+	options := Options(p.State, p.Def, p.Mode)
+	hasOptions := map[model.LocationID]bool{}
+	for _, opt := range options {
+		hasOptions[opt.LocationID] = true
+	}
 	sort.Slice(keys, func(i, j int) bool {
 		if keys[i].location != keys[j].location {
 			return keys[i].location < keys[j].location
@@ -265,7 +272,7 @@ func BuildInput(p Params) Input {
 		if !ok {
 			continue
 		}
-		sc := scene{SceneID: len(in.Scenes) + 1, LocationID: l.ID, Name: l.Name, Description: l.Description, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain, Exits: []sceneExit{}, Objects: []sceneObject{}, Characters: present[key], Speeches: []sceneSpeech{}}
+		sc := scene{SceneID: len(in.Scenes) + 1, LocationID: l.ID, Name: l.Name, Description: l.Description, X: l.X, Y: l.Y, Stage: l.Stage, Terrain: l.Terrain, Exits: []sceneExit{}, Objects: []sceneObject{}, Characters: present[key], Speeches: []sceneSpeech{}, Exhausted: !hasOptions[l.ID]}
 		if sp := speeches[key]; sp != nil {
 			sc.Speeches = sp
 		}
@@ -311,7 +318,7 @@ func BuildInput(p Params) Input {
 		}
 		in.Events = append(in.Events, e)
 	}
-	for _, opt := range Options(p.State, p.Def, p.Mode) {
+	for _, opt := range options {
 		a := approachIn{LocationID: opt.LocationID, Object: opt.ObjectTitle, Title: opt.Title, Attribute: opt.Attribute, Skill: opt.Skill}
 		if p.Mode != model.ModeNarrative {
 			a.Difficulty = opt.Difficulty

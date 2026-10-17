@@ -65,8 +65,9 @@ const worldResponse = `{"chronicle":"Лес встречает тишиной.",
 
 // TestNarrate_WorldPackage: пакет мира проверяется по заданиям: клетка из задания принята (ключи в snake_case, объекты
 // сверх лимита и подход с неизвестной характеристикой отброшены, reveal указывает на скрытый объект), чужие клетка и
-// сосед отброшены, пропущенный сосед и клетка сверх лимита закрыты шаблоном; замечания к пакету дозапроса не вызывают;
-// вход содержит задания, лимиты и ключи модели персонажа.
+// сосед отброшены, пропущенные соседи после одного дозапроса (B45: невыполненное задание — замечание модели, клетка
+// сверх лимита заданием не была) и клетка сверх лимита закрыты шаблоном; замечания к качеству пакета дозапроса не
+// вызывают; вход содержит задания, лимиты и ключи модели персонажа.
 func TestNarrate_WorldPackage(t *testing.T) {
 	t.Parallel()
 	st := gridState()
@@ -78,8 +79,11 @@ func TestNarrate_WorldPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Calls != 1 || res.Patched != 0 || res.Narration.Chronicle != "Лес встречает тишиной." {
+	if res.Calls != 2 || res.Patched != 0 || res.Narration.Chronicle != "Лес встречает тишиной." {
 		t.Fatalf("result = %+v", res)
+	}
+	if retry := f.requests[1].Input; !strings.Contains(retry, "сосед (-1, 1) на запад от «Лес» без карточки") || strings.Contains(retry, "location_id=3") || strings.Contains(retry, "объектов больше 2") {
+		t.Fatalf("retry input = %s", retry[len(retry)-500:])
 	}
 	in := f.requests[0].Input
 	for _, want := range []string{`"generate":{"cells":[{"location_id":2`, `"neighbors":[{"x":0,"y":2,"direction":"north"`, `"limits":{"objects_per_cell":2`, `"character_model":{"attributes":[{"key":"strength"`, `"stage":"card"`} {

@@ -117,7 +117,7 @@ type WorldPackage struct {
 	Quests    []GeneratedQuest // новые квесты фракций по заданиям (пункт 28)
 	Stages    []GeneratedStage // размещённые этапы
 	Goals     []GeneratedGoal  // версии целей фракций
-	Issues    []string         // замечания к пакету (для лога и eval); дозапроса по ним нет
+	Issues    []string         // замечания к пакету (для лога и eval); дозапрос вызывают только невыполненные задания (`undoneTasks`, B45)
 }
 
 // Templated — сколько заданий закрыто шаблоном.

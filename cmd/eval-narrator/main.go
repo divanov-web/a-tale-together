@@ -34,13 +34,15 @@ type evalSet struct {
 }
 
 type evalCase struct {
-	Name      string     `json:"name"`
-	Comment   string     `json:"comment"`
-	Params    caseParams `json:"params"`
-	Required  []string   `json:"required"`  // подстроки, которые должны быть в тексте
-	Forbidden []string   `json:"forbidden"` // подстроки, которых быть не должно (без учёта регистра)
-	NoDigits  bool       `json:"no_digits"` // в тексте нет цифр
-	World     *caseWorld `json:"world"`     // ожидания к пакету мира (пункт 27); nil — пакет не проверяется
+	Name         string     `json:"name"`
+	Comment      string     `json:"comment"`
+	Params       caseParams `json:"params"`
+	Required     []string   `json:"required"`      // подстроки, которые должны быть в тексте
+	RequiredAny  []string   `json:"required_any"`  // хотя бы одна из подстрок есть в тексте (без учёта регистра; B45: зацепка наружу)
+	Forbidden    []string   `json:"forbidden"`     // подстроки, которых быть не должно (без учёта регистра)
+	NoDigits     bool       `json:"no_digits"`     // в тексте нет цифр
+	FreshOpening bool       `json:"fresh_opening"` // зачин хроники не повторяет прошлые хроники случая (`narrator.RepeatsOpening`, B45)
+	World        *caseWorld `json:"world"`         // ожидания к пакету мира (пункт 27); nil — пакет не проверяется
 }
 
 // caseWorld — ожидания к пакету мира: число клеток и карточек от модели, минимум объектов в клетке, без шаблонов;
@@ -194,6 +196,15 @@ func check(c evalCase, res narrator.Result) []string {
 			out = append(out, fmt.Sprintf("нет «%s»", s))
 		}
 	}
+	if len(c.RequiredAny) > 0 {
+		found := false
+		for _, s := range c.RequiredAny {
+			found = found || strings.Contains(lower, strings.ToLower(s))
+		}
+		if !found {
+			out = append(out, fmt.Sprintf("нет ни одной из «%s»", strings.Join(c.RequiredAny, "», «")))
+		}
+	}
 	for _, s := range c.Forbidden {
 		if strings.Contains(lower, strings.ToLower(s)) {
 			out = append(out, fmt.Sprintf("есть «%s»", s))
@@ -201,6 +212,15 @@ func check(c evalCase, res narrator.Result) []string {
 	}
 	if c.NoDigits && digits.MatchString(text) {
 		out = append(out, "есть цифры")
+	}
+	if c.FreshOpening {
+		var previous []string
+		for _, n := range c.Params.Previous {
+			previous = append(previous, n.Chronicle)
+		}
+		if narrator.RepeatsOpening(res.Narration.Chronicle, previous) {
+			out = append(out, "зачин хроники повторяет прошлые раунды")
+		}
 	}
 	if w := c.World; w != nil {
 		if len(res.World.Cells) != w.Cells || len(res.World.Neighbors) != w.Neighbors {

@@ -164,7 +164,8 @@ func TestQuestCheck_Conditions(t *testing.T) {
 }
 
 // TestTemplateQuestAndStage: шаблон жанра даёт сюжетный квест с условиями по видам; без шаблона — запасной квест;
-// шаблонное размещение этапа — объект «след» с подходом без броска, условие — его факт, ключ не повторяет объекты.
+// шаблонное размещение этапа — объект «след» с подходом без броска, условие — его факт, ключ не повторяет объекты;
+// этап `visited` — без объектов, условие остаётся `visited` (B45).
 func TestTemplateQuestAndStage(t *testing.T) {
 	t.Parallel()
 	tpl := &model.QuestTemplate{Title: "След гонца", Summary: "Гонец пропал.", Stages: []model.StageTemplate{{Key: "trail", Title: "Найти след", Summary: "Где видели.", Distance: 1, Condition: model.ConditionFact, Reward: "Факт."}, {Key: "seal", Title: "Печать", Distance: 9, Condition: ""}}}
@@ -184,5 +185,8 @@ func TestTemplateQuestAndStage(t *testing.T) {
 	}
 	if cond.Kind != model.ConditionFact || cond.Fact != "Этап «Найти след»: Где видели гонца." || !strings.Contains(string(objects[0].Approaches[0].OnSuccess), cond.Fact) {
 		t.Fatalf("condition = %+v, approach %s", cond, objects[0].Approaches[0].OnSuccess)
+	}
+	if objects, cond := TemplateStage(model.QuestStage{Key: "lookout", Title: "Осмотреться", Condition: model.StageCondition{Kind: model.ConditionVisited}}, nil); len(objects) != 0 || cond.Kind != model.ConditionVisited || cond.Fact != "" {
+		t.Fatalf("visited template = %+v, %+v", objects, cond)
 	}
 }
