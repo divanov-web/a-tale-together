@@ -138,7 +138,7 @@ func (r *Runner) summary(ctx context.Context, rep *Report) string {
 	if r.sc.Endless {
 		fmt.Fprintf(&b, "- Бесконечная игра: границы рассказа нет (`max_rounds 0`), после раунда %d администратор завершил её командой `/finish yes` (ADR-0037).\n", r.sc.Rounds)
 	}
-	fmt.Fprintf(&b, "- Профиль `%s`, модель игрока `%s`; вызовов LLM: %d, стоимость по тарифам: $%.4f.\n", r.sc.Profile, r.sc.PlayerModel, rep.Calls, rep.CostUSD)
+	fmt.Fprintf(&b, "- Профиль `%s` (`%s`): %s; вызовов LLM: %d, стоимость по тарифам: $%.4f.\n", r.sc.Profile, r.profile.Provider, r.modelsLine(), rep.Calls, rep.CostUSD)
 	if rep.Stopped != "" {
 		fmt.Fprintf(&b, "- Остановка: %s.\n", rep.Stopped)
 	} else {
@@ -334,4 +334,25 @@ func yesNo(v bool) string {
 		return "да"
 	}
 	return "нет"
+}
+
+// modelsLine — фактические модели ролей для шапки сводки; подменённые флагом помечены.
+func (r *Runner) modelsLine() string {
+	if r.profile.Name == "" {
+		return "профиль не загружен"
+	}
+	part := func(title string, role model.LLMRole) string {
+		m := r.roleModel(role)
+		if role == model.RoleSimPlayer {
+			if r.settings.Models[role] != "" {
+				return fmt.Sprintf("%s `%s` (флаг)", title, m)
+			}
+			return fmt.Sprintf("%s `%s`", title, m)
+		}
+		if r.settings.Models[role] != "" {
+			return fmt.Sprintf("%s `%s` (флаг, в профиле `%s`)", title, m, r.profile.Model(role))
+		}
+		return fmt.Sprintf("%s `%s`", title, m)
+	}
+	return part("интерпретатор", model.RoleInterpreter) + ", " + part("рассказчик", model.RoleNarrator) + ", " + part("игрок", model.RoleSimPlayer)
 }

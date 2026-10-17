@@ -20,7 +20,7 @@ type Scenario struct {
 	Endless      bool                `json:"endless"`         // бесконечная игра (ADR-0037): `max_rounds 0`, финал командой `/finish yes` после раунда `rounds`
 	RoundMinutes int                 `json:"round_minutes"`   // страховочный дедлайн раунда (dev: от 2)
 	Profile      string              `json:"profile"`         // профиль LLM прогона, глобальный по умолчанию в БД прогона
-	PlayerModel  string              `json:"player_model"`    // модель ИИ-игрока (псевдоним провайдера профиля)
+	PlayerModel  string              `json:"player_model"`    // запасная модель ИИ-игрока, если у профиля нет `params.player_model`; флаг `-model-player` старше обоих
 	MaxActions   int                 `json:"max_actions"`     // действий игрока за ход раунда; 0 — 4
 	Players      []Persona           `json:"players"`         // первый — администратор мира
 	Features     map[string][]string `json:"features"`        // раунд → фичи, которые игроки обязаны попробовать; `фича@username` — только этот игрок
@@ -110,9 +110,6 @@ func (sc Scenario) Validate() error {
 	}
 	if strings.TrimSpace(sc.Profile) == "" {
 		errs = append(errs, errors.New("profile пуст"))
-	}
-	if strings.TrimSpace(sc.PlayerModel) == "" {
-		errs = append(errs, errors.New("player_model пуст"))
 	}
 	if len(sc.Players) == 0 {
 		errs = append(errs, errors.New("players пуст"))

@@ -6,7 +6,7 @@ import (
 )
 
 func validScenario() Scenario {
-	return Scenario{Name: "t", Rounds: 3, RoundMinutes: 2, Profile: "sim-haiku", PlayerModel: "haiku",
+	return Scenario{Name: "t", Rounds: 3, RoundMinutes: 2, Profile: "sim-haiku",
 		Players: []Persona{
 			{Name: "A", Username: "a", Persona: "p", Character: "c"},
 			{Name: "B", Username: "b", JoinsRound: 2, Persona: "p", Character: "c"},

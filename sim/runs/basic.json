@@ -3,7 +3,6 @@
   "rounds": 10,
   "round_minutes": 2,
   "profile": "sim-haiku",
-  "player_model": "haiku",
   "max_actions": 4,
   "auto_faction": "good",
   "setup": {},

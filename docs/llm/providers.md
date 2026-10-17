@@ -65,11 +65,11 @@ claude -p --output-format json --json-schema '<схема>' \
 
 | Таблица | Поля | Смысл |
 |---|---|---|
-| `llm_profiles` | `id`, `name`, `provider` (ключ), `model_interpreter`, `model_narrator`, `params jsonb` (effort, temperature, max_output, budget), `enabled` | набор настроек провайдера |
+| `llm_profiles` | `id`, `name`, `provider` (ключ), `model_interpreter`, `model_narrator`, `params jsonb` (effort, temperature, max_output, budget; `player_model` — модель ИИ-игрока для профилей имитатора `sim-*`), `enabled` | набор настроек провайдера |
 | `app_settings` | `key`, `value` | глобальные настройки бота, в том числе `default_llm_profile` |
 | `games.llm_profile_id` | nullable FK | переопределение для конкретной игры |
 
-Профили из миграций: `local-claude` (песочница) и `sim-haiku` (прогоны имитатора, haiku для всех ролей; миграция `00038`, ADR-0034 — имитатор ставит его глобальным в своей БД `tale_sim`).
+Профили из миграций: `local-claude` (песочница) и профили имитатора `sim-haiku` (всё haiku, миграция `00038`), `sim-sonnet` (всё sonnet) и `sim-opus-narrator` (рассказчик, завязка и мир на opus, интерпретатор и ИИ-игроки на sonnet; миграция `00039`, ADR-0034, решение руководителя 2026-10-17) — имитатор ставит выбранный профиль глобальным в своей БД `tale_sim`, модель ИИ-игрока берёт из `params.player_model` ([simulation.md](../dev/simulation.md)).
 
 Порядок выбора: профиль игры → глобальный профиль по умолчанию → ошибка конфигурации (раунд не запускается). Профили кэшируются в памяти `app/llm` и перечитываются после `use`, `reset`, `add`. Стартовый профиль `local-claude` (`claude-cli`, `effort low`, бюджет $0.5 на вызов, таймаут 120 с, параллелизм 2) и `default_llm_profile = local-claude` создаются миграцией `00009`; модели с миграции `00011` — интерпретатор `sonnet`, рассказчик `opus` (решение руководителя 2026-10-10: haiku давал 88–94 % на оценочном наборе, нестабильно на свободных испытаниях; для рассказчика важнее качество текста).
 

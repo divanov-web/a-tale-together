@@ -10,12 +10,23 @@
 ## Запуск
 ```bash
 make migrate-sim                                   # один раз и после новых миграций
-make sim                                           # sim/runs/basic.json: 10 раундов, haiku
+make sim                                           # sim/runs/basic.json: 10 раундов, профиль sim-haiku
 make sim SIM_ARGS="-rounds 2"                      # дымовой прогон
-make sim SIM_ARGS="-model-narrator sonnet"         # рассказчик, завязка и мир на sonnet, остальное по профилю
-make sim SIM_ARGS="-run sim/runs/<имя>.json -profile local-claude -model-player haiku"
+make sim SIM_ARGS="-profile sim-sonnet"            # все роли на sonnet
+make sim SIM_ARGS="-profile sim-opus-narrator"     # рассказчик, завязка и мир на opus, интерпретатор и игроки на sonnet
+make sim SIM_ARGS="-run sim/runs/<имя>.json -model-narrator opus"   # разовая подмена поверх профиля, отмечается в сводке
 ```
-Флаги `cmd/simulate`: `-run` сценарий, `-profile` профиль LLM вместо сценария, `-model-narrator`, `-model-interpreter`, `-model-player` — модель роли поверх профиля (любая локальная модель по подписке, решение руководителя В1), `-rounds` число раундов, `-endless` бесконечная игра (ADR-0037), `-out` корень папок (`logs/sim`), `-db` DSN вместо `DATABASE_URL_SIM`. Только `APP_ENV=dev`.
+Флаги `cmd/simulate`: `-run` сценарий, `-profile` профиль LLM вместо сценария, `-model-narrator`, `-model-interpreter`, `-model-player` — разовая подмена модели роли поверх профиля (любая локальная модель по подписке, решение руководителя В1; в сводке помечается «(флаг)»), `-rounds` число раундов, `-endless` бесконечная игра (ADR-0037), `-out` корень папок (`logs/sim`), `-db` DSN вместо `DATABASE_URL_SIM`. Только `APP_ENV=dev`.
+
+Профили прогона (миграции `00038`, `00039`; решение руководителя 2026-10-17: конфигурация моделей живёт в профиле, чтобы `llm_runs`, журнал и сводка показывали реальную конфигурацию; новые профили добавляются миграцией, редко):
+
+| Профиль | Интерпретатор | Рассказчик, завязка, мир | ИИ-игрок |
+|---|---|---|---|
+| `sim-haiku` (по умолчанию в `basic.json`) | haiku | haiku | haiku |
+| `sim-sonnet` | sonnet | sonnet | sonnet |
+| `sim-opus-narrator` | sonnet | opus | sonnet |
+
+Все три — `claude-cli`, `effort low`, бюджет $0.5 на вызов, таймаут 180 с, параллелизм 2. Неизвестный профиль останавливает прогон до старта. Шапка `summary.md` печатает профиль, провайдера и фактические модели ролей.
 
 Папка прогона `logs/sim/<метка>/`: `chats/` — журнал чатов прогона ([chat-logs.md](chat-logs.md)), `transcript.md` — партия по раундам глазами группы и каждого игрока (сообщения бота, действия и мысли игроков, заметки оркестратора), `summary.md` — сводка, `sim.log` — лог процесса. База `tale_sim` между прогонами не чистится: у каждого прогона своя группа и свои пользователи.
 
@@ -24,7 +35,7 @@ make sim SIM_ARGS="-run sim/runs/<имя>.json -profile local-claude -model-play
 |---|---|
 | `rounds`, `round_minutes` | граница рассказа `max_rounds` и страховочный дедлайн (dev: от 2 минут) |
 | `endless` | бесконечная игра (ADR-0037): `max_rounds 0`, после раунда `rounds` администратор завершает игру `/finish yes`; проверяет, что цель фракции остаётся горизонтом; флаг `-endless` включает режим для любого сценария |
-| `profile`, `player_model` | профиль LLM прогона (ставится глобальным по умолчанию в БД прогона) и модель ИИ-игрока |
+| `profile`, `player_model` | профиль LLM прогона (ставится глобальным по умолчанию в БД прогона); модели всех ролей, включая ИИ-игрока (`params.player_model`), берутся из профиля. `player_model` сценария — запасная модель игрока для профиля без `params.player_model`; порядок: флаг `-model-player` → профиль → сценарий |
 | `players[]` | `name`, `username`, `joins_round` (0 или 1 у администратора — первого в списке), `persona` (характер и стиль), `character` (замысел персонажа) |
 | `features` | раунд → фичи, которые игроки обязаны попробовать; `фича@username` — только этот игрок; каталог `sim.Features` (`scout`, `say`, `quests`, `party`, `character`, `knowledge`, `journal`, `status`, `bio`, `secret`, `appearance`, `away`, `back`, `group_act`, `hint`) |
 | `setup` | параметры мира после диалога (`/set ключ значение`); `round_minutes`, `max_rounds` и `min_answers 1` (игроки входят по расписанию) ставятся всегда |

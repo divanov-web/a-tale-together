@@ -52,6 +52,21 @@ func (f *scriptedPlayer) Complete(_ context.Context, req model.LLMRequest) (mode
 	return model.LLMResponse{JSON: raw, Text: string(raw), Model: "fake", Usage: model.LLMUsage{Input: 100, Output: 20}}, nil
 }
 
+// models — модели запросов игрока без повторов, в порядке появления.
+func (f *scriptedPlayer) models() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	seen := map[string]bool{}
+	for _, req := range f.requests {
+		if !seen[req.Model] {
+			seen[req.Model] = true
+			out = append(out, req.Model)
+		}
+	}
+	return out
+}
+
 // decide разбирает вход: последний вопрос лички с кнопками, фаза, задания и уже сделанные действия.
 func (f *scriptedPlayer) decide(input string) action {
 	// последний блок лички
@@ -131,7 +146,7 @@ type realClock struct{}
 func (realClock) Now() time.Time { return time.Now() }
 
 // runScenario собирает стек на фейках (бот, раунды, outbox, планировщик, фейковый игрок) и ведёт прогон сценария.
-func runScenario(t *testing.T, sc Scenario) (Report, *fake.Store, *scriptedPlayer, error) {
+func runScenario(t *testing.T, sc Scenario, opts ...Settings) (Report, *fake.Store, *scriptedPlayer, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
@@ -147,8 +162,14 @@ func runScenario(t *testing.T, sc Scenario) (Report, *fake.Store, *scriptedPlaye
 	rounds.AnnounceSkipped = true
 	player := &scriptedPlayer{}
 	llm := applm.New(store, map[string]applm.Client{model.ProviderFake: player}, clock, logger)
-	if _, err := store.CreateLLMProfile(ctx, model.LLMProfile{Name: "sim-test", Provider: model.ProviderFake, ModelInterpreter: "x", ModelNarrator: "x", Enabled: true}); err != nil {
-		t.Fatal(err)
+	// профили прогона: без модели игрока (берётся из сценария) и с моделью игрока в параметрах (старше сценария)
+	for _, p := range []model.LLMProfile{
+		{Name: "sim-test", Provider: model.ProviderFake, ModelInterpreter: "x", ModelNarrator: "x", Enabled: true},
+		{Name: "sim-test-player", Provider: model.ProviderFake, ModelInterpreter: "x", ModelNarrator: "y", Params: model.LLMParams{PlayerModel: "profile-player"}, Enabled: true},
+	} {
+		if _, err := store.CreateLLMProfile(ctx, p); err != nil {
+			t.Fatal(err)
+		}
 	}
 	commands := bot.New(bot.Settings{Version: "test", Env: "dev", BotUsername: "tale_bot", AutoFaction: model.FactionGood},
 		store, store, tr, chats, games, rounds, llm, clock, logger)
@@ -160,7 +181,11 @@ func runScenario(t *testing.T, sc Scenario) (Report, *fake.Store, *scriptedPlaye
 	if err := sc.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	runner := New(sc, Settings{Poll: 10 * time.Millisecond, PhaseTimeout: 20 * time.Second}, tr, commands, store, llm, journal, logger)
+	settings := Settings{Poll: 10 * time.Millisecond, PhaseTimeout: 20 * time.Second}
+	for _, o := range opts {
+		settings.Models = o.Models
+	}
+	runner := New(sc, settings, tr, commands, store, llm, journal, logger)
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return sched.Run(gctx) })
@@ -192,6 +217,13 @@ func TestRunner_ThreeRounds(t *testing.T) {
 	}
 	if rep.Status != model.GameFinished || rep.Rounds != 3 || rep.Stopped != "" {
 		t.Fatalf("итог: статус %s, раундов %d, остановка %q\n%s", rep.Status, rep.Rounds, rep.Stopped, rep.Summary)
+	}
+	// у профиля нет params.player_model — модель игрока из сценария; сводка показывает фактические модели
+	if got := player.models(); len(got) != 1 || got[0] != "fake-player" {
+		t.Fatalf("модели игрока: %v", got)
+	}
+	if !strings.Contains(rep.Summary, "Профиль `sim-test` (`fake`): интерпретатор `x`, рассказчик `x`, игрок `fake-player`") {
+		t.Fatalf("шапка сводки:\n%s", rep.Summary)
 	}
 	// заявки: раунд 1 — один игрок, раунд 2 — двое, раунд 3 — трое
 	for no, want := range map[int]int{1: 1, 2: 2, 3: 3} {
@@ -262,5 +294,40 @@ func TestRunner_Endless(t *testing.T) {
 	}
 	if !strings.Contains(rep.Summary, "Бесконечная игра") || !strings.Contains(rep.Summary, "Партия доиграна до финала") {
 		t.Errorf("сводка без отметки режима:\n%s", rep.Summary)
+	}
+}
+
+// TestRunner_PlayerModelFromProfile: модель ИИ-игрока из `params.player_model` профиля старше сценария, а флаг
+// `-model-player` (Settings.Models) старше профиля и отмечается в сводке; неизвестный профиль — ошибка до старта.
+func TestRunner_PlayerModelFromProfile(t *testing.T) {
+	one := func(profile string) Scenario {
+		return Scenario{Name: "pm", Rounds: 1, RoundMinutes: 2, Profile: profile, PlayerModel: "fake-player", MaxActions: 4,
+			Players: []Persona{{Name: "Марта", Username: "marta", Persona: "p", Character: "c"}}, Budget: Budget{MaxCalls: 200}}
+	}
+	rep, _, player, err := runScenario(t, one("sim-test-player"))
+	if err != nil {
+		t.Fatalf("прогон: %v\n%s", err, rep.Transcript)
+	}
+	if got := player.models(); len(got) != 1 || got[0] != "profile-player" {
+		t.Fatalf("модель игрока из профиля: %v", got)
+	}
+	if !strings.Contains(rep.Summary, "интерпретатор `x`, рассказчик `y`, игрок `profile-player`") {
+		t.Fatalf("шапка сводки:\n%s", rep.Summary)
+	}
+
+	rep, _, player, err = runScenario(t, one("sim-test-player"), Settings{Models: RoleModels("", "", "flag-player")})
+	if err != nil {
+		t.Fatalf("прогон с флагом: %v\n%s", err, rep.Transcript)
+	}
+	if got := player.models(); len(got) != 1 || got[0] != "flag-player" {
+		t.Fatalf("модель игрока из флага: %v", got)
+	}
+	if !strings.Contains(rep.Summary, "игрок `flag-player` (флаг)") {
+		t.Fatalf("отметка флага в сводке:\n%s", rep.Summary)
+	}
+
+	rep, _, _, err = runScenario(t, one("sim-missing"))
+	if err == nil || !strings.Contains(err.Error(), "sim-missing") {
+		t.Fatalf("неизвестный профиль: %v\n%s", err, rep.Summary)
 	}
 }

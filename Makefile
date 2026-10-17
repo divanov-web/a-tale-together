@@ -53,7 +53,7 @@ eval-interpreter: ## Оценочный набор интерпретатора 
 eval-narrator: ## Оценочный набор рассказчика на живом claude-cli (EVAL_ARGS="-v -case name -model sonnet"; по умолчанию opus)
 	$(GO) run ./cmd/eval-narrator $(EVAL_ARGS)
 
-sim: ## Прогон партии ИИ-игроками на БД DATABASE_URL_SIM (SIM_ARGS="-run sim/runs/basic.json -rounds 3 -model-narrator sonnet"); отчёт в logs/sim/<метка>/
+sim: ## Прогон партии ИИ-игроками на БД DATABASE_URL_SIM (SIM_ARGS="-run sim/runs/basic.json -rounds 3 -profile sim-sonnet"); отчёт в logs/sim/<метка>/
 	$(GO) run ./cmd/simulate $(SIM_ARGS)
 
 migrate-sim: ## Применить миграции к БД прогонов имитатора

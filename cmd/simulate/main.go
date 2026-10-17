@@ -36,10 +36,10 @@ func main() {
 
 func run() error {
 	runPath := flag.String("run", "sim/runs/basic.json", "сценарий прогона")
-	profile := flag.String("profile", "", "профиль LLM прогона вместо указанного в сценарии")
-	modelNarrator := flag.String("model-narrator", "", "модель рассказчика, завязки и генерации мира вместо модели профиля")
-	modelInterpreter := flag.String("model-interpreter", "", "модель интерпретатора вместо модели профиля")
-	modelPlayer := flag.String("model-player", "", "модель ИИ-игрока вместо указанной в сценарии")
+	profile := flag.String("profile", "", "профиль LLM прогона вместо указанного в сценарии (миграции: sim-haiku, sim-sonnet, sim-opus-narrator)")
+	modelNarrator := flag.String("model-narrator", "", "разовая подмена модели рассказчика, завязки и генерации мира поверх профиля (отмечается в сводке)")
+	modelInterpreter := flag.String("model-interpreter", "", "разовая подмена модели интерпретатора поверх профиля (отмечается в сводке)")
+	modelPlayer := flag.String("model-player", "", "разовая подмена модели ИИ-игрока поверх профиля и сценария (отмечается в сводке)")
 	rounds := flag.Int("rounds", 0, "число раундов вместо указанного в сценарии (короткий дымовой прогон)")
 	endless := flag.Bool("endless", false, "бесконечная игра: без границы рассказа, после последнего раунда администратор завершает её /finish yes (ADR-0037)")
 	out := flag.String("out", "logs/sim", "корень папок прогонов")
@@ -65,9 +65,6 @@ func run() error {
 	}
 	if *profile != "" {
 		sc.Profile = *profile
-	}
-	if *modelPlayer != "" {
-		sc.PlayerModel = *modelPlayer
 	}
 	if *endless {
 		sc.Endless = true
@@ -96,7 +93,12 @@ func run() error {
 	if sc.Endless {
 		kind = "бесконечная игра"
 	}
-	fmt.Printf("прогон «%s»: %d раундов, %s, профиль %s, игрок %s; папка %s\n", sc.Name, sc.Rounds, kind, sc.Profile, sc.PlayerModel, dir)
+	models := sim.RoleModels(*modelNarrator, *modelInterpreter, *modelPlayer)
+	override := ""
+	if len(models) > 0 {
+		override = fmt.Sprintf(", подмена флагами %v", models)
+	}
+	fmt.Printf("прогон «%s»: %d раундов, %s, профиль %s%s; папка %s\n", sc.Name, sc.Rounds, kind, sc.Profile, override, dir)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -105,7 +107,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	models := sim.RoleModels(*modelNarrator, *modelInterpreter, "")
 	if len(models) > 0 {
 		for k, c := range providers {
 			providers[k] = sim.ModelOverride{Client: c, Models: models}
@@ -127,7 +128,7 @@ func run() error {
 		return err
 	}
 
-	runner := sim.New(sc, sim.Settings{}, tg, st.Commands, st.Store, st.LLM, journal, logger)
+	runner := sim.New(sc, sim.Settings{Models: models}, tg, st.Commands, st.Store, st.LLM, journal, logger)
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return st.Run(gctx) })
 	var rep sim.Report

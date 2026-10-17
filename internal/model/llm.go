@@ -39,6 +39,7 @@ type LLMParams struct {
 	MaxBudgetUSD   float64  `json:"max_budget_usd,omitempty"`  // потолок оценки стоимости одного вызова
 	TimeoutSeconds int      `json:"timeout_seconds,omitempty"` // таймаут вызова; 0 — по умолчанию провайдера
 	Parallelism    int      `json:"parallelism,omitempty"`     // одновременных вызовов; 0 — по умолчанию провайдера
+	PlayerModel    string   `json:"player_model,omitempty"`    // модель ИИ-игрока имитатора (ADR-0034, профили `sim-*`); пусто — модель из сценария прогона
 }
 
 // LLMProfile — набор настроек провайдера: модели по ролям и параметры.

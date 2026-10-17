@@ -32,6 +32,7 @@ type Transport interface {
 // Store — чтение состояния игры и настройка профиля; реализует `adapter/postgres`.
 type Store interface {
 	SetAppSetting(ctx context.Context, key, value string) error
+	ListLLMProfiles(ctx context.Context) ([]model.LLMProfile, error)
 	GetChatByTelegramID(ctx context.Context, id model.TelegramChatID) (model.Chat, error)
 	UnfinishedGameOfChat(ctx context.Context, chat model.ChatID) (model.Game, error)
 	GetGame(ctx context.Context, id model.GameID) (model.Game, error)
@@ -56,11 +57,12 @@ type LLM interface {
 
 // Settings — параметры оркестратора.
 type Settings struct {
-	Poll         time.Duration    // период опроса состояния; 0 — 300 мс
-	PhaseTimeout time.Duration    // ожидание фазы (варианты мира, завязка, закрытие раунда); 0 — 10 мин
-	RateCapacity int              // сообщений игрока в окно, на единицу меньше лимита бота; 0 — 19
-	RateWindow   time.Duration    // окно лимита; 0 — минута
-	Now          func() time.Time // источник времени; nil — time.Now
+	Poll         time.Duration            // период опроса состояния; 0 — 300 мс
+	PhaseTimeout time.Duration            // ожидание фазы (варианты мира, завязка, закрытие раунда); 0 — 10 мин
+	RateCapacity int                      // сообщений игрока в окно, на единицу меньше лимита бота; 0 — 19
+	RateWindow   time.Duration            // окно лимита; 0 — минута
+	Now          func() time.Time         // источник времени; nil — time.Now
+	Models       map[model.LLMRole]string // подмена моделей ролей флагами (`RoleModels`): игрок берётся отсюда, остальные — для сводки
 }
 
 // Runner — оркестратор прогона.
@@ -74,10 +76,12 @@ type Runner struct {
 	journal  *Journal
 	logger   *slog.Logger
 
-	group   model.TelegramChatID
-	system  string
-	players []*player
-	game    model.Game
+	group       model.TelegramChatID
+	system      string
+	profile     model.LLMProfile // профиль прогона из БД (`loadProfile`)
+	playerModel string           // модель ИИ-игрока: флаг → `profile.Params.PlayerModel` → сценарий
+	players     []*player
+	game        model.Game
 
 	mu      sync.Mutex
 	entries []entry
@@ -128,12 +132,63 @@ func (r *Runner) Run(ctx context.Context) (Report, error) {
 	return rep, err
 }
 
+// loadProfile читает профиль прогона из БД (профили `sim-*` заводятся миграциями) и выбирает модель ИИ-игрока:
+// флаг `-model-player`, иначе `params.player_model` профиля, иначе `player_model` сценария.
+func (r *Runner) loadProfile(ctx context.Context) error {
+	profiles, err := r.store.ListLLMProfiles(ctx)
+	if err != nil {
+		return fmt.Errorf("sim: профили LLM: %w", err)
+	}
+	found := false
+	for _, p := range profiles {
+		if p.Name == r.sc.Profile {
+			r.profile, found = p, true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("sim: профиль %q не найден в БД прогона (make migrate-sim; профили имитатора: sim-haiku, sim-sonnet, sim-opus-narrator)", r.sc.Profile)
+	}
+	if !r.profile.Enabled {
+		return fmt.Errorf("sim: профиль %q выключен", r.sc.Profile)
+	}
+	switch {
+	case r.settings.Models[model.RoleSimPlayer] != "":
+		r.playerModel = r.settings.Models[model.RoleSimPlayer]
+	case r.profile.Params.PlayerModel != "":
+		r.playerModel = r.profile.Params.PlayerModel
+	default:
+		r.playerModel = r.sc.PlayerModel
+	}
+	if r.playerModel == "" {
+		return fmt.Errorf("sim: модель ИИ-игрока не задана ни профилем %q (params.player_model), ни сценарием (player_model), ни флагом -model-player", r.sc.Profile)
+	}
+	r.logger.Info("sim profile", slog.String("profile", r.profile.Name), slog.String("provider", r.profile.Provider),
+		slog.String("model_interpreter", r.roleModel(model.RoleInterpreter)), slog.String("model_narrator", r.roleModel(model.RoleNarrator)),
+		slog.String("model_player", r.playerModel))
+	return nil
+}
+
+// roleModel — фактическая модель роли: подмена флагом, иначе модель профиля; для игрока — `playerModel`.
+func (r *Runner) roleModel(role model.LLMRole) string {
+	if role == model.RoleSimPlayer {
+		return r.playerModel
+	}
+	if m := r.settings.Models[role]; m != "" {
+		return m
+	}
+	return r.profile.Model(role)
+}
+
 func (r *Runner) run(ctx context.Context) error {
 	system, err := systemPrompt()
 	if err != nil {
 		return err
 	}
 	r.system = system
+	if err := r.loadProfile(ctx); err != nil {
+		return err
+	}
 	if err := r.store.SetAppSetting(ctx, model.SettingDefaultLLMProfile, r.sc.Profile); err != nil {
 		return fmt.Errorf("sim: профиль прогона: %w", err)
 	}

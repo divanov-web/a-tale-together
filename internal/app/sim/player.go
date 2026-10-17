@@ -141,7 +141,7 @@ func (r *Runner) input(p *player, ph phase, round int, tasks []string, msgs []mo
 // decide спрашивает модель игрока; невалидный ответ или ошибка вызова дают `done`.
 func (r *Runner) decide(ctx context.Context, p *player, game *model.Game, round *model.RoundID, in string) (action, error) {
 	call := applm.Call{Game: game, Round: round, Role: model.RoleSimPlayer, PromptVersion: PromptVersion}
-	resp, err := r.llm.Complete(ctx, call, model.LLMRequest{Model: r.sc.PlayerModel, System: r.system, Input: in, JSONSchema: schema})
+	resp, err := r.llm.Complete(ctx, call, model.LLMRequest{Model: r.playerModel, System: r.system, Input: in, JSONSchema: schema})
 	if err != nil {
 		r.note(p, "сбой модели игрока: "+err.Error())
 		return action{Action: "done", Thought: "сбой модели"}, err
